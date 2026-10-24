@@ -15,12 +15,13 @@ public final class MarkdownEditorView: NSView {
 
     public weak var editorDelegate: MarkdownEditorDelegate?
 
-    public let textView: CodeBlockBackgroundTextView
+    public let textView: DecoratedTextView
     private let scrollView = NSScrollView()
     private let storage = NSTextStorage()
     private let layout = NSLayoutManager()
     private let container: NSTextContainer
     private let styler = MarkdownStyler()
+    private let imageStore = InlineImageStore()
     /// 편집기와 스타일러가 **같은 테마를 봐야 한다.** 둘은 각자 인스턴스를 들고
     /// 있어서 기본값이 같을 때는 들키지 않지만, 한쪽만 바꾸면 글자 크기가 반쪽만
     /// 적용된다. 그래서 여기서 바뀔 때마다 스타일러에도 넘긴다.
@@ -43,7 +44,7 @@ public final class MarkdownEditorView: NSView {
         container.widthTracksTextView = true
         layout.addTextContainer(container)
         storage.addLayoutManager(layout)
-        textView = CodeBlockBackgroundTextView(frame: frameRect, textContainer: container)
+        textView = DecoratedTextView(frame: frameRect, textContainer: container)
         super.init(frame: frameRect)
         configure()
     }
@@ -54,6 +55,7 @@ public final class MarkdownEditorView: NSView {
     private func configure() {
         layout.delegate = self
         styler.theme = theme
+        styler.imageStore = imageStore
 
         textView.isEditable = true
         textView.isRichText = false
@@ -205,12 +207,25 @@ public final class MarkdownEditorView: NSView {
     private func syncCodeBlockBackgrounds() {
         textView.codeBlockColor = theme.codeBackground
         textView.codeBlockRanges = styler.codeBlockRanges
+        textView.imagePlacements = styler.imagePlacements
+    }
+
+    /// 문서 위치를 알려 준다. 그림의 상대 경로를 푸는 기준이다.
+    public var documentURL: URL? {
+        get { styler.documentURL }
+        set {
+            guard styler.documentURL != newValue else { return }
+            styler.documentURL = newValue
+            imageStore.forget()
+            restyleAll()
+        }
     }
 
     private func restyleAll() {
         guard !isStyling else { return }
         isStyling = true
         lastCaretLine = caretLine()
+        styler.contentWidth = max(120, Double(container.size.width) - 24)
         styler.style(storage, caretLine: lastCaretLine, search: searchState)
         syncCodeBlockBackgrounds()
         isStyling = false

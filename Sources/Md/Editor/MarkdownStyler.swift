@@ -36,6 +36,22 @@ public final class MarkdownStyler {
     public var alignsTables = true
     public var appliesSyntheticSlant = true
 
+    /// 그림 하나가 놓일 자리. 그리는 쪽이 읽는다.
+    public struct ImagePlacement: Equatable {
+        public let lineRange: NSRange
+        public let size: CGSize
+        public let image: NSImage
+    }
+
+    public private(set) var imagePlacements: [ImagePlacement] = []
+
+    /// 그림을 읽어 주는 곳. 편집기가 넣어 준다. 없으면 그림을 그리지 않는다.
+    var imageStore: InlineImageStore?
+    /// 상대 경로의 기준이 되는 문서 위치. 저장하지 않은 문서는 nil이다.
+    public var documentURL: URL?
+    /// 그림을 줄일 때 쓰는 글 넓이.
+    public var contentWidth: Double = 700
+
     private let syntax = MarkdownSyntax()
 
     public init() {}
@@ -70,8 +86,9 @@ public final class MarkdownStyler {
         defer { storage.endEditing() }
 
         if codeView {
-            // 코드 보기에서는 문서 전체가 날 글자다 — 블록만 칠할 근거가 없다.
+            // 코드 보기에서는 문서 전체가 날 글자다 — 블록도 그림도 그릴 근거가 없다.
             codeBlockRanges = []
+            imagePlacements = []
             let style = NSMutableParagraphStyle()
             style.lineSpacing = theme.lineSpacing * 0.5
             storage.setAttributes([
@@ -112,6 +129,8 @@ public final class MarkdownStyler {
                     || NSLocationInRange(line.range.location, writeRange) else { continue }
             apply(line, in: storage, text: text, caretLine: caretLine)
         }
+
+        placeImages(lines, in: storage, text: text, caretLine: caretLine, writeRange: writeRange)
 
         if highlightsCode {
             highlightCode(lines: lines, in: storage, text: text, writeRange: writeRange)
@@ -192,6 +211,67 @@ public final class MarkdownStyler {
         }
         let grown = NSRange(location: start, length: max(0, end - start))
         return NSIntersectionRange(text.lineRange(for: NSIntersectionRange(grown, limit)), limit)
+    }
+
+    /// 자기 줄을 통째로 차지하는 그림을 **문서를 고치지 않고** 보여 준다.
+    ///
+    /// 왜 이렇게 하는가(실측): 보통 글자에 `.attachment` 속성만 주면 줄 높이가 18pt에서
+    /// 꼼짝도 하지 않는다. 첨부는 `U+FFFC`가 문서에 실제로 있어야 동작하고(그 경우 80pt),
+    /// 글자를 끼워 넣으면 원문이 달라진다. `minimumLineHeight`는 글자를 하나도 더하지
+    /// 않고 같은 80pt를 확보한다. 그래서 자리는 여기서 비우고 그림은 뷰가 그린다.
+    ///
+    /// 한계: **자기 줄을 통째로 차지하는 그림만** 보여 준다. 글 사이에 끼인 그림은
+    /// 가로 자리를 잡는 일이 전혀 다른 문제라 원문을 그대로 둔다.
+    /// 캐럿이 있는 줄도 원문을 보인다 — 이 편집기의 일관된 성질이다.
+    private func placeImages(_ lines: [LineToken], in storage: NSTextStorage,
+                             text: NSString, caretLine: Int?, writeRange: NSRange) {
+        guard let imageStore else { return }
+        var placements: [ImagePlacement] = []
+
+        for line in lines {
+            guard line.kind == .paragraph, line.contentRange.length > 0,
+                  line.lineNumber != caretLine,
+                  NSIntersectionRange(line.range, writeRange).length > 0 else { continue }
+
+            // 줄 전체가 그림 하나여야 한다.
+            let tokens = syntax.scanInline(in: text, range: line.contentRange)
+            guard tokens.count == 1, case let .image(raw) = tokens[0].kind else { continue }
+            let token = tokens[0]
+            let trimmed = trimmedRange(line.contentRange, in: text)
+            guard NSEqualRanges(token.range, trimmed) else { continue }
+
+            guard let url = ImageReference.localURL(for: raw, relativeTo: documentURL),
+                  let image = imageStore.image(at: url) else { continue }
+            let size = ImageReference.displaySize(for: image.size, maxWidth: contentWidth)
+            guard size.height > 0 else { continue }
+
+            // 글자를 모두 숨긴다 — 마커만이 아니라 `alt`와 경로까지. 그림이 보이는
+            // 자리에 원문이 함께 보일 이유가 없다.
+            hide(token.range, in: storage)
+
+            let style = NSMutableParagraphStyle()
+            style.lineSpacing = theme.lineSpacing
+            style.paragraphSpacing = theme.paragraphSpacing
+            style.minimumLineHeight = size.height + 4
+            style.maximumLineHeight = size.height + 4
+            storage.addAttribute(.paragraphStyle, value: style, range: line.range)
+
+            placements.append(ImagePlacement(lineRange: line.range, size: size, image: image))
+        }
+        imagePlacements = placements
+    }
+
+    /// 앞뒤 공백을 뺀 범위.
+    private func trimmedRange(_ range: NSRange, in text: NSString) -> NSRange {
+        var start = range.location
+        var end = NSMaxRange(range)
+        func isSpace(_ index: Int) -> Bool {
+            let scalar = text.character(at: index)
+            return scalar == 32 || scalar == 9
+        }
+        while start < end, isSpace(start) { start += 1 }
+        while end > start, isSpace(end - 1) { end -= 1 }
+        return NSRange(location: start, length: end - start)
     }
 
     /// 이어진 코드 줄을 블록으로 묶는다. **펜스 줄까지 넣는다** — 펜스는 마커라

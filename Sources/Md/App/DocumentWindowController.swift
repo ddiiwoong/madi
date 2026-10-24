@@ -175,6 +175,7 @@ final class DocumentWindowController: NSWindowController {
         browserPanel.show(folderOf: markdownDocument?.fileURL)
         recentPanel.reload()
         window?.title = markdownDocument?.displayName ?? "제목 없음"
+        editor.documentURL = markdownDocument?.fileURL
         editor.apply(preferences.current)
         AppLog.info("문서를 열었습니다: \(markdownDocument?.displayName ?? "제목 없음")",
                     detail: "\(markdown.count)자")
