@@ -326,12 +326,36 @@ lipo -archs …/Md.app/Contents/MacOS/Md → x86_64 arm64
 
 - [x] `make universal` 타깃 추가. Release + `ONLY_ACTIVE_ARCH=NO`로 빌드하고 `lipo -archs`로
       두 아키텍처가 다 들어갔는지 **검사까지** 한다(빌드만 하고 믿지 않는다).
-- [ ] **Intel에서 Apple 번역이 되는지 확인.** 이것이 유일한 실질 위험이다. 온디바이스 번역이
-      Apple Silicon을 요구할 가능성이 있다 — 그러면 Intel에서 `LanguageAvailability`가
-      `.unsupported`를 돌려준다. 코드는 그 경로를 이미 처리하므로(안내 문구를 던진다)
-      **깨지지는 않고 기능만 없다.** 실기에서 재야 알 수 있다.
-- [ ] macOS 26을 Intel Mac이 쓸 수 있는지 Apple 문서로 확인. 배포 타깃은 14.0이라 Intel에서
-      앱 자체는 돌지만, 번역은 26 이상이 필요하다. **기억으로 단정하지 말고 문서를 볼 것.**
+- [x] macOS 26을 Intel Mac이 쓸 수 있는지 Apple 문서로 확인했다(2026-10-25).
+      **쓸 수 있다.** 공식 호환 목록에 Intel 모델 4종이 남아 있다:
+
+      - MacBook Pro (16형, 2019)
+      - MacBook Pro (13형, 2020, Thunderbolt 3 포트 4개)
+      - iMac (Retina 5K, 27형, 2020)
+      - Mac Pro (2019)
+
+      근거: <https://support.apple.com/en-us/122867> (2026-09-14 게시).
+
+      **그런데 더 중요한 사실이 함께 나왔다 — macOS 26이 Intel을 지원하는 마지막
+      macOS다.** macOS 27부터는 Apple Silicon을 요구한다. 그래서 `x86_64` 조각의
+      쓸모에 **만료 시점이 있다**: Intel 사용자는 macOS 26에 머무는 동안만 이 앱을
+      쓸 수 있고, 그 뒤로는 새 macOS를 받지 못한다.
+      근거: <https://arstechnica.com/gadgets/2025/06/apple-details-the-end-of-intel-mac-support-and-a-phaseout-for-rosetta-2/>,
+      <https://developer.apple.com/news/?id=w5ngl9k2> (Rosetta 단계적 종료 공지).
+
+      이것이 제품 판단을 바꾼다. 유니버설 빌드는 **지금은** 현역 Intel 사용자에게
+      닿지만(구형 macOS에 갇힌 사람들만이 아니다) 몇 년짜리 창이다. 유니버설 빌드를
+      유지하는 비용이 거의 없으므로(이미 되고 `make universal`이 지킨다) 그대로 두되,
+      Intel을 위해 **따로 일을 더 하지는 않는 것**이 맞다.
+
+      덤으로 알아 둘 것: Rosetta는 반대 방향의 이야기다(Apple Silicon에서 Intel 앱을
+      돌리는 것). Md는 arm64를 네이티브로 내므로 Rosetta와 무관하다.
+- [ ] **Intel에서 Apple 번역이 되는지 확인.** 이것이 남은 유일한 실질 위험이다.
+      Apple 문서에서 Translation 프레임워크가 Apple Silicon을 요구한다는 **명시를
+      찾지 못했다**(찾지 못한 것이 없다는 뜻은 아니다). 온디바이스 번역은 Neural
+      Engine에 기대는 것이 보통이고 Intel Mac에는 그것이 없으므로 `.unsupported`가
+      나올 가능성이 크다. 코드는 그 경로를 이미 처리하므로 **깨지지는 않고 기능만
+      없다.** 실기에서 재야 확실해진다.
 - [ ] Intel 실기에서 실행 확인. 이 Mac은 Apple Silicon이라 로제타로도 검증이 되지 않는다
       (유니버설 바이너리의 x86_64 조각은 로제타가 아니라 Intel 하드웨어에서 돌 코드다).
 
