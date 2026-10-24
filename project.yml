@@ -1,0 +1,59 @@
+name: Md
+options:
+  bundleIdPrefix: dev.jinwoong
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGNING_REQUIRED: "NO"
+    ENABLE_HARDENED_RUNTIME: "NO"
+
+targets:
+  Md:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/Md
+        excludes:
+          - "Resources/Info.plist"
+    settings:
+      base:
+        INFOPLIST_FILE: Sources/Md/Resources/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: dev.jinwoong.md
+        PRODUCT_NAME: Md
+        COMBINE_HIDPI_IMAGES: "YES"
+        ENABLE_APP_SANDBOX: "NO"
+
+  MdTests:
+    type: bundle.unit-test
+    platform: macOS
+    # Deliberately NOT app-hosted. The core is pure Foundation, so the test
+    # bundle compiles those files directly: an app-hosted bundle has to launch
+    # Md.app and wait for it to connect, which hangs the run and tells you
+    # nothing about the logic under test.
+    sources:
+      - Tests/MdTests
+      - Sources/Md/Core
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.jinwoong.md.tests
+        GENERATE_INFOPLIST_FILE: "YES"
+
+schemes:
+  Md:
+    build:
+      targets:
+        Md: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - MdTests

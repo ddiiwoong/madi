@@ -1,0 +1,413 @@
+/*
+ * Highlight colours and the search-field transition aim for the same feel as
+ * Mark.app's search — an amber wash behind preview matches, a slightly
+ * stronger one in the source pane, and a field that expands from zero width.
+ * The values below were chosen here, not copied.
+ */
+
+:root {
+  --bg: #ffffff;
+  --bg-elevated: #f7f7f8;
+  --text: #1b1b1f;
+  --text-dim: #6b6b76;
+  --border: #e1e1e6;
+  --accent: #0f4c81;
+  --code-bg: #f3f3f5;
+  --search-mark: color-mix(in srgb, #f8de74 82%, transparent);
+  --source-search-mark: color-mix(in srgb, #f6c744 72%, transparent);
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Pretendard", "Apple SD Gothic Neo", system-ui, sans-serif;
+
+  --source-font-size: 14px;
+  --source-line-height: 1.65;
+  --source-padding: 18px 20px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17171a;
+    --bg-elevated: #1f1f23;
+    --text: #e8e8ea;
+    --text-dim: #9a9aa4;
+    --border: #2e2e34;
+    --accent: #7db2e8;
+    --code-bg: #24242a;
+    --search-mark: color-mix(in srgb, #f8de74 52%, transparent);
+    --source-search-mark: color-mix(in srgb, #f6c744 42%, transparent);
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+}
+
+/* ------------------------------------------------------------------ toolbar */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 46px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text);
+  flex: 0 0 auto;
+}
+
+.toolbar-left,
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.doc-name {
+  color: var(--text-dim);
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.icon-button,
+.text-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.icon-button { min-width: 28px; font-size: 16px; padding: 0; }
+
+.icon-button:hover,
+.text-button:hover {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+.icon-button:focus-visible,
+.text-button:focus-visible,
+.search-field input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.match-count {
+  color: var(--text-dim);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.search-field {
+  display: flex;
+  align-items: center;
+  width: 0;
+  height: 30px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  opacity: 0;
+  transform: scaleX(0.94);
+  transform-origin: right center;
+  transition: width 0.18s ease, padding 0.18s ease, border-color 0.18s ease,
+              opacity 0.14s ease, transform 0.18s ease;
+}
+
+.search-field.is-open {
+  width: min(190px, 40vw);
+  padding: 0 2px;
+  border-bottom-color: color-mix(in srgb, var(--border) 86%, transparent);
+  opacity: 1;
+  transform: scaleX(1);
+}
+
+.search-field input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.search-field input::-webkit-search-cancel-button { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .search-field { transition: none; }
+}
+
+/* ---------------------------------------------------------------- workspace */
+
+.workspace {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.outline {
+  display: none;
+  flex: 0 0 240px;
+  padding: 12px 8px;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+
+body.outline-open .outline { display: block; }
+
+.outline-item {
+  display: block;
+  width: 100%;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.outline-item:hover { background: color-mix(in srgb, var(--text) 8%, transparent); }
+.outline-item[data-level="1"] { font-weight: 600; }
+.outline-item[data-level="2"] { padding-left: 18px; }
+.outline-item[data-level="3"] { padding-left: 30px; }
+.outline-item[data-level="4"] { padding-left: 42px; }
+.outline-item[data-level="5"],
+.outline-item[data-level="6"] { padding-left: 54px; color: var(--text-dim); }
+
+.outline-empty {
+  margin: 4px 8px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.pane {
+  flex: 1 1 50%;
+  min-width: 0;
+  overflow: auto;
+}
+
+.pane-source { position: relative; border-right: 1px solid var(--border); }
+
+body[data-view="source"] .pane-preview,
+body[data-view="preview"] .pane-source { display: none; }
+
+body[data-view="source"] .pane-source,
+body[data-view="preview"] .pane-preview { flex-basis: 100%; }
+
+/* ------------------------------------------- source textarea + mark overlay
+ * The textarea's own glyphs are transparent; the layer underneath paints the
+ * identical text plus <mark> spans. Every metric below MUST match between the
+ * two, or the highlight drifts away from the characters it belongs to.
+ */
+
+.source,
+.source-highlight {
+  margin: 0;
+  padding: var(--source-padding);
+  border: 0;
+  font-family: var(--mono);
+  font-size: var(--source-font-size);
+  line-height: var(--source-line-height);
+  letter-spacing: normal;
+  tab-size: 4;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.source-highlight {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  color: var(--text);
+  pointer-events: none;
+}
+
+.source {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-height: 100%;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--text);
+  resize: none;
+  outline: 0;
+}
+
+.source::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+
+.source-search-mark {
+  border-radius: 2px;
+  background: var(--source-search-mark);
+  color: inherit;
+}
+
+/* ------------------------------------------------------- preview highlights */
+
+::highlight(search) {
+  background-color: var(--search-mark);
+  color: inherit;
+}
+
+/* ------------------------------------------------------------- markdown body */
+
+.markdown-body {
+  padding: 24px 28px 64px;
+  font-size: 15px;
+  line-height: 1.75;
+  overflow-wrap: break-word;
+}
+
+.markdown-body > :first-child { margin-top: 0; }
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  margin: 1.6em 0 0.6em;
+  line-height: 1.3;
+  font-weight: 650;
+}
+
+.markdown-body h1 { font-size: 1.8em; }
+.markdown-body h2 { font-size: 1.45em; padding-bottom: 0.25em; border-bottom: 1px solid var(--border); }
+.markdown-body h3 { font-size: 1.2em; }
+.markdown-body h4 { font-size: 1.05em; }
+.markdown-body h5,
+.markdown-body h6 { font-size: 1em; color: var(--text-dim); }
+
+.markdown-body p,
+.markdown-body ul,
+.markdown-body ol,
+.markdown-body blockquote,
+.markdown-body table,
+.markdown-body pre { margin: 0 0 1em; }
+
+.markdown-body ul,
+.markdown-body ol { padding-left: 1.5em; }
+.markdown-body li { margin: 0.2em 0; }
+.markdown-body li.task { list-style: none; margin-left: -1.2em; }
+
+.markdown-body a { color: var(--accent); }
+
+.markdown-body code {
+  padding: 0.15em 0.35em;
+  border-radius: 4px;
+  background: var(--code-bg);
+  font-family: var(--mono);
+  font-size: 0.88em;
+}
+
+.markdown-body pre {
+  padding: 12px 14px;
+  overflow-x: auto;
+  border-radius: 8px;
+  background: var(--code-bg);
+}
+
+.markdown-body pre code {
+  padding: 0;
+  background: transparent;
+  font-size: 0.86em;
+  line-height: 1.6;
+}
+
+.markdown-body blockquote {
+  padding: 0.1em 1em;
+  border-left: 3px solid var(--border);
+  color: var(--text-dim);
+}
+
+.markdown-body table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.94em;
+}
+
+.markdown-body th,
+.markdown-body td {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  text-align: left;
+}
+
+.markdown-body th { background: var(--bg-elevated); font-weight: 600; }
+
+.markdown-body hr {
+  margin: 2em 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.markdown-body img { max-width: 100%; border-radius: 6px; }
+
+/* Matches Mark: a literal <mark> in the document is NOT the search colour. */
+.markdown-body mark:not(.source-search-mark) {
+  border-radius: 3px;
+  background: #f8de74;
+  color: #201a12;
+}
+
+/* ------------------------------------------------------------------- status */
+
+.status {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  max-width: min(420px, 80vw);
+  padding: 0 14px;
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 36px;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 18%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.status:not(:empty) { opacity: 1; }
+
+@media (max-width: 720px) {
+  .workspace { flex-direction: column; }
+  .pane-source { border-right: 0; border-bottom: 1px solid var(--border); }
+  .outline { flex-basis: auto; max-height: 30vh; }
+}

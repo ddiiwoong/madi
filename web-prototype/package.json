@@ -1,0 +1,14 @@
+{
+  "name": "md",
+  "version": "0.1.0",
+  "private": true,
+  "description": "의존성 없는 마크다운 에디터 — Mark.app 방식의 문서 내 검색",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/",
+    "serve": "python3 -m http.server 4173 --bind 127.0.0.1 --directory ."
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
