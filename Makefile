@@ -111,7 +111,8 @@ core-only:
 	if [ $$status -ne 0 ]; then \
 		echo "Core가 Foundation만으로 서지 않습니다:"; \
 		grep "error:" parse.log | head -10; \
-		echo "AppKit/CoreGraphics 타입(CGFloat·CGSize·NSColor…)이 Core에 들어왔는지 보세요."; \
+		echo "Core가 AppKit 없이 서지 못합니다. AppKit 타입(NSColor·NSView…)이나"; \
+		echo "CoreGraphics API(CGSize.zero…)가 들어왔는지 보세요. 평범한 컴파일 오류일 수도 있습니다."; \
 		exit 1; \
 	fi
 	@echo "core-only: Core $$(ls Sources/Md/Core/*.swift | wc -l | tr -d ' ')개 파일이 Foundation만으로 섭니다"

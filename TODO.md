@@ -22,6 +22,7 @@
 - 이미지 포함 내보내기(base64 단일 파일, 코드 블록은 건드리지 않음)
 - 표 번역 문맥(행을 한 단위로, 칸 경계는 자리표로 보존)
 - EPUB용 ZIP 리더(Core, 압축 해제는 주입) + CRC-32
+- EPUB 구조 읽기(OPF·목차 nav+NCX·DRM 거절) — Core만, UI는 결정 대기
 - `make core-only` — Core가 Foundation만으로 서는지 지키는 검사
 - `NSDocument` 기반 열기/저장/자동 저장/최근 문서
 - Apple 번역 `⌘⇧T` — 마크다운 구조 보존(자리표), 긴 문단 800자 청킹,
@@ -286,15 +287,17 @@ meta charset 없음 + 옵션 있음 → 한국어 본문      ✓
       `container.xml` 해제 성공, 가장 큰 챕터 39,670→240,212바이트 CRC 통과.
       표준 `/usr/bin/zip`이 만든 파일로 테스트한다(손으로 만든 바이트로 하면
       "내가 쓴 것을 내가 읽는다"가 되어 증거가 되지 않는다).
-- [ ] **OPF 읽기.** `META-INF/container.xml` → OPF 경로 → manifest(id→href→media-type) ·
-      spine(읽는 순서) · metadata(제목·저자·언어). XPath로 되는 것은 확인했다.
-- [ ] **목차.** EPUB 3은 `epub:type="toc"`가 붙은 XHTML nav, EPUB 2는 NCX다. **둘 다**
-      필요하다(현실의 책은 섞여 있다). 이미 있는 목차 사이드바에 꽂으면 된다.
+- [x] **OPF 읽기** — `EpubBook`(Core). container.xml → OPF → metadata(제목·지은이·언어·
+      펴낸곳·식별자·날짜) · manifest · spine. 경로는 **OPF가 있는 폴더** 기준으로 풀고
+      퍼센트 인코딩을 해제한다. `../`로 ZIP 바깥을 가리켜도 뿌리에서 멈춘다.
+- [x] **목차** — EPUB 3의 nav와 EPUB 2의 NCX **둘 다** 읽는다. 중첩도 보존한다.
+      둘 다 필요하다는 것이 실측으로 확인됐다 — 이 Mac에 있던 실제 책 두 권이
+      **2026년에 나왔는데도 EPUB 2.0 + NCX**였다. nav만 다뤘으면 목차가 비었을 것이다.
 - [ ] **챕터 렌더링.** spine 순서대로 XHTML을 `NSAttributedString`으로 바꿔 보인다.
       이미지는 `NSTextAttachment`, 컨테이너 안의 상대 경로를 풀어 줘야 한다.
-- [ ] **DRM 걸린 책을 정직하게 거절하기.** `META-INF/encryption.xml`이 있으면 Adobe ADEPT나
-      Apple FairPlay로 암호화된 책이다. 열 수 없다. **깨진 글자를 보여 주지 말고** 왜
-      못 읽는지 말해야 한다.
+- [x] **DRM 걸린 책을 정직하게 거절** — `META-INF/encryption.xml`을 보고 Adobe ADEPT ·
+      Apple FairPlay · 글꼴 난독화(IDPF)를 가려 **이름을 붙여** 거절한다. 글꼴 난독화를
+      진짜 DRM과 같은 말로 거절하면 본문을 읽을 수 있는 책인데 사용자가 포기한다.
 - [ ] 읽던 위치 기억. `NSDocument`의 복원 경로에 얹는다.
 - [ ] 쪽 넘김을 할지, 그냥 길게 스크롤할지 결정.
 
