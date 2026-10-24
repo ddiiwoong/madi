@@ -246,7 +246,7 @@ lipo -archs …/Md.app/Contents/MacOS/Md → x86_64 arm64
 `make build`가 arm64만 내는 것은 Debug 구성이 `ONLY_ACTIVE_ARCH=YES`라서다 — 설정 문제가
 아니라 Debug의 정상 동작이다.
 
-- [ ] `make universal` 타깃 추가. Release + `ONLY_ACTIVE_ARCH=NO`로 빌드하고 `lipo -archs`로
+- [x] `make universal` 타깃 추가. Release + `ONLY_ACTIVE_ARCH=NO`로 빌드하고 `lipo -archs`로
       두 아키텍처가 다 들어갔는지 **검사까지** 한다(빌드만 하고 믿지 않는다).
 - [ ] **Intel에서 Apple 번역이 되는지 확인.** 이것이 유일한 실질 위험이다. 온디바이스 번역이
       Apple Silicon을 요구할 가능성이 있다 — 그러면 Intel에서 `LanguageAvailability`가
