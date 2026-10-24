@@ -15,7 +15,7 @@ public final class MarkdownEditorView: NSView {
 
     public weak var editorDelegate: MarkdownEditorDelegate?
 
-    public let textView: NSTextView
+    public let textView: CodeBlockBackgroundTextView
     private let scrollView = NSScrollView()
     private let storage = NSTextStorage()
     private let layout = NSLayoutManager()
@@ -38,7 +38,7 @@ public final class MarkdownEditorView: NSView {
         container.widthTracksTextView = true
         layout.addTextContainer(container)
         storage.addLayoutManager(layout)
-        textView = NSTextView(frame: frameRect, textContainer: container)
+        textView = CodeBlockBackgroundTextView(frame: frameRect, textContainer: container)
         super.init(frame: frameRect)
         configure()
     }
@@ -183,11 +183,19 @@ public final class MarkdownEditorView: NSView {
         return line
     }
 
+    /// 스타일러가 센 코드 블록 범위를 그리는 쪽에 넘긴다. 배경은 글자의 성질이
+    /// 아니라 블록의 성질이라 속성으로는 고르게 칠할 수 없다.
+    private func syncCodeBlockBackgrounds() {
+        textView.codeBlockColor = theme.codeBackground
+        textView.codeBlockRanges = styler.codeBlockRanges
+    }
+
     private func restyleAll() {
         guard !isStyling else { return }
         isStyling = true
         lastCaretLine = caretLine()
         styler.style(storage, caretLine: lastCaretLine, search: searchState)
+        syncCodeBlockBackgrounds()
         isStyling = false
     }
 
@@ -195,6 +203,7 @@ public final class MarkdownEditorView: NSView {
         guard !isStyling else { return }
         isStyling = true
         styler.style(storage, caretLine: caretLine(), search: searchState, dirtyRange: range)
+        syncCodeBlockBackgrounds()
         isStyling = false
     }
 
@@ -210,6 +219,7 @@ public final class MarkdownEditorView: NSView {
         isStyling = true
         for range in ranges {
             styler.style(storage, caretLine: new, search: searchState, dirtyRange: range)
+            syncCodeBlockBackgrounds()
         }
         isStyling = false
     }

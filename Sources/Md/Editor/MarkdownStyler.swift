@@ -22,6 +22,14 @@ public final class MarkdownStyler {
     /// monospace throughout, every marker visible. The text storage is the same
     /// either way, so this is purely how it is drawn.
     public var codeView = false
+
+    /// 코드 블록의 범위(여는 펜스부터 닫는 펜스까지).
+    ///
+    /// 배경을 **그리는 쪽**이 읽는다. 글자마다 배경색을 주면 글자가 있는 만큼만
+    /// 칠해져 오른쪽이 들쭉날쭉해지므로, 블록 하나를 둥근 사각형 하나로 그리도록
+    /// 범위만 넘긴다. 코드 보기에서는 비어 있다(그때는 문서 전체가 날 글자다).
+    public private(set) var codeBlockRanges: [NSRange] = []
+
     private let syntax = MarkdownSyntax()
 
     public init() {}
@@ -56,6 +64,8 @@ public final class MarkdownStyler {
         defer { storage.endEditing() }
 
         if codeView {
+            // 코드 보기에서는 문서 전체가 날 글자다 — 블록만 칠할 근거가 없다.
+            codeBlockRanges = []
             let style = NSMutableParagraphStyle()
             style.lineSpacing = theme.lineSpacing * 0.5
             storage.setAttributes([
@@ -90,6 +100,7 @@ public final class MarkdownStyler {
         ], range: writeRange)
 
         let lines = syntax.scanLines(in: text)
+        codeBlockRanges = codeBlocks(in: lines)
         for line in lines {
             guard line.range.length == 0 || NSIntersectionRange(line.range, writeRange).length > 0
                     || NSLocationInRange(line.range.location, writeRange) else { continue }
@@ -171,6 +182,27 @@ public final class MarkdownStyler {
         }
         let grown = NSRange(location: start, length: max(0, end - start))
         return NSIntersectionRange(text.lineRange(for: NSIntersectionRange(grown, limit)), limit)
+    }
+
+    /// 이어진 코드 줄을 블록으로 묶는다. **펜스 줄까지 넣는다** — 펜스는 마커라
+    /// 폭 0으로 접히지만 줄 높이는 차지하므로, 배경에 넣으면 위아래 여백이 된다.
+    private func codeBlocks(in lines: [LineToken]) -> [NSRange] {
+        var blocks: [NSRange] = []
+        var start: Int?
+        var end = 0
+        for line in lines {
+            if line.kind == .codeFence || line.kind == .codeBody {
+                if start == nil { start = line.range.location }
+                end = NSMaxRange(line.range)
+            } else if let begin = start {
+                blocks.append(NSRange(location: begin, length: max(0, end - begin)))
+                start = nil
+            }
+        }
+        if let begin = start {
+            blocks.append(NSRange(location: begin, length: max(0, end - begin)))
+        }
+        return blocks
     }
 
     // MARK: 표 열 맞추기
@@ -301,10 +333,12 @@ public final class MarkdownStyler {
             styleInline(in: storage, text: text, content: line.contentRange, onCaretLine: onCaretLine)
 
         case .codeFence, .codeBody:
+            // 배경은 여기서 칠하지 않는다. 글자마다 칠하면 글자가 있는 만큼만
+            // 칠해져 오른쪽이 들쭉날쭉해진다. 블록 하나를 둥근 사각형 하나로
+            // 그리는 일은 텍스트 뷰가 `codeBlockRanges`를 읽어서 한다.
             storage.addAttributes([
                 .font: theme.monoFont,
                 .foregroundColor: theme.codeText,
-                .backgroundColor: theme.codeBackground,
             ], range: line.range)
 
         case .thematicBreak:
