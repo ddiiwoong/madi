@@ -83,11 +83,14 @@ public final class MarkdownStyler {
             .paragraphStyle: paragraphStyle(for: .paragraph),
         ], range: writeRange)
 
-        for line in syntax.scanLines(in: text) {
+        let lines = syntax.scanLines(in: text)
+        for line in lines {
             guard line.range.length == 0 || NSIntersectionRange(line.range, writeRange).length > 0
                     || NSLocationInRange(line.range.location, writeRange) else { continue }
             apply(line, in: storage, text: text, caretLine: caretLine)
         }
+
+        highlightCode(lines: lines, in: storage, text: text, writeRange: writeRange)
 
         for (index, range) in search.ranges.enumerated()
         where NSMaxRange(range) <= text.length && NSIntersectionRange(range, writeRange).length > 0 {
@@ -96,6 +99,45 @@ public final class MarkdownStyler {
                                  value: isCurrent ? theme.currentSearchHighlight : theme.searchHighlight,
                                  range: range)
         }
+    }
+
+    // MARK: 코드 구문 강조
+
+    /// 코드 본문 줄들을 **블록 단위로 묶어** 한 번에 강조한다.
+    ///
+    /// 줄 하나씩 넘기면 안 된다 — `/* */`나 `"""`처럼 줄을 넘나드는 구문은 블록 전체를
+    /// 봐야 어디서 끝나는지 알 수 있다. 그래서 더럽혀진 범위가 블록의 일부뿐이어도
+    /// 블록은 통째로 훑고, **쓰는 것만** 그 범위로 좁힌다(비용은 쓰기와 레이아웃 무효화에
+    /// 있고 훑기는 싸다 — 줄 스캔이 이미 같은 이유로 늘 전체를 본다).
+    private func highlightCode(lines: [LineToken], in storage: NSTextStorage,
+                               text: NSString, writeRange: NSRange) {
+        var run: [LineToken] = []
+
+        func flush() {
+            defer { run = [] }
+            guard let first = run.first, let last = run.last,
+                  let language = CodeLanguage.named(first.language) else { return }
+            let start = first.range.location
+            let end = NSMaxRange(last.range)
+            guard end > start, NSMaxRange(NSRange(location: start, length: end - start)) <= text.length
+            else { return }
+            let blockRange = NSRange(location: start, length: end - start)
+            guard NSIntersectionRange(blockRange, writeRange).length > 0 else { return }
+
+            for span in CodeHighlighter.spans(in: text.substring(with: blockRange), language: language) {
+                let absolute = NSRange(location: blockRange.location + span.range.location,
+                                       length: span.range.length)
+                guard NSMaxRange(absolute) <= text.length,
+                      NSIntersectionRange(absolute, writeRange).length > 0 else { continue }
+                storage.addAttribute(.foregroundColor,
+                                     value: theme.codeColor(for: span.role), range: absolute)
+            }
+        }
+
+        for line in lines {
+            if line.kind == .codeBody { run.append(line) } else { flush() }
+        }
+        flush()
     }
 
     // MARK: Blocks

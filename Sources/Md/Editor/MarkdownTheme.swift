@@ -25,6 +25,18 @@ public struct MarkdownTheme {
     public var codeBackground: NSColor { .quaternarySystemFill }
     public var rule: NSColor { .separatorColor }
 
+    /// 코드 구문 강조 색. 시스템 색에서 뽑으므로 라이트/다크가 모두 읽힌다 —
+    /// 고정 팔레트를 쓰면 한쪽에서 배경과 붙어 안 보인다.
+    public func codeColor(for role: CodeHighlighter.Span.Role) -> NSColor {
+        switch role {
+        case .keyword: return .systemPink
+        case .type: return .systemTeal
+        case .string: return .systemRed
+        case .comment: return .secondaryLabelColor
+        case .number: return .systemPurple
+        }
+    }
+
     /// Amber, matching the colour family a markdown editor conventionally uses
     /// for find-in-document highlighting.
     public var searchHighlight: NSColor {

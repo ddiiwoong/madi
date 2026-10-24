@@ -25,6 +25,22 @@ public struct LineToken: Equatable, Sendable {
     public let markerRanges: [NSRange]
     /// What is left after the markers — the text the reader cares about.
     public let contentRange: NSRange
+    /// 코드 펜스의 정보 문자열(```` ```swift ````의 `swift`). 펜스 줄과 그 안의 본문 줄이
+    /// 모두 들고 있어서, 구문 강조가 "이 줄이 무슨 언어인지"를 따로 추적하지 않아도 된다.
+    /// 코드가 아닌 줄에서는 nil이다.
+    public let language: String?
+
+    /// 명시적 이니셜라이저다. `language`에 기본값을 주려면 필요하다 — 멤버와이즈
+    /// 이니셜라이저는 기본값을 붙일 수 없어서, 없으면 기존 생성 지점이 전부 깨진다.
+    public init(lineNumber: Int, range: NSRange, kind: BlockKind,
+                markerRanges: [NSRange], contentRange: NSRange, language: String? = nil) {
+        self.lineNumber = lineNumber
+        self.range = range
+        self.kind = kind
+        self.markerRanges = markerRanges
+        self.contentRange = contentRange
+        self.language = language
+    }
 }
 
 public enum InlineKind: Equatable, Sendable {
@@ -55,6 +71,7 @@ public struct MarkdownSyntax: Sendable {
     public func scanLines(in text: NSString) -> [LineToken] {
         var tokens: [LineToken] = []
         var inFence = false
+        var fenceLanguage: String?
         var lineNumber = 0
         var cursor = 0
         let length = text.length
@@ -66,7 +83,8 @@ public struct MarkdownSyntax: Sendable {
             lineNumber += 1
 
             let line = text.substring(with: contentOnly)
-            let token = scanLine(line, at: contentOnly, lineNumber: lineNumber, inFence: &inFence)
+            let token = scanLine(line, at: contentOnly, lineNumber: lineNumber,
+                                 inFence: &inFence, fenceLanguage: &fenceLanguage)
             tokens.append(token)
 
             if NSMaxRange(lineRange) <= cursor { break }
@@ -86,20 +104,33 @@ public struct MarkdownSyntax: Sendable {
     }
 
     private func scanLine(_ line: String, at range: NSRange, lineNumber: Int,
-                          inFence: inout Bool) -> LineToken {
-        func token(_ kind: BlockKind, markers: [NSRange] = [], content: NSRange? = nil) -> LineToken {
+                          inFence: inout Bool, fenceLanguage: inout String?) -> LineToken {
+        func token(_ kind: BlockKind, markers: [NSRange] = [], content: NSRange? = nil,
+                   language: String? = nil) -> LineToken {
             LineToken(lineNumber: lineNumber, range: range, kind: kind,
-                      markerRanges: markers, contentRange: content ?? range)
+                      markerRanges: markers, contentRange: content ?? range, language: language)
         }
 
         let ns = line as NSString
 
         if let m = Self.fence.firstMatch(in: line, range: NSRange(location: 0, length: ns.length)) {
+            let opening = !inFence
             inFence.toggle()
-            return token(.codeFence, markers: [range], content: shift(m.range, by: range.location))
+            if opening {
+                // 정보 문자열은 여는 펜스에만 있다. 닫는 펜스는 여는 쪽의 언어를 물려받아
+                // 블록 전체가 같은 언어로 보이게 한다.
+                let info = m.range(at: 2)
+                fenceLanguage = (info.location != NSNotFound && info.length > 0)
+                    ? ns.substring(with: info) : nil
+            }
+            let result = token(.codeFence, markers: [range],
+                               content: shift(m.range, by: range.location),
+                               language: fenceLanguage)
+            if !opening { fenceLanguage = nil }
+            return result
         }
         if inFence {
-            return token(.codeBody)
+            return token(.codeBody, language: fenceLanguage)
         }
         if line.trimmingCharacters(in: .whitespaces).isEmpty {
             return token(.blank)
