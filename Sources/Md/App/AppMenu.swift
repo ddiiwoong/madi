@@ -89,6 +89,9 @@ enum AppMenu {
             // 선택이 있으면 그 자리에서, 없으면 문서 전체를 새 문서로.
             Command("Apple 번역", #selector(DocumentWindowController.translateAction(_:)), "t",
                     [.command, .shift], windowTarget: true),
+            nil,
+            Command("기록 보기", #selector(DocumentWindowController.showActivityLog(_:)), "l",
+                    [.command, .shift], windowTarget: true),
         ]
     }
 
@@ -189,6 +192,8 @@ enum AppMenu {
                     .command, windowTarget: true),
             nil,
             Command("Apple 번역", #selector(DocumentWindowController.translateAction(_:)), "t",
+                    [.command, .shift], windowTarget: true),
+            Command("기록 보기", #selector(DocumentWindowController.showActivityLog(_:)), "l",
                     [.command, .shift], windowTarget: true),
             nil,
             Command("PDF 내보내기", #selector(DocumentWindowController.exportPDFAction(_:)),

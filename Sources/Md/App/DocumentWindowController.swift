@@ -11,10 +11,13 @@ final class DocumentWindowController: NSWindowController {
     private let sidebarTabs = NSTabView()
     private let matchLabel = NSTextField(labelWithString: "")
     private let searchField = NSSearchField()
+    private let statusOverlay = StatusOverlayView(frame: .zero)
 
     private var splitController: NSSplitViewController!
     private var sidebarItem: NSSplitViewItem!
     private var searchDebounce: DispatchWorkItem?
+    /// 떠 있는 기록 창. 처음 열 때 만들고 그다음부터 같은 것을 다시 보인다.
+    private var logPanel: ActivityLogPanel?
 
     /// The document's front matter, kept so the body can be re-joined with the
     /// ORIGINAL block on every save rather than a re-serialised one.
@@ -99,7 +102,26 @@ final class DocumentWindowController: NSWindowController {
         let sidebarController = NSViewController()
         sidebarController.view = sidebarTabs
         let editorController = NSViewController()
-        editorController.view = documentArea
+        // 상태 표시가 편집기 **위에 떠야** 하므로 스택 뷰를 그대로 쓰지 못한다.
+        // 스택에 넣으면 흐름에 끼어들어 편집기를 밀어낸다. 그래서 담는 뷰를 하나 두고
+        // 편집기 영역을 꽉 채운 뒤 그 위에 겹친다.
+        let editorContainer = NSView()
+        documentArea.translatesAutoresizingMaskIntoConstraints = false
+        editorContainer.addSubview(documentArea)
+        editorContainer.addSubview(statusOverlay)
+        NSLayoutConstraint.activate([
+            documentArea.leadingAnchor.constraint(equalTo: editorContainer.leadingAnchor),
+            documentArea.trailingAnchor.constraint(equalTo: editorContainer.trailingAnchor),
+            documentArea.topAnchor.constraint(equalTo: editorContainer.topAnchor),
+            documentArea.bottomAnchor.constraint(equalTo: editorContainer.bottomAnchor),
+
+            statusOverlay.centerXAnchor.constraint(equalTo: editorContainer.centerXAnchor),
+            statusOverlay.bottomAnchor.constraint(equalTo: editorContainer.bottomAnchor,
+                                                  constant: -22),
+            statusOverlay.widthAnchor.constraint(lessThanOrEqualTo: editorContainer.widthAnchor,
+                                                 constant: -48),
+        ])
+        editorController.view = editorContainer
         // Assigning contentViewController resizes the window to the content's
         // FITTING size. The editor has no intrinsic size, so that came out a
         // 520x380 sliver regardless of the window's contentRect. Declaring a
@@ -146,6 +168,8 @@ final class DocumentWindowController: NSWindowController {
         browserPanel.show(folderOf: markdownDocument?.fileURL)
         recentPanel.reload()
         window?.title = markdownDocument?.displayName ?? "제목 없음"
+        AppLog.info("문서를 열었습니다: \(markdownDocument?.displayName ?? "제목 없음")",
+                    detail: "\(markdown.count)자")
     }
 
     func documentContentDidChange() {
@@ -267,8 +291,10 @@ final class DocumentWindowController: NSWindowController {
             operation.showsPrintPanel = false
             operation.showsProgressPanel = true
             if operation.run() {
+                AppLog.info("PDF로 내보냈습니다", detail: url.path)
                 NSWorkspace.shared.activateFileViewerSelecting([url])
             } else {
+                AppLog.error("PDF 내보내기에 실패했습니다", detail: url.path)
                 let alert = NSAlert()
                 alert.messageText = "PDF 내보내기에 실패했습니다"
                 alert.informativeText = url.path
@@ -372,6 +398,10 @@ final class DocumentWindowController: NSWindowController {
     }
 
     private func presentTranslationFailure(_ error: Error) {
+        // 실패는 **두 곳에** 남는다. 경고창은 지금 알리기 위한 것이고, 기록은 나중에
+        // 다시 볼 수 있게 하기 위한 것이다. 경고창만 띄우면 닫는 순간 사라진다.
+        AppLog.error("번역하지 못했습니다", detail: error.localizedDescription)
+
         let alert = NSAlert()
         alert.messageText = "번역하지 못했습니다"
         alert.informativeText = error.localizedDescription
@@ -388,11 +418,29 @@ final class DocumentWindowController: NSWindowController {
         alert.runModal()
     }
 
+    /// 잘 된 일을 알린다. **가로막지 않는다** — 떠서 보이고 사라지며, 같은 내용이
+    /// 기록에 남으므로 놓쳐도 다시 볼 수 있다.
     private func report(_ message: String) {
-        let alert = NSAlert()
-        alert.messageText = message
-        alert.alertStyle = .informational
-        alert.runModal()
+        AppLog.info(message)
+        statusOverlay.show(message)
+    }
+
+    /// 잘 안 된 일 중 작업을 멈출 정도는 아닌 것. 기록에 남기고 떠서 알린다.
+    private func reportWarning(_ message: String, detail: String? = nil) {
+        AppLog.warning(message, detail: detail)
+        statusOverlay.show(message)
+    }
+
+    @objc func showActivityLog(_ sender: Any?) {
+        if logPanel == nil {
+            let panel = ActivityLogPanel(log: AppLog.shared)
+            logPanel = panel
+            // 기록이 바뀌면 열려 있는 창이 따라오게 한다.
+            AppLog.onChange = { [weak panel] in panel?.reload() }
+        }
+        logPanel?.reload()
+        logPanel?.showWindow(nil)
+        logPanel?.window?.makeKeyAndOrderFront(nil)
     }
 
     // MARK: Search
