@@ -189,41 +189,22 @@ public struct MarkdownTranslationPlan: Equatable {
         }
     }
 
-    /// 표의 한 행. `|`와 칸 정렬 공백은 리터럴이고, 칸 내용은 각각 **독립된 단위**다 —
-    /// 칸은 서로 문맥을 공유하지 않으므로 함께 넘길 이유가 없다.
+    /// 표의 한 행. **행 전체를 한 단위로** 넘기고 `|`만 자리표로 지킨다.
+    ///
+    /// 왜 바꿨는가(실측): 전에는 칸마다 독립된 단위였다. 번역기에 `검색` 한 낱말만
+    /// 넘어가니 문맥이 없어 `reference`가 나오고, `항목`은 `a head`가 됐다. 사람도
+    /// 낱말 하나만 보면 그렇게 읽는다 — 정보가 없는 것이 문제였다.
+    ///
+    /// 행을 통째로 넘기면 같은 행의 다른 칸이 문맥이 된다. 칸 경계는 `|`를 자리표로
+    /// 바꿔 지키므로, 번역기가 글을 옮겨도 칸의 개수와 자리는 보존된다. 번역기가
+    /// 자리표를 잃으면 `restored(from:)`이 끝에 붙여 내용을 잃지 않는다.
     private static func appendTableRow(_ range: NSRange, to builder: inout Builder,
                                        text: NSString, syntax: MarkdownSyntax) {
-        var cursor = range.location
-        let end = NSMaxRange(range)
-        while cursor < end {
-            let pipe = text.range(of: "|", options: [],
-                                  range: NSRange(location: cursor, length: end - cursor))
-            let cellEnd = pipe.location == NSNotFound ? end : pipe.location
-            if cellEnd > cursor {
-                appendCell(NSRange(location: cursor, length: cellEnd - cursor),
-                           to: &builder, text: text, syntax: syntax)
-            }
-            if pipe.location == NSNotFound { return }
-            builder.literal(pipe)
-            cursor = NSMaxRange(pipe)
-        }
-    }
-
-    private static func appendCell(_ range: NSRange, to builder: inout Builder,
-                                   text: NSString, syntax: MarkdownSyntax) {
-        let raw = text.substring(with: range)
-        let leading = raw.prefix(while: { $0 == " " || $0 == "\t" }).count
-        let trailing = raw.reversed().prefix(while: { $0 == " " || $0 == "\t" }).count
-        guard leading + trailing < (raw as NSString).length else {
-            builder.literal(range)
-            return
-        }
-        if leading > 0 { builder.literal(NSRange(location: range.location, length: leading)) }
-        builder.unit(NSRange(location: range.location + leading,
-                             length: range.length - leading - trailing), syntax: syntax)
-        if trailing > 0 {
-            builder.literal(NSRange(location: NSMaxRange(range) - trailing, length: trailing))
-        }
+        let row = LineToken(lineNumber: 0, range: range, kind: .tableRow,
+                            markerRanges: [], contentRange: range)
+        // `MarkdownTable`이 이미 `\|`와 인라인 코드 안의 막대를 가려 준다.
+        let separators = MarkdownTable.parseRow(row, in: text).separators
+        builder.unit(range, syntax: syntax, protecting: separators)
     }
 
     // MARK: Assemble
@@ -261,8 +242,12 @@ public struct MarkdownTranslationPlan: Equatable {
 
         mutating func literal(_ range: NSRange) { addLiteral(text.substring(with: range)) }
 
-        /// 한 줄의 본문(또는 표의 한 칸)을 단위 하나로 만든다. 보호 구간은 자리표가 된다.
-        mutating func unit(_ range: NSRange, syntax: MarkdownSyntax) {
+        /// 한 줄의 본문(또는 표의 한 행)을 단위 하나로 만든다. 보호 구간은 자리표가 된다.
+        ///
+        /// - Parameter protecting: 인라인 마크업 **말고도** 지켜야 하는 구간. 표의 `|`가
+        ///   여기로 온다 — 행을 한 단위로 넘기면서 칸 경계는 지켜야 하기 때문이다.
+        mutating func unit(_ range: NSRange, syntax: MarkdownSyntax,
+                           protecting extra: [NSRange] = []) {
             guard range.length > 0 else { return }
             var body = ""
             var protected: [ProtectedSpan] = []
@@ -291,34 +276,82 @@ public struct MarkdownTranslationPlan: Equatable {
                 ))
             }
 
-            var cursor = range.location
-            let end = NSMaxRange(range)
-            for token in syntax.scanInline(in: text, range: range) {
-                guard token.range.location >= cursor, NSMaxRange(token.range) <= end else { continue }
-                if token.range.location > cursor {
-                    body += text.substring(with: NSRange(location: cursor,
-                                                         length: token.range.location - cursor))
+            // 지킬 자리를 한 목록으로 모아 **위치 순으로** 적용한다. 인라인 토큰과
+            // 바깥에서 들어온 구간(표의 `|`)을 따로 돌면 순서가 섞여 자리표 번호와
+            // 실제 위치가 어긋난다.
+            enum Step {
+                case guard_(NSRange, ProtectedSpan.Role)
+                /// 번역기에 그대로 넘어가는 조각(강조의 내용 등).
+                case through(NSRange)
+
+                var location: Int {
+                    switch self {
+                    case let .guard_(range, _): return range.location
+                    case let .through(range): return range.location
+                    }
                 }
+            }
+
+            var steps: [Step] = []
+            let end = NSMaxRange(range)
+            var tokenRanges: [NSRange] = []
+
+            for token in syntax.scanInline(in: text, range: range) {
+                guard token.range.location >= range.location,
+                      NSMaxRange(token.range) <= end else { continue }
+                tokenRanges.append(token.range)
                 switch token.kind {
                 case .code, .autolink:
-                    protect(token.range, role: .standalone)
+                    steps.append(.guard_(token.range, .standalone))
                 case .link, .image, .strong, .emphasis, .strikethrough:
                     let content = token.contentRange
                     if content.location != NSNotFound, content.length > 0,
                        content.location >= token.range.location,
                        NSMaxRange(content) <= NSMaxRange(token.range) {
-                        protect(NSRange(location: token.range.location,
-                                        length: content.location - token.range.location),
-                                role: .opening)
-                        body += text.substring(with: content)
-                        protect(NSRange(location: NSMaxRange(content),
-                                        length: NSMaxRange(token.range) - NSMaxRange(content)),
-                                role: .closing)
+                        steps.append(.guard_(NSRange(location: token.range.location,
+                                                     length: content.location - token.range.location),
+                                             .opening))
+                        steps.append(.through(content))
+                        steps.append(.guard_(NSRange(location: NSMaxRange(content),
+                                                     length: NSMaxRange(token.range) - NSMaxRange(content)),
+                                             .closing))
                     } else {
-                        protect(token.range, role: .standalone)
+                        steps.append(.guard_(token.range, .standalone))
                     }
                 }
-                cursor = NSMaxRange(token.range)
+            }
+
+            for candidate in extra {
+                guard candidate.length > 0, candidate.location >= range.location,
+                      NSMaxRange(candidate) <= end else { continue }
+                // 인라인 토큰과 겹치면 넘긴다 — 코드 구간 안의 `|`는 칸을 나누지 않는다.
+                let overlaps = tokenRanges.contains { NSIntersectionRange($0, candidate).length > 0 }
+                guard !overlaps else { continue }
+                steps.append(.guard_(candidate, .standalone))
+            }
+
+            steps.sort { $0.location < $1.location }
+
+            var cursor = range.location
+            for step in steps {
+                switch step {
+                case let .guard_(guarded, role):
+                    guard guarded.location >= cursor else { continue }
+                    if guarded.location > cursor {
+                        body += text.substring(with: NSRange(location: cursor,
+                                                             length: guarded.location - cursor))
+                    }
+                    protect(guarded, role: role)
+                    cursor = NSMaxRange(guarded)
+                case let .through(passed):
+                    guard passed.location >= cursor else { continue }
+                    if passed.location > cursor {
+                        body += text.substring(with: NSRange(location: cursor,
+                                                             length: passed.location - cursor))
+                    }
+                    body += text.substring(with: passed)
+                    cursor = NSMaxRange(passed)
+                }
             }
             if cursor < end {
                 body += text.substring(with: NSRange(location: cursor, length: end - cursor))

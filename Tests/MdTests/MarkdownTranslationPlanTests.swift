@@ -160,8 +160,46 @@ final class MarkdownTranslationPlanTests: XCTestCase {
         XCTAssertTrue(plan("| --- | ---: |\n").units.isEmpty)
     }
 
-    func testEachTableCellIsItsOwnUnit() {
-        XCTAssertEqual(plan("| 열 하나 | 열 둘 |\n").translatableTexts, ["열 하나", "열 둘"])
+    func testATableRowIsOneUnitSoCellsHaveContext() {
+        // 전에는 칸마다 독립 단위였다. 번역기에 `검색` 한 낱말만 넘어가니 문맥이 없어
+        // `reference`가 나왔다. 행을 통째로 넘기면 같은 행의 다른 칸이 문맥이 된다.
+        let made = plan("| 열 하나 | 열 둘 |\n")
+        XCTAssertEqual(made.units.count, 1, "행이 여러 단위로 쪼개졌다")
+        XCTAssertEqual(made.units[0].protected.count, 3, "막대 셋이 지켜지지 않았다")
+        XCTAssertEqual(made.units[0].protected.map(\.text), ["|", "|", "|"])
+        // 번역기에 넘어가는 글에는 두 칸의 내용이 함께 있다.
+        let sent = made.translatableTexts[0]
+        XCTAssertTrue(sent.contains("열 하나"), sent)
+        XCTAssertTrue(sent.contains("열 둘"), sent)
+    }
+
+    func testTableCellBoundariesSurviveATranslatorThatReordersText() {
+        // 칸 경계가 섞이면 표가 망가진다. 자리표가 그것을 막는다.
+        let made = plan("| 가 | 나 | 다 |\n")
+        let unit = made.units[0]
+        // 번역기가 칸 내용을 바꿔 돌려준 것처럼 꾸민다(자리표는 그대로 둔다).
+        let translated = unit.text
+            .replacingOccurrences(of: "가", with: "one")
+            .replacingOccurrences(of: "나", with: "two")
+            .replacingOccurrences(of: "다", with: "three")
+        let restored = unit.restored(from: translated)
+        XCTAssertEqual(restored.filter { $0 == "|" }.count, 4, "막대 수가 달라졌다: \(restored)")
+        XCTAssertTrue(restored.contains("| one |"), restored)
+        XCTAssertTrue(restored.contains("| three |"), restored)
+    }
+
+    func testAPipeInsideInlineCodeIsNotTreatedAsACellBoundary() {
+        // `a|b`의 막대는 칸을 나누지 않는다. 지켜야 할 것은 인라인 코드 전체다.
+        let made = plan("| `a|b` | 다 |\n")
+        let unit = made.units[0]
+        XCTAssertTrue(unit.protected.map(\.text).contains("`a|b`"),
+                      "인라인 코드가 지켜지지 않았다: \(unit.protected.map(\.text))")
+    }
+
+    func testTableRowStillAssemblesBackToTheSource() {
+        // 항등 조립 불변식. 행을 한 단위로 바꿨어도 깨지면 안 된다.
+        assertRoundTrips("| 열 하나 | 열 둘 |\n| --- | --- |\n| 가 | 나 |\n")
+        assertRoundTrips("| **굵게** | `코드` | [링크](https://a.b) |\n| --- | --- | --- |\n")
     }
 
     func testTableRoundTripKeepsAlignmentSpacing() {
