@@ -21,7 +21,12 @@ public final class MarkdownEditorView: NSView {
     private let layout = NSLayoutManager()
     private let container: NSTextContainer
     private let styler = MarkdownStyler()
-    private var theme = MarkdownTheme()
+    /// 편집기와 스타일러가 **같은 테마를 봐야 한다.** 둘은 각자 인스턴스를 들고
+    /// 있어서 기본값이 같을 때는 들키지 않지만, 한쪽만 바꾸면 글자 크기가 반쪽만
+    /// 적용된다. 그래서 여기서 바뀔 때마다 스타일러에도 넘긴다.
+    private var theme = MarkdownTheme() {
+        didSet { styler.theme = theme }
+    }
 
     private var searchState = MarkdownStyler.SearchState()
     private var currentQuery = ""
@@ -48,6 +53,7 @@ public final class MarkdownEditorView: NSView {
 
     private func configure() {
         layout.delegate = self
+        styler.theme = theme
 
         textView.isEditable = true
         textView.isRichText = false
@@ -181,6 +187,17 @@ public final class MarkdownEditorView: NSView {
             line += 1
         }
         return line
+    }
+
+    /// 설정을 싣는다. 설정 화면의 각 항목이 여기서 실제 코드 경로로 이어진다.
+    public func apply(_ preferences: EditorPreferences) {
+        theme.bodyPointSize = preferences.bodyPointSize      // didSet이 스타일러에 넘긴다
+        styler.highlightsCode = preferences.highlightCode
+        styler.alignsTables = preferences.alignTables
+        styler.appliesSyntheticSlant = preferences.syntheticSlant
+        textView.textContainerInset = theme.textInsets
+        textView.insertionPointColor = theme.insertionPoint
+        restyleAll()
     }
 
     /// 스타일러가 센 코드 블록 범위를 그리는 쪽에 넘긴다. 배경은 글자의 성질이

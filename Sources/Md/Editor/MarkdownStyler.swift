@@ -30,6 +30,12 @@ public final class MarkdownStyler {
     /// 범위만 넘긴다. 코드 보기에서는 비어 있다(그때는 문서 전체가 날 글자다).
     public private(set) var codeBlockRanges: [NSRange] = []
 
+    /// 설정에서 오는 켜고 끄기. 설정 화면의 각 항목이 **실제로 여기에 닿는다** —
+    /// 아무 일도 하지 않는 설정은 사용자가 자기 잘못을 찾느라 시간을 버리게 만든다.
+    public var highlightsCode = true
+    public var alignsTables = true
+    public var appliesSyntheticSlant = true
+
     private let syntax = MarkdownSyntax()
 
     public init() {}
@@ -56,7 +62,7 @@ public final class MarkdownStyler {
 
         // 편집이 표에 닿으면 **표 전체**를 다시 칠한다. 한 칸을 넓히면 그 열의 너비가
         // 바뀌므로 다른 행의 글자 간격이 낡는다. 그 줄만 칠하면 표가 어긋난 채 남는다.
-        if writeRange.length != full.length {
+        if alignsTables, writeRange.length != full.length {
             writeRange = extendedOverTables(writeRange, in: text, limit: full)
         }
 
@@ -107,10 +113,14 @@ public final class MarkdownStyler {
             apply(line, in: storage, text: text, caretLine: caretLine)
         }
 
-        highlightCode(lines: lines, in: storage, text: text, writeRange: writeRange)
+        if highlightsCode {
+            highlightCode(lines: lines, in: storage, text: text, writeRange: writeRange)
+        }
         // 표 맞추기는 **마커 숨김이 끝난 뒤**여야 한다. 보이는 너비를 재려면
         // 어느 글자가 숨었는지 이미 정해져 있어야 하기 때문이다.
-        alignTables(lines, in: storage, text: text, writeRange: writeRange)
+        if alignsTables {
+            alignTables(lines, in: storage, text: text, writeRange: writeRange)
+        }
 
         for (index, range) in search.ranges.enumerated()
         where NSMaxRange(range) <= text.length && NSIntersectionRange(range, writeRange).length > 0 {
@@ -406,7 +416,9 @@ public final class MarkdownStyler {
                 // 한글·일본어·중국어에는 기울임꼴이 없어 글꼴을 바꿔도 그림이 한 픽셀도
                 // 달라지지 않는다(실측). 그 글자에만 강제 기울임을 더한다 — 모든 글자에
                 // 주면 진짜 기울임꼴을 받는 영문이 두 번 기울어 지나치게 눕는다.
-                for slantRange in SyntheticSlant.ranges(in: text, range: token.contentRange) {
+                for slantRange in (appliesSyntheticSlant
+                                   ? SyntheticSlant.ranges(in: text, range: token.contentRange)
+                                   : []) {
                     storage.addAttribute(.obliqueness,
                                          value: SyntheticSlant.obliqueness,
                                          range: slantRange)

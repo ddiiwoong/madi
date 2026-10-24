@@ -106,8 +106,9 @@ enum AppMenu {
                         action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
                         keyEquivalent: "")
         appMenu.addItem(.separator())
-        let settings = appMenu.addItem(withTitle: "설정…", action: nil, keyEquivalent: ",")
-        settings.isEnabled = false
+        appMenu.addItem(withTitle: "설정…",
+                        action: #selector(DocumentWindowController.showSettings(_:)),
+                        keyEquivalent: ",")
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Md 가리기", action: #selector(NSApplication.hide(_:)),
                         keyEquivalent: "h")

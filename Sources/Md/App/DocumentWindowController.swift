@@ -18,6 +18,9 @@ final class DocumentWindowController: NSWindowController {
     private var searchDebounce: DispatchWorkItem?
     /// 떠 있는 기록 창. 처음 열 때 만들고 그다음부터 같은 것을 다시 보인다.
     private var logPanel: ActivityLogPanel?
+    /// 설정 창도 같은 방식으로 하나만 둔다.
+    private var settingsPanel: SettingsPanel?
+    private let preferences = PreferenceStore()
 
     /// The document's front matter, kept so the body can be re-joined with the
     /// ORIGINAL block on every save rather than a re-serialised one.
@@ -155,6 +158,10 @@ final class DocumentWindowController: NSWindowController {
         toolbar.allowsUserCustomization = false
         window?.toolbar = toolbar
         if #available(macOS 11.0, *) { window?.toolbarStyle = .unified }
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(preferencesDidChange(_:)),
+            name: PreferenceStore.didChange, object: nil)
+        editor.apply(preferences.current)
     }
 
     // MARK: Document content
@@ -168,6 +175,7 @@ final class DocumentWindowController: NSWindowController {
         browserPanel.show(folderOf: markdownDocument?.fileURL)
         recentPanel.reload()
         window?.title = markdownDocument?.displayName ?? "제목 없음"
+        editor.apply(preferences.current)
         AppLog.info("문서를 열었습니다: \(markdownDocument?.displayName ?? "제목 없음")",
                     detail: "\(markdown.count)자")
     }
@@ -429,6 +437,19 @@ final class DocumentWindowController: NSWindowController {
     private func reportWarning(_ message: String, detail: String? = nil) {
         AppLog.warning(message, detail: detail)
         statusOverlay.show(message)
+    }
+
+    @objc func showSettings(_ sender: Any?) {
+        if settingsPanel == nil {
+            settingsPanel = SettingsPanel(store: preferences)
+        }
+        settingsPanel?.showWindow(nil)
+        settingsPanel?.window?.makeKeyAndOrderFront(nil)
+    }
+
+    /// 설정이 바뀌면 이 창에 바로 싣는다. 창마다 따로 받으므로 여러 창이 함께 바뀐다.
+    @objc private func preferencesDidChange(_ note: Notification) {
+        editor.apply(preferences.current)
     }
 
     @objc func showActivityLog(_ sender: Any?) {
