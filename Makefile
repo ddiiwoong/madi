@@ -97,6 +97,11 @@ universal: generate
 #   CGFloat      → 못 잡음 (macOS의 Foundation이 이미 노출한다)
 # 맨 `CGFloat`은 Double의 다른 이름이라 이식에 걸림돌이 아니고, 걸림돌이 되는
 # AppKit 타입과 CoreGraphics API는 잡힌다.
+#
+# **맹점**: 이 검사는 "macOS에서 AppKit 없이 서는지"를 보는 것이고 "다른 플랫폼으로
+# 옮길 수 있는지"를 보는 것이 아니다. `import Compression`을 Core에 넣어도 통과한다 —
+# macOS SDK에 있기 때문이다. 그러나 Windows에는 없다. 그래서 압축 해제는 검사에
+# 기대지 않고 **설계로** Core 밖에 뒀다(`Services/Inflate.swift`, 주입해서 쓴다).
 .PHONY: core-only
 core-only:
 	@rm -rf $(BUILD)/core-only && mkdir -p $(BUILD)/core-only

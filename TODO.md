@@ -21,6 +21,7 @@
 - 인라인 그림(자기 줄 차지, 원문 불변, 원격 주소는 받지 않음)
 - 이미지 포함 내보내기(base64 단일 파일, 코드 블록은 건드리지 않음)
 - 표 번역 문맥(행을 한 단위로, 칸 경계는 자리표로 보존)
+- EPUB용 ZIP 리더(Core, 압축 해제는 주입) + CRC-32
 - `make core-only` — Core가 Foundation만으로 서는지 지키는 검사
 - `NSDocument` 기반 열기/저장/자동 저장/최근 문서
 - Apple 번역 `⌘⇧T` — 마크다운 구조 보존(자리표), 긴 문단 800자 청킹,
@@ -273,10 +274,18 @@ meta charset 없음 + 옵션 있음 → 한국어 본문      ✓
 
 ### 할 일
 
-- [ ] **ZIP 컨테이너 읽기.** `Compression`이 주는 것은 DEFLATE뿐이고 ZIP **구조**는 직접
-      걸어가야 한다 — 끝의 중앙 디렉터리(EOCD) 찾기, 중앙 디렉터리 항목 훑기, 로컬 헤더
-      읽기, 항목별 inflate. 200~300줄로 본다. EPUB은 `mimetype` 항목이 맨 처음에
-      **무압축으로** 있어야 한다고 규정하므로 그것으로 EPUB인지 빠르게 가린다.
+- [x] **ZIP 컨테이너 읽기** — `ZipArchive`(Core, 244줄). EOCD를 끝에서 거꾸로 찾고
+      (뒤에 주석이 최대 64KB 붙을 수 있어 자리가 고정이 아니다) 중앙 디렉터리를 훑고
+      로컬 헤더로 자료 자리를 찾는다. CRC-32를 직접 써서 상한 파일을 거른다.
+      **압축 해제는 주입받는다** — `Compression`은 Apple 프레임워크라 Core에서
+      `import`하면 Core가 플랫폼에 묶이는데 `make core-only`는 그것을 잡지 못한다
+      (macOS SDK에 있어 통과한다). 검사가 못 잡는 것은 설계로 막았다
+      (`Services/Inflate.swift`).
+      ZIP64(4GB 초과)는 거절한다 — 잘못 읽는 것보다 낫다. 저장 방식은 0·8만 받는다.
+      실제 EPUB으로 확인: 2MB 책의 항목 102개, `mimetype`이 맨 앞 무압축,
+      `container.xml` 해제 성공, 가장 큰 챕터 39,670→240,212바이트 CRC 통과.
+      표준 `/usr/bin/zip`이 만든 파일로 테스트한다(손으로 만든 바이트로 하면
+      "내가 쓴 것을 내가 읽는다"가 되어 증거가 되지 않는다).
 - [ ] **OPF 읽기.** `META-INF/container.xml` → OPF 경로 → manifest(id→href→media-type) ·
       spine(읽는 순서) · metadata(제목·저자·언어). XPath로 되는 것은 확인했다.
 - [ ] **목차.** EPUB 3은 `epub:type="toc"`가 붙은 XHTML nav, EPUB 2는 NCX다. **둘 다**
