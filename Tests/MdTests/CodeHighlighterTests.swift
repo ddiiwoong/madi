@@ -156,4 +156,106 @@ final class CodeHighlighterTests: XCTestCase {
     func testEmptyCodeProducesNoSpans() {
         XCTAssertTrue(CodeHighlighter.spans(in: "", language: .swift).isEmpty)
     }
+
+    // MARK: 새로 넣은 여섯 언어 — 각자의 함정을 하나씩 못박는다
+
+    func testNewLanguageNamesAndAliases() {
+        XCTAssertEqual(CodeLanguage.named("rs"), .rust)
+        XCTAssertEqual(CodeLanguage.named("golang"), .go)
+        XCTAssertEqual(CodeLanguage.named("yml"), .yaml)
+        XCTAssertEqual(CodeLanguage.named("SCSS"), .css)
+        XCTAssertEqual(CodeLanguage.named("svg"), .html)
+        XCTAssertEqual(CodeLanguage.named("postgresql"), .sql)
+    }
+
+    func testRustLifetimeIsNotReadAsAString() {
+        // 함정: `'`를 문자열 구분자로 두면 `&'a str`에서 문자열이 시작돼 줄 끝까지
+        // 빨갛게 된다. 수명이 문자 리터럴보다 훨씬 흔하므로 `'`를 쓰지 않는다.
+        let code = "fn f<'a>(s: &'a str) -> &'a str { s }"
+        XCTAssertTrue(text(code, .rust, .string).isEmpty,
+                      "수명이 문자열로 읽혔다: \(text(code, .rust, .string))")
+        XCTAssertEqual(text(code, .rust, .keyword), ["fn"])
+        XCTAssertEqual(text(code, .rust, .type), ["str", "str"])
+    }
+
+    func testRustBlockCommentsNest() {
+        let code = "/* a /* b */ c */ fn main() {}"
+        XCTAssertEqual(text(code, .rust, .comment), ["/* a /* b */ c */"])
+        XCTAssertEqual(text(code, .rust, .keyword), ["fn"])
+    }
+
+    func testGoRawStringSpansLines() {
+        let code = "s := `여러\n줄`\nfunc f() {}"
+        XCTAssertEqual(text(code, .go, .string), ["`여러\n줄`"])
+        XCTAssertEqual(text(code, .go, .keyword), ["func"])
+    }
+
+    func testCssHasNoLineCommentsSoUrlsSurvive() {
+        // 함정: CSS에 `//`는 주석이 아니다. 주석으로 다루면 URL의 뒷부분이 사라진다.
+        let code = "a { background: url(//example.com/a.png); }"
+        XCTAssertTrue(text(code, .css, .comment).isEmpty,
+                      "URL이 주석으로 먹혔다: \(text(code, .css, .comment))")
+    }
+
+    func testCssBlockCommentStillWorks() {
+        let code = "/* 설명 */ a { color: red; }"
+        XCTAssertEqual(text(code, .css, .comment), ["/* 설명 */"])
+    }
+
+    func testHtmlCommentDelimiters() {
+        let code = "<!-- 숨긴 <div> -->\n<p>본문</p>"
+        XCTAssertEqual(text(code, .html, .comment), ["<!-- 숨긴 <div> -->"])
+        // 주석 안의 div는 키워드가 아니고, 주석 밖의 p는 키워드다.
+        XCTAssertEqual(text(code, .html, .keyword), ["p", "p"])
+    }
+
+    func testSqlKeywordsAreCaseInsensitive() {
+        // 함정: `SELECT`와 `select`가 같은 키워드다. 대소문자를 가리면 한쪽만 칠해진다.
+        XCTAssertEqual(text("SELECT * FROM t", .sql, .keyword), ["SELECT", "FROM"])
+        XCTAssertEqual(text("select * from t", .sql, .keyword), ["select", "from"])
+        XCTAssertEqual(text("Select * From t", .sql, .keyword), ["Select", "From"])
+    }
+
+    func testSqlUsesDoubleDashForLineComments() {
+        let code = "-- 설명\nSELECT 1"
+        XCTAssertEqual(text(code, .sql, .comment), ["-- 설명"])
+        XCTAssertEqual(text(code, .sql, .keyword), ["SELECT"])
+    }
+
+    func testSqlSingleQuotedStrings() {
+        let code = "SELECT * FROM t WHERE name = '한국어'"
+        XCTAssertEqual(text(code, .sql, .string), ["'한국어'"])
+    }
+
+    func testYamlCommentAndLiterals() {
+        let code = "# 설명\nenabled: true\nname: \"값\""
+        XCTAssertEqual(text(code, .yaml, .comment), ["# 설명"])
+        XCTAssertEqual(text(code, .yaml, .keyword), ["true"])
+        XCTAssertEqual(text(code, .yaml, .string), ["\"값\""])
+    }
+
+    func testEveryLanguageSurvivesKoreanWithoutShiftingOffsets() {
+        // 언어를 더할 때마다 UTF-16 오프셋을 깨뜨릴 수 있다. 전부 한 번에 지킨다.
+        for language in CodeLanguage.allCases {
+            let code = "한국어 주석과 \"한국어 문자열\" 그리고 🎉\nx = 1"
+            let ns = code as NSString
+            for span in CodeHighlighter.spans(in: code, language: language) {
+                XCTAssertLessThanOrEqual(NSMaxRange(span.range), ns.length,
+                                         "\(language)에서 구간이 문서를 넘었다")
+                XCTAssertGreaterThanOrEqual(span.range.location, 0)
+            }
+        }
+    }
+
+    func testEveryLanguageProducesOrderedNonOverlappingSpans() {
+        for language in CodeLanguage.allCases {
+            let code = "a \"s\" 1 b\nc = 2"
+            var previousEnd = 0
+            for span in CodeHighlighter.spans(in: code, language: language) {
+                XCTAssertGreaterThanOrEqual(span.range.location, previousEnd,
+                                            "\(language)에서 구간이 겹쳤다")
+                previousEnd = NSMaxRange(span.range)
+            }
+        }
+    }
 }

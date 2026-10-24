@@ -11,6 +11,12 @@ public enum CodeLanguage: Sendable, Equatable, CaseIterable {
     case python
     case shell
     case json
+    case rust
+    case go
+    case yaml
+    case css
+    case html
+    case sql
 
     /// 펜스의 정보 문자열(```` ```swift ````의 `swift`)을 언어로 읽는다.
     public static func named(_ raw: String?) -> CodeLanguage? {
@@ -22,6 +28,12 @@ public enum CodeLanguage: Sendable, Equatable, CaseIterable {
         case "py", "python", "python3": return .python
         case "sh", "shell", "bash", "zsh", "console", "terminal": return .shell
         case "json", "jsonc": return .json
+        case "rs", "rust": return .rust
+        case "go", "golang": return .go
+        case "yml", "yaml": return .yaml
+        case "css", "scss", "less": return .css
+        case "html", "htm", "xml", "svg", "xhtml": return .html
+        case "sql", "postgresql", "psql", "mysql", "sqlite": return .sql
         default: return nil
         }
     }
@@ -172,9 +184,12 @@ public enum CodeHighlighter {
                     word.append(chars[index])
                     advance()
                 }
-                if rules.keywords.contains(word) {
+                // SQL은 `SELECT`와 `select`가 같은 키워드다. 대소문자를 가리는
+                // 비교만 쓰면 둘 중 한쪽만 칠해진다.
+                let lookup = rules.caseInsensitiveKeywords ? word.lowercased() : word
+                if rules.keywords.contains(lookup) {
                     emit(start, .keyword)
-                } else if rules.types.contains(word) {
+                } else if rules.types.contains(lookup) {
                     emit(start, .type)
                 } else if rules.capitalizedAreTypes, let first = word.first, first.isUppercase {
                     emit(start, .type)
@@ -222,6 +237,10 @@ public enum CodeHighlighter {
         var types: Set<String> = []
         /// 대문자로 시작하는 식별자를 타입으로 볼지. 그 관례가 통하는 언어에서만 켠다.
         var capitalizedAreTypes = false
+        /// 키워드를 대소문자 가리지 않고 볼지. SQL에서만 켠다 — `SELECT`와 `select`가
+        /// 같은 키워드이고, 둘 다 현실에서 쓰인다. 이때 `keywords`·`types`는 **소문자로**
+        /// 적어야 한다(조회 전에 낱말을 소문자로 바꾼다).
+        var caseInsensitiveKeywords = false
 
         static func of(_ language: CodeLanguage) -> Rules {
             switch language {
@@ -313,6 +332,119 @@ public enum CodeHighlighter {
                 return Rules(
                     stringDelimiters: ["\""],
                     keywords: ["true", "false", "null"]
+                )
+
+            case .rust:
+                // **`'`를 문자열 구분자로 넣지 않는다.** Rust에서 `'`는 문자 리터럴
+                // (`'a'`)이기도 하지만 **수명**(`&'a str`, `'static`)이기도 하고,
+                // 수명이 훨씬 흔하다. `'`를 열림으로 보면 `&'a str`에서 문자열이
+                // 시작돼 줄 끝까지 빨갛게 된다. 문자 리터럴을 포기하는 쪽이 싸다.
+                return Rules(
+                    lineComments: ["//"],
+                    blockComment: ("/*", "*/"),
+                    nestedBlockComments: true,
+                    stringDelimiters: ["\""],
+                    keywords: [
+                        "as", "async", "await", "break", "const", "continue", "crate", "dyn",
+                        "else", "enum", "extern", "false", "fn", "for", "if", "impl", "in",
+                        "let", "loop", "match", "mod", "move", "mut", "pub", "ref", "return",
+                        "self", "Self", "static", "struct", "super", "trait", "true", "type",
+                        "union", "unsafe", "use", "where", "while",
+                    ],
+                    types: [
+                        "bool", "char", "f32", "f64", "i8", "i16", "i32", "i64", "i128",
+                        "isize", "str", "u8", "u16", "u32", "u64", "u128", "usize",
+                        "String", "Vec", "Option", "Result", "Box", "Rc", "Arc",
+                    ],
+                    capitalizedAreTypes: true
+                )
+
+            case .go:
+                return Rules(
+                    lineComments: ["//"],
+                    blockComment: ("/*", "*/"),
+                    stringDelimiters: ["\"", "'", "`"],
+                    multilineDelimiters: ["`"],      // 날 문자열은 줄을 넘는다
+                    keywords: [
+                        "break", "case", "chan", "const", "continue", "default", "defer",
+                        "else", "fallthrough", "for", "func", "go", "goto", "if", "import",
+                        "interface", "map", "package", "range", "return", "select", "struct",
+                        "switch", "type", "var", "nil", "true", "false", "iota",
+                    ],
+                    types: [
+                        "bool", "byte", "complex64", "complex128", "error", "float32",
+                        "float64", "int", "int8", "int16", "int32", "int64", "rune", "string",
+                        "uint", "uint8", "uint16", "uint32", "uint64", "uintptr", "any",
+                    ]
+                )
+
+            case .yaml:
+                // 블록 주석이 없다. `|`와 `>`의 여러 줄 문자열은 다루지 않는다 —
+                // 들여쓰기로 끝이 정해지므로 이 스캐너의 구조로는 맞출 수 없다.
+                // 그 블록은 그냥 평문으로 남는다(틀리게 칠하는 것보다 낫다).
+                return Rules(
+                    lineComments: ["#"],
+                    stringDelimiters: ["\"", "'"],
+                    keywords: [
+                        "true", "false", "null", "yes", "no", "on", "off",
+                        "True", "False", "Null", "~",
+                    ]
+                )
+
+            case .css:
+                // **줄 주석이 없다.** CSS에 `//`는 주석이 아니다 — 그렇게 다루면
+                // `url(//example.com/a.png)`의 뒷부분이 주석으로 사라진다.
+                // (SCSS/LESS에는 `//`가 있지만, 둘을 섞어 쓰면 순수 CSS가 깨진다.)
+                return Rules(
+                    blockComment: ("/*", "*/"),
+                    stringDelimiters: ["\"", "'"],
+                    keywords: [
+                        "important", "inherit", "initial", "unset", "none", "auto",
+                        "and", "not", "only", "from", "to", "var", "calc",
+                    ]
+                )
+
+            case .html:
+                // 주석이 `<!-- -->`다. 태그 이름을 키워드로 두면 `<div>`의 `div`가
+                // 칠해진다 — 여는 꺾쇠는 구두점이라 따로 다루지 않는다.
+                return Rules(
+                    blockComment: ("<!--", "-->"),
+                    stringDelimiters: ["\"", "'"],
+                    keywords: [
+                        "a", "article", "aside", "body", "br", "button", "canvas", "code",
+                        "div", "em", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6",
+                        "head", "header", "hr", "html", "iframe", "img", "input", "label",
+                        "li", "link", "main", "meta", "nav", "ol", "option", "p", "pre",
+                        "script", "section", "select", "span", "strong", "style", "svg",
+                        "table", "tbody", "td", "textarea", "th", "thead", "title", "tr",
+                        "ul", "video", "DOCTYPE",
+                    ]
+                )
+
+            case .sql:
+                // 줄 주석이 `--`다(`//`가 아니다). 키워드는 대소문자를 가리지 않으므로
+                // 아래 낱말은 **소문자로** 적는다.
+                return Rules(
+                    lineComments: ["--"],
+                    blockComment: ("/*", "*/"),
+                    stringDelimiters: ["'", "\""],
+                    keywords: [
+                        "add", "all", "alter", "and", "as", "asc", "begin", "between", "by",
+                        "case", "cast", "coalesce", "column", "commit", "constraint", "create",
+                        "cross", "default", "delete", "desc", "distinct", "drop", "else", "end",
+                        "exists", "foreign", "from", "full", "group", "having", "if", "in",
+                        "index", "inner", "insert", "into", "is", "join", "key", "left",
+                        "like", "limit", "not", "null", "offset", "on", "or", "order", "outer",
+                        "primary", "references", "returning", "right", "rollback", "select",
+                        "set", "table", "then", "transaction", "union", "unique", "update",
+                        "using", "values", "view", "when", "where", "with",
+                    ],
+                    types: [
+                        "bigint", "boolean", "bytea", "char", "date", "decimal", "double",
+                        "float", "int", "integer", "json", "jsonb", "numeric", "real",
+                        "serial", "smallint", "text", "time", "timestamp", "uuid", "varchar",
+                    ],
+                    caseInsensitiveKeywords: true
                 )
             }
         }
