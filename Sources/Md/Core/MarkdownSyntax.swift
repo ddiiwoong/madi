@@ -228,8 +228,15 @@ public struct MarkdownSyntax: Sendable {
         for m in Self.strikethrough.matches(in: line, range: whole) {
             add(.strikethrough, m, content: 1, markers: markerPair(m, contentIndex: 1))
         }
-        for m in Self.emphasis.matches(in: line, range: whole) {
-            add(.emphasis, m, content: 2, markers: markerPair(m, contentIndex: 2))
+        // 기울임은 구분자에 따라 규칙이 다르다. CommonMark에서 `*`는 낱말 안 강조를
+        // 허용하고 `_`는 금지한다. 둘을 한 정규식으로 묶어 낱말 경계를 요구하면
+        // **한국어에서 거의 쓸 수 없게 된다** — 조사가 바로 붙기 때문이다
+        // (`*기울임*은`에서 `은`이 낱말 글자라 강조가 깨졌다. 실측).
+        for m in Self.emphasisStar.matches(in: line, range: whole) {
+            add(.emphasis, m, content: 1, markers: markerPair(m, contentIndex: 1))
+        }
+        for m in Self.emphasisUnderscore.matches(in: line, range: whole) {
+            add(.emphasis, m, content: 1, markers: markerPair(m, contentIndex: 1))
         }
 
         return tokens.sorted { $0.range.location < $1.range.location }
@@ -264,7 +271,13 @@ public struct MarkdownSyntax: Sendable {
     private static let link = regex(#"\[([^\]\n]+)\]\(([^)\s]+)[^)]*\)"#)
     private static let autolink = regex(#"<((?:https?|mailto):[^>\s]+)>"#)
     private static let strong = regex(#"(\*\*|__)(?=\S)(.+?)(?<=\S)\1"#)
-    private static let emphasis = regex(#"(?<![*\w])(\*|_)(?=\S)([^*_\n]+?)(?<=\S)\1(?![*\w])"#)
+    /// `*`로 감싼 기울임. **낱말 경계를 요구하지 않는다** — CommonMark가 `*`의 낱말 안
+    /// 강조를 허용하고, 한국어는 조사가 바로 붙어(`*기울임*은`) 경계를 요구하면 못 쓴다.
+    /// 내용에 `_`는 허용한다(`*a_b*`).
+    private static let emphasisStar = regex(#"(?<!\*)\*(?=\S)([^*\n]+?)(?<=\S)\*(?!\*)"#)
+    /// `_`로 감싼 기울임. CommonMark대로 낱말 안 강조를 **금지한다**(`snake_case_name`이
+    /// 기울어지면 안 된다). 내용에 `*`는 허용한다.
+    private static let emphasisUnderscore = regex(#"(?<![\w_])_(?=\S)([^_\n]+?)(?<=\S)_(?![\w_])"#)
     private static let strikethrough = regex(#"~~(?=\S)(.+?)(?<=\S)~~"#)
 
     private static func regex(_ pattern: String) -> NSRegularExpression {
