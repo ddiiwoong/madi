@@ -79,6 +79,38 @@ universal: generate
 	done; \
 	echo "universal: $(UNIVERSAL_APP)"
 
+# Core가 **Foundation만으로 서는지** 확인한다.
+#
+# 이 불변식은 조용히 깨진다. `ImageReference`에 `CGSize`를 쓴 적이 있는데, 앱 빌드에서는
+# 같은 모듈의 AppKit이 CoreGraphics를 끌어와 아무 오류도 나지 않았다. Core만 따로
+# 컴파일했을 때 비로소 드러났다. 다른 플랫폼으로 옮길 수 있다는 TODO의 전제가
+# 이 한 줄로 깨지므로 타깃으로 지킨다.
+#
+# `-parse`가 아니라 `-typecheck`를 쓴다. 처음에 `-parse`로 썼더니 Core에 AppKit
+# 타입을 일부러 넣어도 **통과했다** — 구문만 보고 타입 이름을 풀지 않기 때문이다.
+# 실패하지 못하는 검사는 없는 것보다 나쁘므로 양쪽을 다 시험해 골랐다.
+#
+# 무엇을 잡는지 실측했다(2026-10-25):
+#   NSColor      → 잡음
+#   NSView       → 잡음
+#   CGSize.zero  → 잡음   (실제로 깨졌던 바로 그 경우)
+#   CGFloat      → 못 잡음 (macOS의 Foundation이 이미 노출한다)
+# 맨 `CGFloat`은 Double의 다른 이름이라 이식에 걸림돌이 아니고, 걸림돌이 되는
+# AppKit 타입과 CoreGraphics API는 잡힌다.
+.PHONY: core-only
+core-only:
+	@rm -rf $(BUILD)/core-only && mkdir -p $(BUILD)/core-only
+	@cp Sources/Md/Core/*.swift $(BUILD)/core-only/
+	@cd $(BUILD)/core-only && swiftc -swift-version 6 -typecheck *.swift > parse.log 2>&1; \
+	status=$$?; \
+	if [ $$status -ne 0 ]; then \
+		echo "Core가 Foundation만으로 서지 않습니다:"; \
+		grep "error:" parse.log | head -10; \
+		echo "AppKit/CoreGraphics 타입(CGFloat·CGSize·NSColor…)이 Core에 들어왔는지 보세요."; \
+		exit 1; \
+	fi
+	@echo "core-only: Core $$(ls Sources/Md/Core/*.swift | wc -l | tr -d ' ')개 파일이 Foundation만으로 섭니다"
+
 clean:
 	rm -rf $(BUILD) $(PROJECT)
 

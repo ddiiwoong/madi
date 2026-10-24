@@ -242,7 +242,11 @@ public final class MarkdownStyler {
 
             guard let url = ImageReference.localURL(for: raw, relativeTo: documentURL),
                   let image = imageStore.image(at: url) else { continue }
-            let size = ImageReference.displaySize(for: image.size, maxWidth: contentWidth)
+            // AppKit의 CGSize를 Core의 Foundation 전용 타입으로 바꿔 넘긴다.
+            let pixels = ImageReference.Size(width: Double(image.size.width),
+                                             height: Double(image.size.height))
+            let display = ImageReference.displaySize(for: pixels, maxWidth: contentWidth)
+            let size = CGSize(width: display.width, height: display.height)
             guard size.height > 0 else { continue }
 
             // 글자를 모두 숨긴다 — 마커만이 아니라 `alt`와 경로까지. 그림이 보이는

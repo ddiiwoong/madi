@@ -440,6 +440,54 @@ final class DocumentWindowController: NSWindowController {
         statusOverlay.show(message)
     }
 
+    /// 그림을 문서 안에 박아 **단일 파일**로 내보낸다.
+    ///
+    /// 원래 문서를 덮어쓰지 않는다. 포함시키면 파일이 몇 배로 커지고 `data:` 주소는
+    /// 사람이 읽기 어려우므로, 원본은 그대로 두고 별도 파일을 만든다.
+    @objc func exportWithImagesAction(_ sender: Any?) {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.init(filenameExtension: "md") ?? .plainText]
+        let base = (markdownDocument?.displayName as NSString?)?.deletingPathExtension ?? "문서"
+        panel.nameFieldStringValue = "\(base)-이미지포함.md"
+        panel.canCreateDirectories = true
+        panel.prompt = "내보내기"
+
+        let source = composedMarkdown()
+        let documentURL = markdownDocument?.fileURL
+
+        panel.beginSheetModal(for: window!) { [weak self] response in
+            guard let self, response == .OK, let url = panel.url else { return }
+
+            let outcome = ImageEmbedder.embed(in: source, documentURL: documentURL) { imageURL in
+                try? Data(contentsOf: imageURL)
+            }
+            do {
+                try outcome.markdown.write(to: url, atomically: true, encoding: .utf8)
+            } catch {
+                AppLog.error("이미지 포함 내보내기에 실패했습니다",
+                             detail: "\(url.path) — \(error.localizedDescription)")
+                let alert = NSAlert()
+                alert.messageText = "이미지 포함 내보내기에 실패했습니다"
+                alert.informativeText = error.localizedDescription
+                alert.runModal()
+                return
+            }
+
+            // 건너뛴 것을 **하나하나** 기록에 남긴다. 숫자만 알려 주면 어느 그림이
+            // 왜 빠졌는지 알 수 없어 사용자가 파일을 하나씩 열어 봐야 한다.
+            for skip in outcome.skipped {
+                AppLog.warning("그림을 포함하지 못했습니다: \(skip.reason.message)",
+                               detail: skip.path)
+            }
+            AppLog.info("이미지 포함으로 내보냈습니다",
+                        detail: "그림 \(outcome.embedded)개 포함, \(outcome.skipped.count)개 건너뜀 · \(url.path)")
+            self.report(outcome.skipped.isEmpty
+                        ? "그림 \(outcome.embedded)개를 포함해 내보냈습니다"
+                        : "그림 \(outcome.embedded)개 포함, \(outcome.skipped.count)개 건너뜀 (기록 참조)")
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        }
+    }
+
     @objc func showSettings(_ sender: Any?) {
         if settingsPanel == nil {
             settingsPanel = SettingsPanel(store: preferences)

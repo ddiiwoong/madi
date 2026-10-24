@@ -92,7 +92,7 @@ final class ImageReferenceTests: XCTestCase {
     // MARK: 보여 줄 크기
 
     func testOversizedImageIsScaledDownKeepingAspect() {
-        let size = ImageReference.displaySize(for: CGSize(width: 2000, height: 1000),
+        let size = ImageReference.displaySize(for: ImageReference.Size(width: 2000, height: 1000),
                                               maxWidth: 800)
         XCTAssertEqual(size.width, 800)
         XCTAssertEqual(size.height, 400, "비율이 깨졌다")
@@ -100,21 +100,22 @@ final class ImageReferenceTests: XCTestCase {
 
     func testSmallImageIsNotEnlarged() {
         // 작은 그림을 늘리면 뭉개진다.
-        let size = ImageReference.displaySize(for: CGSize(width: 40, height: 20), maxWidth: 800)
+        let size = ImageReference.displaySize(for: ImageReference.Size(width: 40, height: 20), maxWidth: 800)
         XCTAssertEqual(size.width, 40)
         XCTAssertEqual(size.height, 20)
     }
 
     func testTallImageIsBoundedByHeightToo() {
-        let size = ImageReference.displaySize(for: CGSize(width: 100, height: 4000),
+        let size = ImageReference.displaySize(for: ImageReference.Size(width: 100, height: 4000),
                                               maxWidth: 800, maxHeight: 400)
         XCTAssertEqual(size.height, 400)
         XCTAssertEqual(size.width, 10)
     }
 
     func testDegenerateSizesAreZero() {
-        XCTAssertEqual(ImageReference.displaySize(for: .zero, maxWidth: 800), .zero)
-        XCTAssertEqual(ImageReference.displaySize(for: CGSize(width: 10, height: 10),
-                                                  maxWidth: 0), .zero)
+        XCTAssertEqual(ImageReference.displaySize(for: ImageReference.Size.zero, maxWidth: 800),
+                       ImageReference.Size.zero)
+        XCTAssertEqual(ImageReference.displaySize(for: ImageReference.Size(width: 10, height: 10),
+                                                  maxWidth: 0), ImageReference.Size.zero)
     }
 }

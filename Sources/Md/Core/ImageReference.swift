@@ -57,15 +57,31 @@ public enum ImageReference {
                    relativeTo: documentURL.deletingLastPathComponent()).standardizedFileURL
     }
 
+    /// 폭과 높이. **CoreGraphics를 쓰지 않는다.**
+    ///
+    /// 처음에는 `CGSize`로 썼는데, 그러면 Core가 Foundation 전용이 아니게 된다.
+    /// 앱 빌드에서는 같은 모듈의 AppKit이 CoreGraphics를 끌어와 가려지지만, Core만
+    /// 따로 컴파일하면 바로 드러난다(실제로 드러났다). Core를 다른 플랫폼으로 옮길
+    /// 수 있다는 전제가 이 타입 하나로 깨지므로 평범한 Double 쌍으로 둔다.
+    public struct Size: Equatable, Sendable {
+        public var width: Double
+        public var height: Double
+
+        public init(width: Double, height: Double) {
+            self.width = width
+            self.height = height
+        }
+
+        public static let zero = Size(width: 0, height: 0)
+    }
+
     /// 보여 줄 크기. 폭이 넘치면 비율을 지키며 줄인다. 원래보다 **키우지는 않는다** —
     /// 작은 그림을 늘리면 뭉개진다.
-    public static func displaySize(for pixels: CGSize, maxWidth: Double,
-                                   maxHeight: Double = 420) -> CGSize {
-        guard pixels.width > 0, pixels.height > 0, maxWidth > 0 else { return .zero }
-        let widthScale = min(1, maxWidth / Double(pixels.width))
-        let heightScale = min(1, maxHeight / Double(pixels.height))
-        let scale = min(widthScale, heightScale)
-        return CGSize(width: (Double(pixels.width) * scale).rounded(),
-                      height: (Double(pixels.height) * scale).rounded())
+    public static func displaySize(for pixels: Size, maxWidth: Double,
+                                   maxHeight: Double = 420) -> Size {
+        guard pixels.width > 0, pixels.height > 0, maxWidth > 0, maxHeight > 0 else { return .zero }
+        let scale = min(1, min(maxWidth / pixels.width, maxHeight / pixels.height))
+        return Size(width: (pixels.width * scale).rounded(),
+                    height: (pixels.height * scale).rounded())
     }
 }
