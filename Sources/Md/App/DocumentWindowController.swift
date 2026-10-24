@@ -306,26 +306,28 @@ final class DocumentWindowController: NSWindowController {
             return
         }
 
-        window?.subtitle = "번역 준비 중…"
+        let sheet = TranslationProgressSheet()
+        sheet.onCancel = { [weak self] in self?.translationTask?.cancel() }
+        // 시트는 뷰 컨트롤러가 띄운다 — NSWindowController에는 presentAsSheet가 없다.
+        splitController.presentAsSheet(sheet)
 
         // 진행 콜백은 Task 밖에서 한 번 만든다. Task 안에서 다시 `[weak self]`를 쓰면
         // 바깥 Task가 이미 붙잡은 약한 변수를 동시 실행 코드에서 참조하는 꼴이 된다.
-        let onProgress: @Sendable (AppleTranslator.Progress) -> Void = { [weak self] progress in
+        let onProgress: @Sendable (AppleTranslator.Progress) -> Void = { progress in
             Task { @MainActor in
-                self?.window?.subtitle = String(
-                    format: "번역 중 %d/%d · %d%%",
-                    progress.completedSegments, progress.totalSegments,
-                    Int(progress.fraction * 100)
-                )
+                sheet.update(direction: nil, fraction: progress.fraction,
+                             completed: progress.completedSegments, total: progress.totalSegments)
             }
         }
 
         translationTask = Task { @MainActor [weak self] in
-            defer { self?.translationTask = nil }
+            defer {
+                self?.translationTask = nil
+                self?.splitController.dismiss(sheet)
+            }
             do {
                 let result = try await AppleTranslator.translate(markdown: source, progress: onProgress)
                 guard let self else { return }
-                self.window?.subtitle = ""
                 if inPlace {
                     self.replaceSelection(selection, with: result.text)
                     self.report("번역했습니다 (\(result.direction.label))")
@@ -333,9 +335,8 @@ final class DocumentWindowController: NSWindowController {
                     self.openTranslatedCopy(result.text, direction: result.direction)
                 }
             } catch is CancellationError {
-                self?.window?.subtitle = ""
+                // 사용자가 취소한 것이다. 알릴 것이 없다.
             } catch {
-                self?.window?.subtitle = ""
                 self?.presentTranslationFailure(error)
             }
         }

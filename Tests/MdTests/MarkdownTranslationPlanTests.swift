@@ -90,8 +90,41 @@ final class MarkdownTranslationPlanTests: XCTestCase {
         // 번역기가 보는 글: 보호 구간은 자리표, 나머지는 문장 그대로.
         XCTAssertEqual(unit.text,
                        "본문은 \(open)0\(close)굵게\(open)1\(close)와 \(open)2\(close), \(open)3\(close)문서 링크\(open)4\(close)를 포함합니다.")
-        XCTAssertEqual(unit.protected,
+        XCTAssertEqual(unit.protected.map(\.text),
                        ["**", "**", "`인라인 코드`", "[", "](https://example.com)"])
+        XCTAssertEqual(unit.protected.map(\.role),
+                       [.opening, .closing, .standalone, .opening, .closing])
+    }
+
+    func testTranslatorInsertedSpaceAfterAnOpeningDelimiterIsRemoved() {
+        // 실측된 결함: `[문서 링크]`가 `[ document links]`로 나왔다.
+        let made = plan("자세한 것은 [문서 링크](https://example.com)를 보세요\n")
+        let unit = made.units[0]
+        let translated = unit.text.replacingOccurrences(of: "문서 링크", with: " document links")
+        let out = unit.restored(from: translated)
+        XCTAssertTrue(out.contains("[document links]"), "끼워 넣은 공백이 남았다: \(out)")
+    }
+
+    func testASpaceAFTERAClosingDelimiterIsKept() {
+        // 두 번째로 실측된 결함: `**굵게**와`를 번역하면 영어는 `**bold** and`처럼 공백이
+        // 있어야 하는데, "원문에 공백이 없었으니 지운다"는 규칙이 `**bold**and`를 만들었다.
+        // 닫는 구분자는 **앞**의 공백만 본다.
+        let made = plan("본문은 **굵게**와 함께\n")
+        let unit = made.units[0]
+        let translated = unit.text
+            .replacingOccurrences(of: "굵게", with: "bold")
+            .replacingOccurrences(of: "와 함께", with: " and together")
+        let out = unit.restored(from: translated)
+        XCTAssertTrue(out.contains("**bold** and"), "닫는 구분자 뒤 공백이 지워졌다: \(out)")
+    }
+
+    func testStandaloneSpansNeverHaveTheirSpacingTouched() {
+        // 인라인 코드는 감싸는 구간이 아니다 — 주변 공백을 건드릴 근거가 없다.
+        let made = plan("값은 `code` 입니다\n")
+        let unit = made.units[0]
+        XCTAssertEqual(unit.protected.map(\.role), [.standalone])
+        let out = unit.restored(from: unit.text.replacingOccurrences(of: "값은", with: "The value is"))
+        XCTAssertTrue(out.contains("`code` "), "표준 구간의 공백이 사라졌다: \(out)")
     }
 
     func testTranslatorNeverSeesCodeOrUrls() {

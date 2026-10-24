@@ -58,15 +58,18 @@ enum AppleTranslator {
     ///
     /// 방향은 번역할 본문 전체에서 한 번 정한다(마커를 뺀 글로 판단하므로 영어 코드가 많은
     /// 한국어 문서에서도 방향이 뒤집히지 않는다).
+    ///
+    /// 단위가 길면 `TranslationChunker`로 더 나눈다 — 마크업 없는 긴 문단은 단위 하나가
+    /// 수천 자가 되고, 그 문단이 끝날 때까지 진행이 멈춘 듯 보인다.
     static func translate(
         markdown: String,
         progress: (@Sendable (Progress) -> Void)? = nil
     ) async throws -> (text: String, direction: TranslationDirection) {
         let plan = MarkdownTranslationPlan.make(markdown)
-        let pieces = plan.translatableTexts
-        guard !pieces.isEmpty else { return (markdown, .englishToKorean) }
+        let units = plan.units
+        guard !units.isEmpty else { return (markdown, .englishToKorean) }
 
-        let direction = TranslationDirection.resolve(pieces.joined(separator: " "))
+        let direction = TranslationDirection.resolve(units.map(\.text).joined(separator: " "))
 
         switch await availability(for: direction) {
         case .installed: break
@@ -80,30 +83,37 @@ enum AppleTranslator {
             target: Locale.Language(identifier: direction.targetIdentifier)
         )
 
-        let totalCharacters = plan.translatableCharacterCount
-        var state = Progress(completedSegments: 0, totalSegments: pieces.count,
+        // 단위를 조각으로 펼친다. 조각 하나가 번역기 호출 하나이고 진행 보고 한 번이다.
+        var jobs: [(unit: Int, chunk: String)] = []
+        for (index, unit) in units.enumerated() {
+            for chunk in TranslationChunker.split(unit.text) {
+                jobs.append((index, chunk))
+            }
+        }
+
+        let totalCharacters = jobs.reduce(0) { $0 + $1.chunk.count }
+        var state = Progress(completedSegments: 0, totalSegments: jobs.count,
                              completedCharacters: 0, totalCharacters: totalCharacters)
         progress?(state)
 
-        var translated: [String] = []
-        translated.reserveCapacity(pieces.count)
+        var perUnit = [String](repeating: "", count: units.count)
 
         // 차례로 한다. Sogon이 같은 실행 안에서 네 방식을 견줘 봤을 때 병렬이 일관되게
         // 빠르지 않았고(노이즈와 가를 수 없었다), 단순한 쪽이 취소와 진행 보고가 쉽다.
-        for piece in pieces {
+        for job in jobs {
             try Task.checkCancellation()
             do {
-                translated.append(try await session.translate(piece).targetText)
+                perUnit[job.unit] += try await session.translate(job.chunk).targetText
             } catch {
                 if error is CancellationError || Task.isCancelled { throw CancellationError() }
                 throw map(error, direction: direction)
             }
             state.completedSegments += 1
-            state.completedCharacters += piece.count
+            state.completedCharacters += job.chunk.count
             progress?(state)
         }
 
-        return (try plan.assembled(with: translated), direction)
+        return (try plan.assembled(with: perUnit), direction)
     }
 
     static func map(_ error: Error, direction: TranslationDirection) -> Error {

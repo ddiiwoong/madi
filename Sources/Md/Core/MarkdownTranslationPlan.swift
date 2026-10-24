@@ -29,12 +29,42 @@ public struct MarkdownTranslationPlan: Equatable {
     static let open: Character = "\u{E000}"
     static let close: Character = "\u{E001}"
 
+    /// 보호 구간 하나.
+    ///
+    /// 번역기가 자리표 주변에 공백을 넣는 것을 실측했다 — `[문서 링크]`의 여는 `[`를
+    /// 자리표로 바꿔 넘기면 `⟦3⟧ document links`로 돌아와 `[ document links]`가 됐다.
+    ///
+    /// 그런데 "원문에 공백이 없었으니 지운다"는 규칙만으로는 **틀린다.** 한국어는 조사가
+    /// 붙어 `**굵게**와`처럼 공백이 없지만 영어는 `**bold** and`처럼 공백이 있어야 한다.
+    /// 그 규칙으로 지웠더니 `**bold**and`가 나왔다(실측). 그래서 **구분자가 여는 쪽인지
+    /// 닫는 쪽인지**를 함께 들고, 지우는 방향을 그것으로 정한다:
+    ///
+    /// - 여는 구분자(`[`, 여는 `**`): 자리표 **뒤**의 공백을 지운다 → `[document`
+    /// - 닫는 구분자(`](url)`, 닫는 `**`): 자리표 **앞**의 공백을 지운다 → `links]`
+    /// - 그 자체로 완결된 구간(인라인 코드, 자동 링크): 공백을 건드리지 않는다
+    public struct ProtectedSpan: Equatable {
+        public enum Role: Equatable {
+            /// 뒤따르는 글을 감싸기 시작하는 구간.
+            case opening
+            /// 앞의 글을 닫는 구간.
+            case closing
+            /// 감싸는 것이 아니라 통째로 보호되는 구간.
+            case standalone
+        }
+
+        public let text: String
+        public let role: Role
+        /// 원문에서 **지울 쪽**(opening이면 뒤, closing이면 앞)에 공백이 있었는가.
+        /// 있었다면 번역기가 넣은 것이 아니므로 건드리지 않는다.
+        public let hadAdjacentSpace: Bool
+    }
+
     /// 번역기에 넘기는 단위 하나. 보통 한 줄의 본문 또는 표의 한 칸이다.
     public struct Unit: Equatable {
         /// 번역기에 넘기는 글. 보호 구간은 자리표로 바뀌어 있다.
         public let text: String
-        /// 자리표 번호 순서대로의 원문 조각.
-        public let protected: [String]
+        /// 자리표 번호 순서대로의 보호 구간.
+        public let protected: [ProtectedSpan]
 
         /// 번역문의 자리표를 원문 조각으로 되돌린다.
         ///
@@ -43,15 +73,41 @@ public struct MarkdownTranslationPlan: Equatable {
         public func restored(from translated: String) -> String {
             var out = translated
             var missing: [String] = []
-            for (index, original) in protected.enumerated() {
+
+            for (index, span) in protected.enumerated() {
                 let token = "\(MarkdownTranslationPlan.open)\(index)\(MarkdownTranslationPlan.close)"
-                if out.contains(token) {
-                    out = out.replacingOccurrences(of: token, with: original)
-                } else {
-                    missing.append(original)
+                guard out.contains(token) else {
+                    missing.append(span.text)
+                    continue
                 }
+                if !span.hadAdjacentSpace {
+                    switch span.role {
+                    case .opening: out = removingSpace(after: token, in: out)
+                    case .closing: out = removingSpace(before: token, in: out)
+                    case .standalone: break
+                    }
+                }
+                out = out.replacingOccurrences(of: token, with: span.text)
             }
             return missing.isEmpty ? out : out + missing.joined()
+        }
+
+        /// 자리표는 번호마다 유일하므로 첫 등장만 보면 된다.
+        private func removingSpace(after token: String, in text: String) -> String {
+            guard let range = text.range(of: token), range.upperBound < text.endIndex,
+                  text[range.upperBound] == " " else { return text }
+            var result = text
+            result.remove(at: range.upperBound)
+            return result
+        }
+
+        private func removingSpace(before token: String, in text: String) -> String {
+            guard let range = text.range(of: token), range.lowerBound > text.startIndex else { return text }
+            let beforeToken = text.index(before: range.lowerBound)
+            guard text[beforeToken] == " " else { return text }
+            var result = text
+            result.remove(at: beforeToken)
+            return result
         }
     }
 
@@ -209,12 +265,30 @@ public struct MarkdownTranslationPlan: Equatable {
         mutating func unit(_ range: NSRange, syntax: MarkdownSyntax) {
             guard range.length > 0 else { return }
             var body = ""
-            var protected: [String] = []
+            var protected: [ProtectedSpan] = []
 
-            func protect(_ protectedRange: NSRange) {
+            /// 원문에서 `index` 위치의 글자가 공백인가. 줄 밖이면 true로 본다 —
+            /// 경계에는 지울 공백이 없다.
+            func isSpace(at index: Int) -> Bool {
+                guard index >= 0, index < text.length else { return true }
+                let scalar = text.character(at: index)
+                return scalar == 32 || scalar == 9 || scalar == 10 || scalar == 13
+            }
+
+            func protect(_ protectedRange: NSRange, role: ProtectedSpan.Role) {
                 guard protectedRange.length > 0 else { return }
                 body += "\(MarkdownTranslationPlan.open)\(protected.count)\(MarkdownTranslationPlan.close)"
-                protected.append(text.substring(with: protectedRange))
+                // 지울 쪽의 공백만 본다 — 여는 구간은 뒤, 닫는 구간은 앞.
+                let adjacent: Bool = switch role {
+                case .opening: isSpace(at: NSMaxRange(protectedRange))
+                case .closing: isSpace(at: protectedRange.location - 1)
+                case .standalone: true
+                }
+                protected.append(ProtectedSpan(
+                    text: text.substring(with: protectedRange),
+                    role: role,
+                    hadAdjacentSpace: adjacent
+                ))
             }
 
             var cursor = range.location
@@ -227,19 +301,21 @@ public struct MarkdownTranslationPlan: Equatable {
                 }
                 switch token.kind {
                 case .code, .autolink:
-                    protect(token.range)
+                    protect(token.range, role: .standalone)
                 case .link, .image, .strong, .emphasis, .strikethrough:
                     let content = token.contentRange
                     if content.location != NSNotFound, content.length > 0,
                        content.location >= token.range.location,
                        NSMaxRange(content) <= NSMaxRange(token.range) {
                         protect(NSRange(location: token.range.location,
-                                        length: content.location - token.range.location))
+                                        length: content.location - token.range.location),
+                                role: .opening)
                         body += text.substring(with: content)
                         protect(NSRange(location: NSMaxRange(content),
-                                        length: NSMaxRange(token.range) - NSMaxRange(content)))
+                                        length: NSMaxRange(token.range) - NSMaxRange(content)),
+                                role: .closing)
                     } else {
-                        protect(token.range)
+                        protect(token.range, role: .standalone)
                     }
                 }
                 cursor = NSMaxRange(token.range)
