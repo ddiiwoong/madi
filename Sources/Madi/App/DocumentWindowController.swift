@@ -405,8 +405,6 @@ final class DocumentWindowController: NSWindowController {
 
         let sheet = TranslationProgressSheet()
         sheet.onCancel = { [weak self] in self?.translationTask?.cancel() }
-        // 시트는 뷰 컨트롤러가 띄운다 — NSWindowController에는 presentAsSheet가 없다.
-        splitController.presentAsSheet(sheet)
 
         // 진행 콜백은 Task 밖에서 한 번 만든다. Task 안에서 다시 `[weak self]`를 쓰면
         // 바깥 Task가 이미 붙잡은 약한 변수를 동시 실행 코드에서 참조하는 꼴이 된다.
@@ -418,13 +416,33 @@ final class DocumentWindowController: NSWindowController {
         }
 
         translationTask = Task { @MainActor [weak self] in
+            // **시트를 띄우기 전에 먼저 잰다.** 전에는 시트를 먼저 띄웠고, 언어 팩이
+            // 없으면 시트가 떴다 사라진 뒤 경고창이 떠서 화면이 두 번 바뀌었다 —
+            // 사용자가 읽을 틈이 없다. 재는 일은 싸다(계획 만들기 + 가용성 조회 한 번).
+            let preflight = await AppleTranslator.preflight(markdown: source)
+            guard let self else { return }
+            guard preflight.state == .ready else {
+                self.translationTask = nil
+                let failure: AppleTranslator.Failure
+                switch preflight.state {
+                case .nothingToTranslate: failure = .nothingToTranslate
+                case .needsLanguagePack: failure = .languagePackMissing(direction: preflight.direction)
+                case .unsupported: failure = .unsupported(direction: preflight.direction)
+                case .ready: return
+                }
+                self.presentTranslationFailure(failure)
+                return
+            }
+
+            // 여기서부터 실제로 번역한다 — 이제 시트를 띄운다. 시트는 뷰 컨트롤러가
+            // 띄운다(NSWindowController에는 presentAsSheet가 없다).
+            self.splitController.presentAsSheet(sheet)
             defer {
-                self?.translationTask = nil
-                self?.splitController.dismiss(sheet)
+                self.translationTask = nil
+                self.splitController.dismiss(sheet)
             }
             do {
-                let result = try await AppleTranslator.translate(markdown: source, progress: onProgress)
-                guard let self else { return }
+                let result = try await AppleTranslator.translate(preflight, progress: onProgress)
                 if inPlace {
                     self.replaceSelection(selection, with: result.text)
                     self.report("번역했습니다 (\(result.direction.label))")
@@ -434,7 +452,7 @@ final class DocumentWindowController: NSWindowController {
             } catch is CancellationError {
                 // 사용자가 취소한 것이다. 알릴 것이 없다.
             } catch {
-                self?.presentTranslationFailure(error)
+                self.presentTranslationFailure(error)
             }
         }
     }
@@ -474,19 +492,44 @@ final class DocumentWindowController: NSWindowController {
         AppLog.error("번역하지 못했습니다", detail: error.localizedDescription)
 
         let alert = NSAlert()
-        alert.messageText = "번역하지 못했습니다"
-        alert.informativeText = error.localizedDescription
-        if #available(macOS 26.0, *),
-           let failure = error as? AppleTranslator.Failure, failure.isLanguagePackMissing {
-            alert.addButton(withTitle: "시스템 설정 열기")
-            alert.addButton(withTitle: "닫기")
-            if alert.runModal() == .alertFirstButtonReturn,
-               let url = URL(string: "x-apple.systempreferences:com.apple.Localization-Settings.extension") {
-                NSWorkspace.shared.open(url)
-            }
+        // 무엇이 잘못됐는지와 **무엇을 해야 하는지**를 가른다. 경고창이 둘을 다른
+        // 크기로 그리므로, 한 덩이로 적으면 할 일이 원인 문장에 묻힌다.
+        //
+        // `AppleTranslator`가 macOS 26 전용이라 그 아래에서는 분해할 수 없다 —
+        // 그때는 받은 오류 문구를 그대로 보인다(그 경로는 "macOS 26 이상에서만
+        // 됩니다"를 먼저 띄우므로 여기까지 오지 않는다).
+        var cause = "번역하지 못했습니다"
+        var recovery = error.localizedDescription
+        var offersSettings = false
+        var isInformational = false
+        if #available(macOS 26.0, *), let failure = error as? AppleTranslator.Failure {
+            cause = failure.errorDescription ?? cause
+            recovery = failure.recoverySuggestion ?? error.localizedDescription
+            offersSettings = failure.suggestsLanguageSettings
+            // 번역할 글이 없는 것은 잘못이 아니다 — 알려 주기만 한다.
+            isInformational = failure == .nothingToTranslate
+        }
+        alert.messageText = cause
+        alert.informativeText = recovery
+        alert.alertStyle = isInformational ? .informational : .warning
+
+        guard offersSettings else {
+            alert.runModal()
             return
         }
-        alert.runModal()
+        alert.addButton(withTitle: "언어 설정 열기")
+        alert.addButton(withTitle: "닫기")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        // '언어 및 지역' 화면. 이 식별자는 이 Mac의
+        // `/System/Library/ExtensionKit/Extensions/Localization.appex`와 같은 값이다.
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.Localization-Settings.extension")
+        else { return }
+        if !NSWorkspace.shared.open(url) {
+            // 열지 못하면 길을 글로 남긴다 — 버튼을 눌렀는데 아무 일도 없는 것이
+            // 가장 나쁘다.
+            AppLog.warning("언어 설정을 열지 못했습니다",
+                           detail: "시스템 설정 ▸ 일반 ▸ 언어 및 지역 ▸ 번역 언어")
+        }
     }
 
     /// 잘 된 일을 알린다. **가로막지 않는다** — 떠서 보이고 사라지며, 같은 내용이

@@ -16,6 +16,17 @@ public enum TranslationDirection: Equatable, Sendable {
         self == .koreanToEnglish ? "한국어 → 영어" : "영어 → 한국어"
     }
 
+    /// 안내문에 쓸 **사람이 읽는 이름**. 시스템 설정의 '번역 언어' 목록에 이 이름으로
+    /// 나오므로, 사용자가 그 화면에서 찾을 글자와 같아야 한다 — `ko`·`en`을 적으면
+    /// 목록에서 찾을 수 없다.
+    public var sourceLanguageName: String {
+        self == .koreanToEnglish ? "한국어" : "영어"
+    }
+
+    public var targetLanguageName: String {
+        self == .koreanToEnglish ? "영어" : "한국어"
+    }
+
     /// 글 전체에서 **한 번** 정한다. 구간마다 다시 정하면 한 문서 안에서 방향이 갈린다.
     public static func resolve(_ text: String) -> TranslationDirection {
         var korean = 0

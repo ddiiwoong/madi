@@ -61,6 +61,9 @@ targets:
       - Sources/Madi/App/AppLog.swift
       - Sources/Madi/App/AppEnvironment.swift
       - Sources/Madi/Panels/SettingsPanel.swift
+      # 번역 실패 안내 문구를 테스트가 지킨다. 이 파일의 `availability`/`preflight`는
+      # 시스템을 묻기 때문에 테스트에서 부르지 않는다 — 순수한 `Failure` 문구만 본다.
+      - Sources/Madi/Services/AppleTranslator.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.jinwoong.md.tests
