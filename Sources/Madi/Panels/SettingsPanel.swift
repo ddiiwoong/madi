@@ -28,7 +28,8 @@ final class SettingsPanel: NSWindowController {
     private let highlightCheck = NSButton(checkboxWithTitle: "코드 블록 구문 강조", target: nil, action: nil)
     private let alignCheck = NSButton(checkboxWithTitle: "표 열 맞추기", target: nil, action: nil)
     private let slantCheck = NSButton(checkboxWithTitle: "한글·CJK 기울임 강제 적용", target: nil, action: nil)
-    private let codeViewCheck = NSButton(checkboxWithTitle: "새 창을 코드 보기로 열기", target: nil, action: nil)
+    private let codeViewCheck = NSButton(checkboxWithTitle: "새 창을 마크다운 원본 보기로 열기",
+                                         target: nil, action: nil)
 
     // 일반
     private let remoteImageCheck = NSButton(checkboxWithTitle: "원격 이미지 불러오기",

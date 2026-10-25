@@ -41,10 +41,13 @@ final class DocumentWindowController: NSWindowController {
         static let recent = NSToolbarItem.Identifier("recent")
         static let open = NSToolbarItem.Identifier("open")
         static let browser = NSToolbarItem.Identifier("browser")
+        static let codeView = NSToolbarItem.Identifier("codeView")
         static let burger = NSToolbarItem.Identifier("burger")
     }
 
     private var toggleButtons: [Tab: NSButton] = [:]
+    /// 원본 보기 토글. 사이드바 탭과 달리 `Tab`에 묶이지 않으므로 따로 들고 있는다.
+    private weak var codeViewButton: NSButton?
 
     convenience init() {
         let window = NSWindow(
@@ -168,6 +171,10 @@ final class DocumentWindowController: NSWindowController {
             self, selector: #selector(preferencesDidChange(_:)),
             name: PreferenceStore.didChange, object: nil)
         editor.apply(preferences.current)
+        // 새 창의 보기 초깃값. 창을 세울 때 한 번만 읽는다(위 `preferencesDidChange`의
+        // 주석 참고) — 매번 싣으면 ⌘E로 바꿔 둔 보기가 설정에 되돌아간다.
+        editor.isCodeView = preferences.current.openInCodeView
+        syncCodeViewState()
     }
 
     // MARK: Document content
@@ -248,14 +255,50 @@ final class DocumentWindowController: NSWindowController {
         NSDocumentController.shared.openDocument(sender)
     }
 
-    /// 코드 보기 (⌘E) — the raw markdown, markers and all.
+    /// 코드 보기 (⌘E) — 렌더된 문서와 마크다운 원본을 **오가는 토글**이다.
+    ///
+    /// 세 곳이 같은 상태를 보여야 한다: 도구 막대 토글(눌린 모양), 메뉴 항목(체크 표시),
+    /// 창 부제. 한 곳만 고치면 나머지가 거짓을 말한다.
     @objc func toggleCodeViewAction(_ sender: Any?) {
         editor.isCodeView.toggle()
-        window?.subtitle = editor.isCodeView ? "코드 보기" : ""
+        syncCodeViewState()
+    }
+
+    /// 지금 보기를 모든 표면에 싣는다.
+    private func syncCodeViewState() {
+        let isOn = editor.isCodeView
+        window?.subtitle = isOn ? "원본 보기" : ""
+        codeViewButton?.state = isOn ? .on : .off
+        codeViewButton?.toolTip = Self.codeViewTip(isOn: isOn)
+        if let main = NSApp.mainMenu { Self.markCodeView(in: main, isOn: isOn) }
+    }
+
+    /// 메뉴 항목에 체크 표시를 단다 — 토글의 macOS 관례다.
+    ///
+    /// **`validateMenuItem`으로 하지 않는다.** 한 번 그렇게 했다가 회귀를 냈다:
+    /// `NSMenuItemValidation`을 구현하면 이 객체로 **오는 모든 항목**을 내가 판정하게
+    /// 되고, 내가 응답하지 않는 동작(`save:` · `performClose:`)에 false를 돌려
+    /// 버거 메뉴의 저장·다른 이름으로 저장·닫기가 비활성이 됐다. 체크 표시 하나를
+    /// 붙이려고 메뉴 활성화 규칙 전체를 떠안을 이유가 없다.
+    static func markCodeView(in menu: NSMenu, isOn: Bool) {
+        for item in menu.items {
+            if item.action == #selector(DocumentWindowController.toggleCodeViewAction(_:)) {
+                item.state = isOn ? .on : .off
+            }
+            if let submenu = item.submenu { markCodeView(in: submenu, isOn: isOn) }
+        }
+    }
+
+    /// 도움말은 **누르면 무엇이 되는지**를 말한다. 지금 상태를 말하면 사용자가
+    /// 누를지 말지를 그 문장에서 알 수 없다.
+    private static func codeViewTip(isOn: Bool) -> String {
+        isOn ? "마크다운 문법으로 보기 (⌘E)" : "마크다운 원본 보기 (⌘E)"
     }
 
     @objc func showBurgerAction(_ sender: Any?) {
         let menu = AppMenu.burgerMenu(target: self)
+        // 버거 메뉴는 열 때마다 새로 만들어지므로 여기서 체크 표시를 단다.
+        Self.markCodeView(in: menu, isOn: editor.isCodeView)
         guard let view = (sender as? NSView) ?? (sender as? NSToolbarItem)?.view else {
             menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
             return
@@ -516,6 +559,12 @@ final class DocumentWindowController: NSWindowController {
     }
 
     /// 설정이 바뀌면 이 창에 바로 싣는다. 창마다 따로 받으므로 여러 창이 함께 바뀐다.
+    /// 새 창의 보기 초깃값을 설정에서 가져온다. **창을 세울 때 한 번만** 읽는다 —
+    /// 설정이 바뀔 때마다 싣으면 지금 ⌘E로 바꿔 둔 보기를 설정이 되돌려 버린다.
+    ///
+    /// 이 배선이 없던 동안 `openInCodeView`는 **아무 일도 하지 않는 설정**이었다
+    /// (읽는 곳이 0곳). 이 프로젝트가 스스로 금지한 것이고, 설정 화면에 켜고 끌 수
+    /// 있는 것이 있는데 아무 일도 안 일어나면 사용자는 자기 잘못을 찾느라 시간을 버린다.
     @objc private func preferencesDidChange(_ note: Notification) {
         editor.apply(preferences.current)
     }
@@ -603,10 +652,9 @@ final class DocumentWindowController: NSWindowController {
 // MARK: - Toolbar
 
 extension DocumentWindowController: NSToolbarDelegate {
-
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.flexibleSpace, ItemID.matches, ItemID.search, ItemID.outline, ItemID.recent,
-         ItemID.open, ItemID.browser, .space, ItemID.burger]
+        [.flexibleSpace, ItemID.matches, ItemID.search, ItemID.codeView, ItemID.outline,
+         ItemID.recent, ItemID.open, ItemID.browser, .space, ItemID.burger]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -644,6 +692,23 @@ extension DocumentWindowController: NSToolbarDelegate {
             return toggle(identifier, tab: .browser, symbol: "sidebar.left",
                           label: "파일 브라우저", tip: "파일 브라우저 (⌘⇧F)",
                           action: #selector(showBrowserAction(_:)))
+
+        case ItemID.codeView:
+            // 켜짐/꺼짐이 곧 어느 보기인지다. 도구 막대의 다른 토글과 같은 꼴이어서
+            // 눌린 모양이 상태를 말한다 — 메뉴 명령만 있던 때는 창 부제를 읽어야
+            // 알 수 있었다.
+            let item = NSToolbarItem(itemIdentifier: identifier)
+            let control = button(symbol: "chevron.left.forwardslash.chevron.right",
+                                 label: "원본 보기", tip: Self.codeViewTip(isOn: false),
+                                 action: #selector(toggleCodeViewAction(_:)))
+            control.setButtonType(.pushOnPushOff)
+            control.state = editor.isCodeView ? .on : .off
+            item.view = control
+            item.label = "원본 보기"
+            item.paletteLabel = "원본 보기"
+            item.toolTip = Self.codeViewTip(isOn: editor.isCodeView)
+            codeViewButton = control
+            return item
 
         case ItemID.open:
             return push(identifier, symbol: "folder", label: "문서 열기",

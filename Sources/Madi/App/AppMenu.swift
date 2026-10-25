@@ -5,7 +5,9 @@ import AppKit
 /// never drift apart.
 ///
 /// Shortcuts match Mark.app's where they do not fight a macOS convention:
-/// 파일 브라우저 ⌘⇧F, 최근 문서 ⌘⇧R, 목차 ⌘⇧O, 코드 보기 ⌘E, 설정 ⌘,.
+/// 파일 브라우저 ⌘⇧F, 최근 문서 ⌘⇧R, 목차 ⌘⇧O, 마크다운 원본 보기 ⌘E, 설정 ⌘,.
+/// (Mark은 이 명령을 "코드 보기"라 부르지만, 무엇과 무엇을 오가는지 이름이 말하는
+/// 쪽이 낫다 — 켜면 원본, 끄면 마크다운 문법으로 그린 문서다.)
 /// One deliberate difference: ⌘N makes a new DOCUMENT here rather than a new
 /// window, because this is an NSDocument app and ⌘N means new document
 /// everywhere else on the system (a new document opens in its own window, so
@@ -80,7 +82,7 @@ enum AppMenu {
         [
             Command("목차", #selector(DocumentWindowController.showOutlineAction(_:)), "o",
                     [.command, .shift], windowTarget: true),
-            Command("코드 보기", #selector(DocumentWindowController.toggleCodeViewAction(_:)), "e",
+            Command("마크다운 원본 보기", #selector(DocumentWindowController.toggleCodeViewAction(_:)), "e",
                     .command, windowTarget: true),
             // 설계 단계 1. 기본 편집기를 갈지 않고 평가할 수 있는 두 번째 창이다.
             Command("블록 편집기 (실험)",
@@ -196,7 +198,7 @@ enum AppMenu {
             nil,
             Command("목차", #selector(DocumentWindowController.showOutlineAction(_:)), "o",
                     [.command, .shift], windowTarget: true),
-            Command("코드 보기", #selector(DocumentWindowController.toggleCodeViewAction(_:)), "e",
+            Command("마크다운 원본 보기", #selector(DocumentWindowController.toggleCodeViewAction(_:)), "e",
                     .command, windowTarget: true),
             Command("블록 편집기 (실험)",
                     #selector(DocumentWindowController.showBlockEditor(_:)), "b",
