@@ -91,7 +91,7 @@ front matter도 같은 이유로 **원문 블록을 바이트 그대로** 들고
 
 처음에는 앱 호스트 방식(`TEST_HOST`)으로 만들었는데 러너가 연결 전에 **355초를 멈췄습니다**
 ("The test runner hung before establishing connection"). 앱 자체는 정상 실행되므로 호스팅
-문제였고, `Core`가 Foundation만 쓰니 호스트를 뗄 수 있었습니다 — 215개가 1초 안에 끝납니다.
+문제였고, `Core`가 Foundation만 쓰니 호스트를 뗄 수 있었습니다 — 239개가 몇 초 안에 끝납니다.
 
 그래서 테스트 타깃은 `Tests/MadiTests`와 `Sources/Madi/Core`를 **둘 다 소스로 컴파일**하고
 `@testable import`를 쓰지 않습니다. `Core`에 파일을 더하면 자동으로 들어갑니다.
@@ -105,7 +105,7 @@ front matter도 같은 이유로 **원문 블록을 바이트 그대로** 들고
 ## 손대기 전에
 
 ```sh
-make test        # Core 테스트 215개 — 가장 빠른 신호
+make test        # Core 테스트 239개 — 가장 빠른 신호
 make core-only   # Core가 아직 Foundation만 쓰는지
 make build       # 앱 빌드
 make universal   # arm64 + x86_64, lipo로 검사까지

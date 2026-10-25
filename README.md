@@ -10,7 +10,7 @@ macOS 네이티브 마크다운 에디터. **보고 있는 화면에서 바로 �
 
 ```sh
 make build    # xcodegen → xcodebuild
-make test     # 코어 테스트 215개
+make test     # 코어 테스트 239개
 make run      # 빌드 후 실행
 ```
 
@@ -87,7 +87,7 @@ Sources/Madi/
   Panels/             사이드바 · 카드 · 시트
   Services/           Apple 번역, 압축 해제
   App/                NSDocument · 윈도우 · 메뉴
-Tests/MadiTests/      코어 테스트 215개 (앱을 띄우지 않음)
+Tests/MadiTests/      코어 테스트 239개 (앱을 띄우지 않음)
 docs/                 설계 문서
 web-prototype/        초기 웹 프로토타입 (참고용)
 ```
