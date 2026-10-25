@@ -82,6 +82,10 @@ enum AppMenu {
                     [.command, .shift], windowTarget: true),
             Command("코드 보기", #selector(DocumentWindowController.toggleCodeViewAction(_:)), "e",
                     .command, windowTarget: true),
+            // 설계 단계 1. 기본 편집기를 갈지 않고 평가할 수 있는 두 번째 창이다.
+            Command("블록 편집기 (실험)",
+                    #selector(DocumentWindowController.showBlockEditor(_:)), "b",
+                    [.command, .option], windowTarget: true),
             nil,
             Command("전체 화면 시작", #selector(NSWindow.toggleFullScreen(_:))),
         ]
@@ -194,6 +198,9 @@ enum AppMenu {
                     [.command, .shift], windowTarget: true),
             Command("코드 보기", #selector(DocumentWindowController.toggleCodeViewAction(_:)), "e",
                     .command, windowTarget: true),
+            Command("블록 편집기 (실험)",
+                    #selector(DocumentWindowController.showBlockEditor(_:)), "b",
+                    [.command, .option], windowTarget: true),
             nil,
             Command("Apple 번역", #selector(DocumentWindowController.translateAction(_:)), "t",
                     [.command, .shift], windowTarget: true),

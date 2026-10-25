@@ -10,7 +10,7 @@ macOS 네이티브 마크다운 에디터. **보고 있는 화면에서 바로 �
 
 ```sh
 make build    # xcodegen → xcodebuild
-make test     # 코어 테스트 239개
+make test     # 테스트 282개
 make run      # 빌드 후 실행
 ```
 
@@ -49,6 +49,7 @@ AppKit · Swift 6 · **의존성 없음**. 패키지 매니저도, 웹뷰도, �
 | 문서 | YAML front matter 메타데이터 카드, `NSDocument` 기반 열기·저장·자동 저장·버전 복원 |
 | 내보내기 | PDF, 이미지를 `data:`로 묻은 단일 마크다운, 프린트 |
 | 도구 | Apple 번역(한↔영, 마크업 보존), 기록 패널(`⌘⇧L`), 설정(`⌘,`) |
+| 실험 | 블록 편집기(`⌥⌘B`) — 문서를 블록 배열로 편집하는 두 번째 창. 표를 격자로 만드는 설계의 1단계이고, 기본 편집기는 그대로입니다 |
 
 ## 요구 사항
 
@@ -87,7 +88,7 @@ Sources/Madi/
   Panels/             사이드바 · 카드 · 시트
   Services/           Apple 번역, 압축 해제
   App/                NSDocument · 윈도우 · 메뉴
-Tests/MadiTests/      코어 테스트 239개 (앱을 띄우지 않음)
+Tests/MadiTests/      테스트 282개 (앱을 띄우지 않음)
 docs/                 설계 문서
 web-prototype/        초기 웹 프로토타입 (참고용)
 ```

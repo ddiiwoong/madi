@@ -44,9 +44,17 @@ targets:
     # bundle compiles those files directly: an app-hosted bundle has to launch
     # Madi.app and wait for it to connect, which hangs the run and tells you
     # nothing about the logic under test.
+    #
+    # Editor도 함께 컴파일한다. 블록 편집기(단계 1)의 되돌리기·블록 넘는 선택·
+    # 한글 조합 보호는 **응답자 연쇄와 `NSTextView`를 지나야** 참임을 알 수 있고,
+    # 순수 모델 테스트만으로는 배선이 끊긴 것을 못 잡는다 — 실제로 ⌘A가 모델에는
+    # 실리는데 뷰에 싣는 순간 한 블록으로 줄어드는 결함을 UI로 더듬다 놓쳤다.
+    # 창은 화면 밖에 만들므로 사용자의 화면을 가로채지 않는다.
     sources:
       - Tests/MadiTests
       - Sources/Madi/Core
+      - Sources/Madi/Editor
+      - Sources/Madi/App/AppLog.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.jinwoong.md.tests

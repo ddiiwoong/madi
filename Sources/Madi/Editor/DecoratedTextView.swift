@@ -9,7 +9,9 @@ import AppKit
 ///
 /// `NSTextBlock`을 쓰는 길도 있지만 문단마다 블록이 생겨 줄 사이에 이음선이 보이고,
 /// 여백을 다루기가 까다롭다. 직접 그리면 블록 하나가 둥근 사각형 하나가 된다.
-public final class DecoratedTextView: NSTextView {
+/// 블록 편집기의 `BlockTextView`가 이 클래스를 물려받는다(코드 배경·그림 그리기를
+/// 그대로 쓰고 블록 경계 처리만 더한다). 그래서 `final`이 아니다.
+public class DecoratedTextView: NSTextView {
 
     /// 칠할 코드 블록의 문자 범위. `MarkdownStyler`가 계산해 넘긴다.
     public var codeBlockRanges: [NSRange] = [] {

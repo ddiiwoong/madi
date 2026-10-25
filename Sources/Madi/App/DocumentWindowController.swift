@@ -20,6 +20,8 @@ final class DocumentWindowController: NSWindowController {
     private var logPanel: ActivityLogPanel?
     /// 설정 창도 같은 방식으로 하나만 둔다.
     private var settingsPanel: SettingsPanel?
+    /// 블록 편집기 창(설계 단계 1). 기본 편집기는 그대로 두고 평가용으로 띄운다.
+    private var blockEditorWindow: BlockEditorWindowController?
     private let preferences = PreferenceStore()
 
     /// The document's front matter, kept so the body can be re-joined with the
@@ -505,8 +507,40 @@ final class DocumentWindowController: NSWindowController {
         editor.apply(preferences.current)
     }
 
-    @objc func showActivityLog(_ sender: Any?) {
-        if logPanel == nil {
+    /// 블록 편집기를 띄운다 — 설계의 단계 1.
+    ///
+    /// 기본 편집기는 건드리지 않는다(설계 §8). 블록 창의 편집은 이 창의 편집기에
+    /// 그대로 실리므로 저장·⌘S·편집 표시는 평소처럼 `NSDocument`가 맡는다.
+    /// 반대 방향으로 따라오지는 않는다 — 그 한계는 블록 창의 주석과 TODO에 적혀 있다.
+    @objc func showBlockEditor(_ sender: Any?) {
+        if let existing = blockEditorWindow {
+            existing.showWindow(nil)
+            existing.window?.makeKeyAndOrderFront(nil)
+            return
+        }
+        let controller = BlockEditorWindowController(
+            body: editor.markdown,
+            documentURL: markdownDocument?.fileURL,
+            preferences: preferences.current,
+            title: markdownDocument?.displayName ?? "무제")
+        controller.onBodyChange = { [weak self] body in
+            guard let self else { return }
+            self.editor.markdown = body
+            self.markdownDocument?.editorDidChange(markdown: self.composedMarkdown())
+            self.refreshOutline()
+        }
+        controller.onLinkClick = { [weak self] url in
+            guard let self else { return }
+            self.markdownEditor(self.editor, didClickLink: url)
+        }
+        blockEditorWindow = controller
+        controller.showWindow(nil)
+        controller.window?.makeKeyAndOrderFront(nil)
+        AppLog.shared.append(.info, "블록 편집기를 열었습니다",
+                             detail: "설계 단계 1 · 표는 아직 글입니다")
+    }
+
+    @objc func showActivityLog(_ sender: Any?) {        if logPanel == nil {
             let panel = ActivityLogPanel(log: AppLog.shared)
             logPanel = panel
             // 기록이 바뀌면 열려 있는 창이 따라오게 한다.
