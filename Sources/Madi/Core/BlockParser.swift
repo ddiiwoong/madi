@@ -111,6 +111,18 @@ public struct BlockParser: Sendable {
                 append(kind, index, end)
                 index = end
 
+            case .linkDefinition:
+                // 이어진 정의 줄들을 한 블록으로 묶는다. 문서 끝에 모여 있는 것이
+                // 보통이고, 그 덩이를 한 덩이로 다루는 것이 편집에 맞다.
+                //
+                // 종류는 `.paragraph`를 쓴다 — 새 종류를 만드는 것은 **다르게 그릴 뷰가
+                // 생길 때**다. 왕복은 종류와 무관하게 지켜진다(블록이 자기 원문 조각을
+                // 들고 있다). 글줄과 묶지 않고 따로 두는 이유는, 본문 문단에 붙여
+                // 버리면 문단을 고칠 때 정의가 함께 끌려다니기 때문이다.
+                let end = run(from: index, in: lines) { $0.kind == .linkDefinition }
+                append(.paragraph, index, end)
+                index = end
+
             case .paragraph, .codeBody:
                 // `.codeBody`는 펜스 안에서만 나오고 위에서 이미 먹혔다. 여기 오는 것은
                 // 있을 수 없는 경우이므로 글줄로 다룬다 — 떨어뜨리면 그 줄이 사라진다.

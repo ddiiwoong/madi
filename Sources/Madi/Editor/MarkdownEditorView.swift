@@ -56,6 +56,8 @@ public final class MarkdownEditorView: NSView {
         layout.delegate = self
         styler.theme = theme
         styler.imageStore = imageStore
+        // 원격 그림은 나중에 도착한다. 도착하면 자리를 잡아야 하므로 다시 칠한다.
+        imageStore.onRemoteImageLoaded = { [weak self] in self?.restyleAll() }
 
         textView.isEditable = true
         textView.isRichText = false
@@ -194,12 +196,37 @@ public final class MarkdownEditorView: NSView {
     /// 설정을 싣는다. 설정 화면의 각 항목이 여기서 실제 코드 경로로 이어진다.
     public func apply(_ preferences: EditorPreferences) {
         theme.bodyPointSize = preferences.bodyPointSize      // didSet이 스타일러에 넘긴다
+        theme.lineSpacingScale = preferences.lineSpacing.scale
+        theme.documentWidthMultiple = preferences.documentWidth.multipleOfBodySize
         styler.highlightsCode = preferences.highlightCode
         styler.alignsTables = preferences.alignTables
         styler.appliesSyntheticSlant = preferences.syntheticSlant
-        textView.textContainerInset = theme.textInsets
+        imageStore.loadsRemote = preferences.loadsRemoteImages
+        updateTextInsets()
         textView.insertionPointColor = theme.insertionPoint
         restyleAll()
+    }
+
+    /// 글을 가운데 두는 가로 여백을 다시 잰다. 창 크기가 바뀔 때도 불려야 한다.
+    private func updateTextInsets(viewWidth: CGFloat? = nil) {
+        let width = viewWidth ?? bounds.width
+        let insets = theme.textInsets(forViewWidth: width)
+        guard textView.textContainerInset != insets else { return }
+        textView.textContainerInset = insets
+    }
+
+    /// 창 크기가 바뀌면 여백을 다시 재고 다시 칠한다.
+    ///
+    /// `layout()`을 쓸 수 없다 — 이 타입에는 `layout`이라는 `NSLayoutManager`
+    /// 프로퍼티가 이미 있어 이름이 충돌한다(컴파일러가 거절한다).
+    ///
+    /// 다시 칠해야 하는 이유: 그림 폭 맞춤과 표 열 맞추기가 **컨테이너 폭을 읽는다.**
+    /// 여백만 바꾸고 칠하지 않으면 넓은 창에서 줄인 그림이 좁아진 글 폭을 넘는다.
+    public override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        let before = textView.textContainerInset
+        updateTextInsets(viewWidth: newSize.width)
+        if textView.textContainerInset != before { restyleAll() }
     }
 
     /// 스타일러가 센 코드 블록 범위를 그리는 쪽에 넘긴다. 배경은 글자의 성질이

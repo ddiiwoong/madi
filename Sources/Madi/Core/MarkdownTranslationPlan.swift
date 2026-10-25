@@ -173,6 +173,12 @@ public struct MarkdownTranslationPlan: Equatable {
             // 않아 제목이 문단으로 떨어진다.
             builder.literal(line.range)
 
+        case .linkDefinition:
+            // 라벨도 주소도 번역하지 않는다. 주소를 번역기에 넘기면 링크가 깨지고,
+            // **라벨을 번역하면 그 라벨을 가리키던 본문의 참조가 전부 끊어진다** —
+            // 본문 쪽은 인라인 단위로 번역되므로 둘이 따로 번역돼 서로 어긋난다.
+            builder.literal(line.range)
+
         case .tableRow:
             appendTableRow(line.range, to: &builder, text: text, syntax: syntax)
 

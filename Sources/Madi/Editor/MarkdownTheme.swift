@@ -92,9 +92,36 @@ public struct MarkdownTheme {
 
     public var insertionPoint: NSColor { .labelColor }
 
-    public var lineSpacing: CGFloat { bodyPointSize * 0.42 }
+    public var lineSpacing: CGFloat { bodyPointSize * CGFloat(lineSpacingScale) }
     public var paragraphSpacing: CGFloat { bodyPointSize * 0.55 }
     public var textInsets: NSSize { NSSize(width: 28, height: 24) }
+
+    /// 줄 간격 배율. 설정에서 온다(`EditorPreferences.LineSpacing.scale`).
+    public var lineSpacingScale: Double = EditorPreferences.LineSpacing.normal.scale
+
+    /// 글의 최대 폭. `nil`이면 창 너비를 다 쓴다.
+    ///
+    /// 본문 크기의 배수로 받는 이유: 글자를 키우면 한 줄에 들어가는 글자 수가 비슷하게
+    /// 유지되어야 한다. 고정 pt로 두면 28pt에서 한 줄이 서른 자로 짧아진다.
+    public var documentWidthMultiple: Double? = EditorPreferences.DocumentWidth.normal
+        .multipleOfBodySize
+
+    public var maxContentWidth: CGFloat? {
+        documentWidthMultiple.map { CGFloat($0) * bodyPointSize }
+    }
+
+    /// 글을 가운데에 두기 위한 가로 여백. 창이 글보다 넓으면 남는 만큼을 반씩 나눈다.
+    ///
+    /// 왜 컨테이너 폭을 직접 줄이지 않는가: `widthTracksTextView`를 끄면 텍스트 뷰의
+    /// 크기 변화를 따라가는 일을 전부 손으로 해야 하고, 그림 폭 맞춤과 표 열 맞추기가
+    /// 모두 컨테이너 폭을 읽으므로 둘이 어긋날 길이 생긴다. 여백을 키우면 컨테이너
+    /// 폭이 저절로 줄어들어 그 둘이 따라온다.
+    public func textInsets(forViewWidth width: CGFloat) -> NSSize {
+        let base = textInsets
+        guard let maxWidth = maxContentWidth, width > 0 else { return base }
+        let slack = (width - maxWidth) / 2
+        return NSSize(width: max(base.width, slack), height: base.height)
+    }
 
     public init() {}
 }

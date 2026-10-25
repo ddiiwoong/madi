@@ -18,6 +18,22 @@ public enum ImageReference {
         return false
     }
 
+    /// 원격 그림 주소. **`https`만** 돌려준다.
+    ///
+    /// 왜 `http`를 빼는가: 평문 요청은 중간에 있는 누구나 어떤 문서를 열었는지 볼 수
+    /// 있다. 설정에서 원격 받기를 켠 사용자도 그것까지 켠 것은 아니다.
+    /// `data:`·`javascript:`·체계 상대 주소(`//host/x.png`)도 빼는데, 앞의 둘은
+    /// 네트워크 주소가 아니고 마지막은 체계가 무엇인지 문서가 말하지 않는다.
+    public static func remoteURL(for raw: String) -> URL? {
+        var path = raw.trimmingCharacters(in: .whitespaces)
+        if path.hasPrefix("<"), path.hasSuffix(">"), path.count > 2 {
+            path = String(path.dropFirst().dropLast())
+        }
+        guard path.lowercased().hasPrefix("https://"),
+              let url = URL(string: path), url.host?.isEmpty == false else { return nil }
+        return url
+    }
+
     /// 로컬 파일 주소. 풀 수 없으면 nil.
     ///
     /// - Parameters:

@@ -14,6 +14,10 @@ public enum BlockKind: Equatable, Sendable {
     case thematicBreak
     case tableRow
     case tableDelimiter
+    /// 링크 정의 줄(`[참조]: https://example.com "제목"`). 렌더러는 이 줄을 통째로
+    /// 삼켜 아무것도 그리지 않지만, 편집기는 **보여야 한다** — 숨기면 빈 줄이 남고
+    /// 사용자가 친 글자가 어디로 갔는지 알 수 없다(펜스의 언어 이름에서 겪은 일이다).
+    case linkDefinition
     case paragraph
     case blank
 }
@@ -165,6 +169,27 @@ public struct MarkdownSyntax: Sendable {
         return nil
     }
 
+    /// 링크 정의 줄을 가른다 — `[참조]: https://example.com "제목"`.
+    ///
+    /// **정규식이 한 곳에만 있어야 한다.** 세 곳이 이것을 쓴다: 줄 스캐너가 종류를
+    /// 정하고, `LinkDefinitions`가 표를 모으고, 스타일러가 주소에 색을 준다. 각자
+    /// 따로 쓰면 세 곳의 판정이 조용히 갈린다.
+    ///
+    /// 범위는 **그 줄 안의** 오프셋이다(문서 전체가 아니다) — 부르는 쪽이 줄의 시작을
+    /// 더한다.
+    public static func linkDefinition(in line: String) -> (label: NSRange, url: NSRange)? {
+        let ns = line as NSString
+        guard let m = linkDefinitionPattern.firstMatch(in: line,
+                                                       range: NSRange(location: 0, length: ns.length))
+        else { return nil }
+        let label = m.range(at: 1)
+        let url = m.range(at: 2)
+        guard label.location != NSNotFound, url.location != NSNotFound, url.length > 0 else {
+            return nil
+        }
+        return (label: label, url: url)
+    }
+
     private func scanLine(_ line: String, at range: NSRange, lineNumber: Int,
                           inFence: inout Bool, fenceLanguage: inout String?) -> LineToken {
         func token(_ kind: BlockKind, markers: [NSRange] = [], content: NSRange? = nil,
@@ -247,6 +272,14 @@ public struct MarkdownSyntax: Sendable {
                          markers: markers,
                          content: shift(m.range(at: 4), by: range.location))
         }
+        if let parts = Self.linkDefinition(in: line) {
+            // 라벨과 콜론은 마커다(캐럿이 없는 줄에서는 접힌다). 주소는 남겨 둔다 —
+            // 어디로 가는 링크인지가 이 줄의 내용이다.
+            return token(.linkDefinition,
+                         markers: [shift(NSRange(location: 0, length: parts.url.location),
+                                         by: range.location)],
+                         content: shift(parts.url, by: range.location))
+        }
         if Self.tableDelimiter.firstMatch(in: line, range: NSRange(location: 0, length: ns.length)) != nil {
             return token(.tableDelimiter, markers: [range])
         }
@@ -259,7 +292,12 @@ public struct MarkdownSyntax: Sendable {
     // MARK: Inlines
 
     /// Inline constructs inside one line's content range.
-    public func scanInline(in text: NSString, range: NSRange) -> [InlineToken] {
+    ///
+    /// `definitions`는 문서 전체에서 모은 링크 정의다. 참조 링크(`[글][참조]`)의 주소는
+    /// 이 줄에 없으므로, 표가 없으면 참조 링크를 **평범한 글자로 둔다** — 그것이 정의가
+    /// 아직 없는 참조의 올바른 모습이기도 하다.
+    public func scanInline(in text: NSString, range: NSRange,
+                           definitions: LinkDefinitions = .empty) -> [InlineToken] {
         guard range.length > 0 else { return [] }
         let line = text.substring(with: range)
         let whole = NSRange(location: 0, length: (line as NSString).length)
@@ -297,6 +335,40 @@ public struct MarkdownSyntax: Sendable {
             let url = (line as NSString).substring(with: m.range(at: 1))
             add(.autolink(url: url), m, content: 1, markers: markerPair(m, contentIndex: 1))
         }
+
+        // 참조 꼴. **인라인 꼴 다음이어야 한다** — `[a](b)`를 먼저 잡게 두지 않으면
+        // 축약 참조 패턴 `[a]`가 그 앞부분을 먼저 집어간다.
+        //
+        // 세 꼴을 다룬다: 온전한 꼴 `[글][참조]`, 줄인 꼴 `[참조][]`, 축약 꼴 `[참조]`.
+        // 줄인 꼴과 축약 꼴은 보이는 글자가 곧 라벨이다.
+        //
+        // **해결되는 것만** 토큰으로 만든다. 정의가 없으면 아무 토큰도 내지 않아 그 글은
+        // 평범한 대괄호 글로 남는다 — 그래서 `[보류]`처럼 링크가 아닌 대괄호 글이
+        // 밑줄 친 링크로 보이지 않는다.
+        //
+        // 종류는 인라인 링크와 **같은** `.link`/`.image`를 쓴다. 해결된 참조는 그리는
+        // 쪽에서 인라인 링크와 다를 이유가 없고(그림은 그대로 그림으로 놓여야 한다),
+        // 종류를 새로 만들면 받는 쪽마다 두 경우를 쓰게 된다.
+        for (pattern, isImage, labelGroup) in [
+            (Self.referenceImageFull, true, 2),
+            (Self.referenceLinkFull, false, 2),
+            (Self.referenceImageShortcut, true, 1),
+            (Self.referenceLinkShortcut, false, 1),
+        ] as [(NSRegularExpression, Bool, Int)] {
+            for m in pattern.matches(in: line, range: whole) {
+                let ns = line as NSString
+                let explicit = m.numberOfRanges > labelGroup ? m.range(at: labelGroup) : NSRange()
+                // 줄인 꼴 `[글][]`은 라벨 자리가 비어 있다 — 보이는 글자를 라벨로 쓴다.
+                let labelRange = (explicit.location != NSNotFound && explicit.length > 0)
+                    ? explicit : m.range(at: 1)
+                guard labelRange.location != NSNotFound, labelRange.length > 0,
+                      let url = definitions.url(for: ns.substring(with: labelRange))
+                else { continue }
+                add(isImage ? .image(url: url) : .link(url: url), m, content: 1,
+                    markers: markerPair(m, contentIndex: 1))
+            }
+        }
+
         for m in Self.strong.matches(in: line, range: whole) {
             add(.strong, m, content: 2, markers: markerPair(m, contentIndex: 2))
         }
@@ -340,11 +412,23 @@ public struct MarkdownSyntax: Sendable {
     private static let fence = regex(#"^\s*(```|~~~)\s*([\w+#-]*)\s*$"#)
     private static let thematicBreak = regex(#"^\s{0,3}((\*[ \t]*){3,}|(-[ \t]*){3,}|(_[ \t]*){3,})$"#)
     private static let tableDelimiter = regex(#"^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$"#)
+    /// 링크 정의 줄. 주소는 꺾쇠로 감쌀 수 있고(`<a b.html>`), 제목은 따옴표 세 꼴
+    /// 모두 받는다(CommonMark). 들여쓰기는 세 칸까지.
+    private static let linkDefinitionPattern =
+        regex(#"^\s{0,3}\[([^\]\n]+)\]:[ \t]*(<[^>\n]*>|[^\s\n]+)(?:[ \t]+("[^"\n]*"|'[^'\n]*'|\([^)\n]*\)))?[ \t]*$"#)
 
     private static let code = regex(#"`([^`\n]+)`"#)
     private static let image = regex(#"!\[([^\]\n]*)\]\(([^)\s]+)[^)]*\)"#)
     private static let link = regex(#"\[([^\]\n]+)\]\(([^)\s]+)[^)]*\)"#)
     private static let autolink = regex(#"<((?:https?|mailto):[^>\s]+)>"#)
+    /// 참조 꼴. 온전한 꼴은 두 번째 대괄호가 라벨이고, 비어 있으면(`[글][]`) 줄인
+    /// 꼴이라 첫 대괄호가 라벨을 겸한다.
+    private static let referenceImageFull = regex(#"!\[([^\]\n]*)\]\[([^\]\n]*)\]"#)
+    private static let referenceLinkFull = regex(#"\[([^\]\n]+)\]\[([^\]\n]*)\]"#)
+    /// 축약 꼴 `[참조]`. 뒤에 `(`나 `[`가 오면 인라인 꼴이나 온전한 꼴이므로 제외한다 —
+    /// 그 둘은 이미 앞에서 잡혔지만, 여기서도 막아 **반쪽만** 집어가지 않게 한다.
+    private static let referenceImageShortcut = regex(#"!\[([^\]\n]+)\](?![\[(])"#)
+    private static let referenceLinkShortcut = regex(#"(?<!!)\[([^\]\n]+)\](?![\[(:])"#)
     private static let strong = regex(#"(\*\*|__)(?=\S)(.+?)(?<=\S)\1"#)
     /// `*`로 감싼 기울임. **낱말 경계를 요구하지 않는다** — CommonMark가 `*`의 낱말 안
     /// 강조를 허용하고, 한국어는 조사가 바로 붙어(`*기울임*은`) 경계를 요구하면 못 쓴다.

@@ -265,12 +265,25 @@ final class DocumentWindowController: NSWindowController {
 
     // MARK: Print and PDF
 
+    /// 프린트와 PDF 내보내기가 **같은 설정**을 쓴다. 설정 하나가 양쪽에 걸리는 것이
+    /// 맞다 — 화면에 보이는 것을 종이에 내든 파일에 내든 같은 쪽이어야 한다.
     private func printInfo(forPDF pdfURL: URL?) -> NSPrintInfo {
         let info = NSPrintInfo.shared.copy() as! NSPrintInfo
-        info.topMargin = 48
-        info.bottomMargin = 48
-        info.leftMargin = 48
-        info.rightMargin = 48
+        let settings = preferences.current
+
+        // 용지를 먼저 정한다. 방향과 여백이 그 크기 위에서 계산된다.
+        if let paper = settings.printPaper.portraitSize {
+            // 방향은 아래에서 `orientation`으로 주므로 여기서는 늘 세로 크기를 넣는다 —
+            // 가로 크기를 넣고 방향까지 가로로 주면 두 번 돌아간다.
+            info.paperSize = NSSize(width: paper.width, height: paper.height)
+        }
+        info.orientation = settings.printOrientation == .landscape ? .landscape : .portrait
+
+        let margin = settings.printMargin.points
+        info.topMargin = margin
+        info.bottomMargin = margin
+        info.leftMargin = margin
+        info.rightMargin = margin
         info.horizontalPagination = .fit
         info.verticalPagination = .automatic
         info.isHorizontallyCentered = false

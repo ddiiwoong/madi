@@ -54,6 +54,11 @@ public final class MarkdownStyler {
 
     private let syntax = MarkdownSyntax()
 
+    /// 이번 패스에서 쓸 링크 정의 표. **패스마다 한 번** 모은다 — 참조 링크의 주소는
+    /// 그 줄에 없으므로 인라인 스캔이 이것을 받아야 하고, 줄마다 다시 모으면 문서
+    /// 전체를 줄 수만큼 훑는다.
+    private var definitions = LinkDefinitions.empty
+
     public init() {}
 
     public struct SearchState {
@@ -124,6 +129,7 @@ public final class MarkdownStyler {
 
         let lines = syntax.scanLines(in: text)
         codeBlockRanges = codeBlocks(in: lines)
+        definitions = LinkDefinitions(scanning: text, lines: lines)
         // `> [!NOTE]`로 시작하는 인용 덩이는 색이 있는 안내 상자다. 줄 하나만 보고는
         // 알 수 없어서(덩이의 첫 줄이 종류를 말한다) 미리 한 번 훑는다.
         let alerts = GithubAlert.map(lines: lines, in: text)
@@ -237,14 +243,25 @@ public final class MarkdownStyler {
                   NSIntersectionRange(line.range, writeRange).length > 0 else { continue }
 
             // 줄 전체가 그림 하나여야 한다.
-            let tokens = syntax.scanInline(in: text, range: line.contentRange)
+            let tokens = syntax.scanInline(in: text, range: line.contentRange,
+                                           definitions: definitions)
             guard tokens.count == 1, case let .image(raw) = tokens[0].kind else { continue }
             let token = tokens[0]
             let trimmed = trimmedRange(line.contentRange, in: text)
             guard NSEqualRanges(token.range, trimmed) else { continue }
 
-            guard let url = ImageReference.localURL(for: raw, relativeTo: documentURL),
-                  let image = imageStore.image(at: url) else { continue }
+            // 로컬이 먼저다. 못 풀면 원격을 묻는데, 저장소가 꺼져 있으면 nil을
+            // 돌려주므로 **게이트는 한 곳**(InlineImageStore.loadsRemote)이다.
+            // 원격은 아직 안 받았으면 nil이고, 도착하면 다시 칠하면서 자리가 생긴다.
+            let resolved: NSImage?
+            if let url = ImageReference.localURL(for: raw, relativeTo: documentURL) {
+                resolved = imageStore.image(at: url)
+            } else if let url = ImageReference.remoteURL(for: raw) {
+                resolved = imageStore.remoteImage(at: url)
+            } else {
+                resolved = nil
+            }
+            guard let image = resolved else { continue }
             // AppKit의 CGSize를 Core의 Foundation 전용 타입으로 바꿔 넘긴다.
             let pixels = ImageReference.Size(width: Double(image.size.width),
                                              height: Double(image.size.height))
@@ -468,6 +485,24 @@ public final class MarkdownStyler {
                 .foregroundColor: theme.dim,
             ], range: line.range)
 
+        case .linkDefinition:
+            // 줄 전체를 흐리게 깐 뒤 주소에만 링크 색을 준다. 주소 뒤의 제목
+            // (`"제목"`)도 렌더러가 삼키는 metadata이므로 본문 색으로 두면 그 줄에서
+            // 유일하게 평범한 글처럼 튄다 — 그렇다고 숨기지는 않는다(친 글자다).
+            storage.addAttributes([
+                .font: theme.bodyFont,
+                .foregroundColor: theme.dim,
+            ], range: line.range)
+            // 라벨은 마커로 접히고 주소만 남는다. 주소에 링크 색과 대상을 주어
+            // ⌘클릭으로 열 수 있게 한다 — 정의 줄이 바로 그 주소를 위한 줄이다.
+            if line.contentRange.length > 0, NSMaxRange(line.contentRange) <= text.length {
+                storage.addAttributes([
+                    .foregroundColor: theme.link,
+                    .underlineStyle: NSUnderlineStyle.single.rawValue,
+                    .mdLinkTarget: text.substring(with: line.contentRange),
+                ], range: line.contentRange)
+            }
+
         case .thematicBreak:
             storage.addAttributes([.foregroundColor: theme.rule], range: line.range)
 
@@ -513,6 +548,9 @@ public final class MarkdownStyler {
     private func shouldHideMarker(for kind: BlockKind) -> Bool {
         switch kind {
         case .heading, .codeFence, .setextUnderline: return true
+        // 정의 줄의 라벨(`[참조]: `)은 렌더러가 삼키는 markup이라 접는다. 주소는
+        // 마커가 아니므로 남는다 — 줄 전체가 사라지면 사용자가 친 글자가 없어진다.
+        case .linkDefinition: return true
         case .quote, .listItem, .thematicBreak, .tableRow, .tableDelimiter,
              .codeBody, .paragraph, .blank: return false
         }
@@ -525,7 +563,7 @@ public final class MarkdownStyler {
         guard content.location != NSNotFound, content.length > 0,
               NSMaxRange(content) <= text.length else { return }
 
-        for token in syntax.scanInline(in: text, range: content) {
+        for token in syntax.scanInline(in: text, range: content, definitions: definitions) {
             let existing = storage.attribute(.font, at: token.range.location,
                                              effectiveRange: nil) as? NSFont ?? theme.bodyFont
 

@@ -91,10 +91,18 @@ front matter도 같은 이유로 **원문 블록을 바이트 그대로** 들고
 
 처음에는 앱 호스트 방식(`TEST_HOST`)으로 만들었는데 러너가 연결 전에 **355초를 멈췄습니다**
 ("The test runner hung before establishing connection"). 앱 자체는 정상 실행되므로 호스팅
-문제였고, `Core`가 Foundation만 쓰니 호스트를 뗄 수 있었습니다 — 239개가 몇 초 안에 끝납니다.
+문제였고, `Core`가 Foundation만 쓰니 호스트를 뗄 수 있었습니다 — 365개가 몇 초 안에 끝납니다.
 
 그래서 테스트 타깃은 `Tests/MadiTests`와 `Sources/Madi/Core`를 **둘 다 소스로 컴파일**하고
 `@testable import`를 쓰지 않습니다. `Core`에 파일을 더하면 자동으로 들어갑니다.
+
+`Editor`도 함께 컴파일합니다 — 블록 편집기의 되돌리기·블록 넘는 선택·한글 조합 보호는
+응답자 연쇄와 실제 `NSTextView`를 지나야 참임을 알 수 있고, 순수 모델 테스트만으로는
+배선이 끊긴 것을 못 잡습니다(⌘A가 모델에는 실리는데 뷰에 싣는 순간 한 블록으로 줄어드는
+결함을 UI로 더듬다 놓쳤습니다). 같은 이유로 `Panels/SettingsPanel.swift`도 넣습니다:
+이 환경에서는 패널에 좌표 클릭이 닿지 않아(다섯 번 시도) 설정 컨트롤이 저장소까지
+닿는지를 UI로 확인할 길이 없었습니다. 테스트가 창을 화면 밖에 만들고 컨트롤의
+target-action을 AppKit과 같은 방식으로 쏩니다.
 
 ## 창이 쪼그라드는 함정
 
@@ -105,7 +113,7 @@ front matter도 같은 이유로 **원문 블록을 바이트 그대로** 들고
 ## 손대기 전에
 
 ```sh
-make test        # Core 테스트 239개 — 가장 빠른 신호
+make test        # 테스트 365개 — 가장 빠른 신호
 make core-only   # Core가 아직 Foundation만 쓰는지
 make build       # 앱 빌드
 make universal   # arm64 + x86_64, lipo로 검사까지

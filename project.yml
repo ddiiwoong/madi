@@ -50,11 +50,17 @@ targets:
     # 순수 모델 테스트만으로는 배선이 끊긴 것을 못 잡는다 — 실제로 ⌘A가 모델에는
     # 실리는데 뷰에 싣는 순간 한 블록으로 줄어드는 결함을 UI로 더듬다 놓쳤다.
     # 창은 화면 밖에 만들므로 사용자의 화면을 가로채지 않는다.
+    # 설정 창도 넣는다. 설정 항목이 **실제로 저장되는지**는 컨트롤의 target-action을
+    # 지나야 알 수 있고, 이 환경에서는 패널에 좌표 클릭이 닿지 않아(네 번 시도) UI로는
+    # 확인할 길이 없었다 — 전에 "체크박스 클릭 자체는 확인하지 못했다"고 적어 둔 구멍이
+    # 바로 이것이다. 테스트가 그 경로를 지난다.
     sources:
       - Tests/MadiTests
       - Sources/Madi/Core
       - Sources/Madi/Editor
       - Sources/Madi/App/AppLog.swift
+      - Sources/Madi/App/AppEnvironment.swift
+      - Sources/Madi/Panels/SettingsPanel.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.jinwoong.md.tests
