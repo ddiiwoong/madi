@@ -111,8 +111,10 @@ final class BlockDocumentTests: XCTestCase {
         let documents = try Self.corpus()
 
         // 코퍼스가 조용히 비면 이 테스트는 아무것도 검사하지 않고 초록으로 끝난다.
-        // 그 경우를 먼저 막는다.
-        XCTAssertGreaterThanOrEqual(documents.count, 6,
+        // 그 경우를 먼저 막는다. 바닥값은 **이 저장소가 늘 들고 있는 문서**에만
+        // 기댄다(README · TODO · 설계 문서 · 웹 프로토타입 README) — `docs/` 아래
+        // 문서는 늘어나고 줄어들므로 세어서 못박으면 남의 작업에 따라 빨개진다.
+        XCTAssertGreaterThanOrEqual(documents.count, 4,
                                     "코퍼스가 \(documents.count)개다 — 파일을 못 찾았거나 이름이 겹쳐 덮였다")
         let totalCharacters = documents.values.reduce(0) { $0 + $1.count }
         XCTAssertGreaterThan(totalCharacters, 10_000,
