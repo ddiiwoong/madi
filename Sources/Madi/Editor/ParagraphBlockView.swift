@@ -39,6 +39,11 @@ final class ParagraphBlockView: NSView {
     private(set) var blockID: Block.ID?
     private(set) var blockIndex: Int = 0
 
+    /// 편집 **직전**의 캐럿(이 블록 안의 UTF-16 오프셋). `shouldChangeTextIn`이 채우고
+    /// `textDidChange`가 쓰고 버린다. 되돌릴 때 캐럿이 갈 자리이고, 길이 차이로
+    /// 어림하면 앞으로 지우기에서 한 칸 밀린다 — 아래 대리자 주석에 실측을 적었다.
+    private(set) var caretBeforeEdit: Int?
+
     let textView: BlockTextView
     private let storage = NSTextStorage()
     private let textLayout = NSLayoutManager()
@@ -283,9 +288,28 @@ final class ParagraphBlockView: NSView {
 
 extension ParagraphBlockView: NSTextViewDelegate {
 
+    /// 편집 **직전**의 캐럿을 잡아 둔다.
+    ///
+    /// 왜 필요한가(실측): 되돌릴 때 캐럿이 갈 자리를 옛/새 조각의 **길이 차이로**
+    /// 어림하면 앞으로 지우기(fn+Delete)에서 한 칸 밀린다 — 오프셋 2에서 앞으로
+    /// 지우고 ⌘Z를 누르면 캐럿이 3에 섰다. 길이 차이 보정은 "편집이 캐럿 앞에서
+    /// 일어났다"를 가정하는데, 앞으로 지우기는 캐럿 **뒤**를 고치고 캐럿은 그대로다.
+    /// (old, new, 지금 캐럿) 셋만으로는 지우기 두 방향을 가를 수 없다 — Backspace도
+    /// 앞으로 지우기도 편집 뒤 캐럿이 바뀐 자리와 같아진다. 그래서 편집 전 값을 잡는다.
+    ///
+    /// 치기·Backspace·앞으로 지우기 모두 이 값이 곧 "되돌리면 캐럿이 있어야 할 자리"다.
+    func textView(_ textView: NSTextView, shouldChangeTextIn affectedCharRange: NSRange,
+                  replacementString: String?) -> Bool {
+        caretBeforeEdit = textView.selectedRange().location
+        return true
+    }
+
     func textDidChange(_ notification: Notification) {
         guard !isApplyingModel else { return }
         owner?.blockView(self, didChangeSource: storage.string)
+        // 한 번 쓰고 버린다. 조합(IME) 갱신은 `shouldChangeTextIn`을 지나지 않는
+        // 경우가 있어, 남겨 두면 다음 편집이 낡은 값을 쓴다.
+        caretBeforeEdit = nil
     }
 
     func textViewDidChangeSelection(_ notification: Notification) {

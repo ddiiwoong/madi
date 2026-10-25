@@ -65,6 +65,63 @@ public final class BlockContainerView: NSView {
     /// 이 스택만 본다.
     public let documentUndoManager = UndoManager()
 
+    /// 이어지는 타이핑 한 줄기. ⌘Z 한 번이 런 전체를 되돌리게 한다.
+    ///
+    /// 왜 `NSUndoManager`의 묶음(`beginUndoGrouping`)을 쓰지 않는가: 묶음이 열려 있는
+    /// 동안은 `canUndo`가 거짓이라 **타이핑 중에 ⌘Z가 비활성**이 된다. 그래서 런이
+    /// 시작할 때 되돌리기를 **한 번만** 등록하고, 그 되돌리기가 실행될 때 현재 상태에서
+    /// 역산해 런의 시작으로 돌려놓는다 — 런이 길어져도 등록은 하나다.
+    ///
+    /// 참조 타입이어야 한다. 등록한 클로저가 이 객체를 잡고 있고, 그 뒤의 타이핑이
+    /// `endCaret`을 고쳐도 같은 객체를 봐야 한다.
+    private final class TypingRun {
+        let blockIndex: Int
+        /// 런이 시작할 때 그 자리에 있던 블록. 되돌리기가 이것으로 돌려놓는다.
+        let startBlocks: [Block]
+        /// 런이 시작하기 전의 캐럿.
+        let caretOnUndo: BlockPosition
+        /// 런의 마지막 캐럿. 다음 편집이 이어지는지 가린다.
+        var endCaret: Int
+        let name: String
+
+        init(blockIndex: Int, startBlocks: [Block], caretOnUndo: BlockPosition,
+             endCaret: Int, name: String) {
+            self.blockIndex = blockIndex
+            self.startBlocks = startBlocks
+            self.caretOnUndo = caretOnUndo
+            self.endCaret = endCaret
+            self.name = name
+        }
+    }
+
+    private var typingRun: TypingRun?
+
+
+    /// 런을 닫는다. 다음 타이핑은 새 되돌리기 단위가 된다.
+    ///
+    /// 닫아야 하는 자리: 구조를 바꾸는 편집, 되돌리기·다시 하기, 문서를 새로 싣기.
+    ///
+    /// **선택 변경으로는 닫지 않는다.** 처음에 그렇게 했다가 실패했다: 런을 세운 직후
+    /// `show()`가 저장소를 다시 쓰면 선택이 0으로 갔다 돌아오고, 그 알림이 **나중에**
+    /// 도착해 런을 끊는다. 플래그로 그 사이를 막아도 알림 전달 시점이 동기적이지
+    /// 않아 새어 나갔다(다섯 글자에 ⌘Z 다섯 번이 그대로였다). 그래서 이어짐 판정을
+    /// 전달 시점에 기대지 않는 **편집 시점**으로 옮겼다 — `caretBefore`가 런의 끝과
+    /// 맞는지만 본다. 캐럿을 다른 곳으로 옮기고 치면 그 값이 어긋나 저절로 새 런이 된다.
+    private func breakTypingRun() {
+        typingRun = nil
+    }
+
+    /// 타이핑 런 하나를 되돌린다 — **현재 상태에서 역산**해 런의 시작으로 돌려놓는다.
+    private func undoTypingRun(_ run: TypingRun) {
+        guard document.blocks.indices.contains(run.blockIndex) else { return }
+        let current = [document.blocks[run.blockIndex]]
+        let edit = BlockEdit(range: run.blockIndex ..< (run.blockIndex + 1),
+                             old: current, new: run.startBlocks, name: run.name)
+        breakTypingRun()
+        // `performUndo`를 지나므로 다시 하기(⌘⇧Z)도 한 번에 런 전체를 되살린다.
+        performUndo(edit, placingCaretAt: run.caretOnUndo)
+    }
+
     public override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         styler.theme = theme
@@ -119,6 +176,7 @@ public final class BlockContainerView: NSView {
             measured.removeAll()
             selection = BlockSelection(caretAt: BlockPosition(blockIndex: 0, offset: 0))
             documentUndoManager.removeAllActions()
+            breakTypingRun()
             detachAllViews()
             relayout(remeasureAll: true)
         }
@@ -323,6 +381,9 @@ public final class BlockContainerView: NSView {
         guard !edit.isNoop else { return }
         let inverse = edit.inverted()
         var caretBefore = selection.start
+        // 구조가 바뀌는 편집은 타이핑 런을 끊는다. 끊지 않으면 Enter 앞뒤의 타이핑이
+        // 한 ⌘Z에 함께 되돌아간다.
+        breakTypingRun()
         // 되돌릴 때 돌아갈 자리: 지금 캐럿이 있던 곳.
         let undoCaret = caretOnUndo ?? selection.start
 
@@ -359,6 +420,8 @@ public final class BlockContainerView: NSView {
         guard !edit.isNoop else { return }
         let inverse = edit.inverted()
         let caretForRedo = caret
+        // 되돌린 **뒤에** 치는 글자는 새 런이다. 되돌리기 자신이 런을 끊는다.
+        breakTypingRun()
         guard edit.apply(to: &document) else { return }
 
         documentUndoManager.setActionName(edit.name)
@@ -615,24 +678,59 @@ extension BlockContainerView: BlockViewOwner {
 
     /// 뷰를 그대로 두고 모델만 갱신한다. 한 글자 칠 때마다 뷰를 다시 세우면 캐럿과
     /// 조합이 날아가므로, 블록 하나로 남는 편집은 이 길을 쓴다.
+    ///
+    /// **이어지는 타이핑은 되돌리기 하나로 묶는다**(아래 `TypingRun`). 묶지 않으면
+    /// 다섯 글자를 치고 ⌘Z를 다섯 번 눌러야 하는데, 기본 편집기(`NSTextView`)는
+    /// 한 번이다 — 실측으로 5 대 1이었고, 그것이 "⌘Z가 이상하다"로 신고된 것이다.
     private func applyWithoutRebuild(_ edit: BlockEdit, blockIndex: Int,
                                      view: ParagraphBlockView) {
-        let inverse = edit.inverted()
-        // 되돌릴 때 돌아갈 자리 — **치기 전** 캐럿. 한 글자 쳤으면 그 글자 앞이다.
-        // 이 경로가 평소의 입력이므로, 여기서 0을 넘기면 ⌘Z마다 캐럿이 블록 처음으로
-        // 튄다(처음에 `perform`만 고치고 이 경로를 빠뜨려 테스트가 잡았다).
-        //
-        // 편집이 캐럿 **앞**에서 일어났다고 보고 길이 차이만큼 되돌린다 — 치기·지우기·
-        // 붙이기가 모두 그렇다. 캐럿 뒤를 고치는 경로는 지금 없다.
-        let oldLength = (edit.old.first?.sourceSlice as NSString?)?.length ?? 0
-        let newLength = (edit.new.first?.sourceSlice as NSString?)?.length ?? 0
+        // 되돌릴 때 돌아갈 자리 — **편집 전** 캐럿. 뷰가 `shouldChangeTextIn`에서
+        // 잡아 둔 값이 가장 정확하다. 조합(IME) 갱신처럼 그 길을 지나지 않은 편집은
+        // 길이 차이로 어림한다(편집이 캐럿 앞에서 일어났다고 보는 근사다).
         let caretNow = view.textView.selectedRange().location
-        let caretOnUndo = BlockPosition(blockIndex: blockIndex,
-                                        offset: max(0, caretNow - newLength + oldLength))
+        let caretBefore: Int
+        if let exact = view.caretBeforeEdit {
+            caretBefore = exact
+        } else {
+            let oldLength = (edit.old.first?.sourceSlice as NSString?)?.length ?? 0
+            let newLength = (edit.new.first?.sourceSlice as NSString?)?.length ?? 0
+            caretBefore = max(0, caretNow - newLength + oldLength)
+        }
+
+        // 이 편집이 열려 있는 타이핑 런을 이어 가는가 — 같은 블록이고 캐럿이
+        // 런의 끝에서 이어질 때만이다. 캐럿이 뛰었으면 새 런이다.
+        //
+        // **줄바꿈은 런을 가른다.** Enter 한 번은 구조를 바꾸지 않는다(마크다운에서
+        // `a\n첫 문단`은 여전히 한 문단이라 블록이 쪼개지지 않는다). 그래서 이 조건이
+        // 없으면 "abc" + Enter + "def"가 ⌘Z 하나가 되어, 줄바꿈만 되돌리려던 사용자가
+        // 앞 문장까지 잃는다. 실측으로 드러난 경우다.
+        let oldNewlines = (edit.old.first?.sourceSlice ?? "").count { $0 == "\n" }
+        let newNewlines = (edit.new.first?.sourceSlice ?? "").count { $0 == "\n" }
+        let crossesLine = oldNewlines != newNewlines
+        let continues = !crossesLine
+            && typingRun?.blockIndex == blockIndex
+            && typingRun?.endCaret == caretBefore
+
         guard edit.apply(to: &document) else { return }
-        documentUndoManager.setActionName(edit.name)
-        documentUndoManager.registerUndo(withTarget: self) { target in
-            target.performUndo(inverse, placingCaretAt: caretOnUndo)
+
+        if let run = typingRun, continues {
+            // 등록하지 않는다. 이미 걸어 둔 되돌리기가 **런의 시작 상태**로 돌려놓으므로
+            // (되돌릴 때 현재 상태에서 역산한다) ⌘Z 한 번이 런 전체를 되돌린다.
+            run.endCaret = caretNow
+        } else {
+            let run = TypingRun(blockIndex: blockIndex,
+                                startBlocks: edit.old,
+                                caretOnUndo: BlockPosition(blockIndex: blockIndex,
+                                                           offset: caretBefore),
+                                endCaret: caretNow,
+                                name: edit.name)
+            typingRun = run
+            documentUndoManager.setActionName(edit.name)
+            documentUndoManager.registerUndo(withTarget: self) { target in
+                target.undoTypingRun(run)
+            }
+            // 줄바꿈은 자기 한 칸으로 끝난다 — 뒤에 치는 글자는 또 새 런이다.
+            if crossesLine { breakTypingRun() }
         }
         // 종류가 바뀌었을 수 있다(`## `을 쳐서 제목이 됐다) — 다시 칠한다.
         view.show(block: document.blocks[blockIndex], index: blockIndex,

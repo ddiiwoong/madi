@@ -397,6 +397,203 @@ final class BlockContainerTests: XCTestCase {
                        "되돌린 뒤 캐럿이 고치던 자리(4)가 아니라 \(caret ?? -1)에 있다")
     }
 
+    // MARK: 되돌리기 묶기 — 이어지는 타이핑은 ⌘Z 한 번
+
+    /// 한 글자마다 되돌리기를 쌓으면 다섯 글자를 치고 ⌘Z를 다섯 번 눌러야 한다.
+    /// 기본 편집기(`NSTextView`)는 한 번이고, 그 차이가 "⌘Z가 이상하다"로 신고됐다
+    /// (실측 5 대 1).
+    private func undoStepsBackTo(_ target: String, limit: Int = 30) -> Int {
+        var steps = 0
+        while container.documentUndoManager.canUndo, steps < limit {
+            container.documentUndoManager.undo()
+            settle()
+            steps += 1
+            if container.markdown == target { break }
+        }
+        return steps
+    }
+
+    func testContiguousTypingIsOneUndoStep() {
+        guard let paragraph = blocks.dropFirst(2).first else { return XCTFail("문단 뷰가 없다") }
+        XCTAssertTrue(window.makeFirstResponder(paragraph))
+        paragraph.setSelectedRange(NSRange(location: 0, length: 0))
+        for ch in ["a", "b", "c", "d", "e"] {
+            paragraph.insertText(ch, replacementRange: paragraph.selectedRange())
+            settle()
+        }
+        XCTAssertTrue(container.markdown.contains("abcde첫 문단이다."), "전제: 다섯 글자가 들어갔다")
+        // 전제: 모의 키 입력 하나하나가 **자기 되돌리기 묶음**에 들어간다. 이것이
+        // 거짓이면(이벤트 묶기가 다섯을 한 묶음으로 넣으면) 아래 단정은 공허해진다 —
+        // `NSUndoManager`가 묶은 것을 내 묶기가 한 일로 읽게 된다. 실측 결과 0이다.
+        XCTAssertEqual(container.documentUndoManager.groupingLevel, 0,
+                       "열린 묶음이 남아 있으면 이 테스트는 내 묶기를 재는 것이 아니다")
+
+        XCTAssertEqual(undoStepsBackTo(body), 1,
+                       "이어지는 타이핑은 ⌘Z 한 번에 되돌아가야 한다")
+        XCTAssertEqual(container.markdown, body, "되돌리면 바이트가 같아야 한다")
+    }
+
+    /// 묶기가 **끊겨야 할 때 끊기는지.** 안 끊으면 서로 떨어진 두 편집이 한 ⌘Z에
+    /// 함께 되돌아가, 사용자가 고치지 않은 자리까지 사라진다.
+    func testMovingTheCaretStartsANewUndoStep() {
+        guard let paragraph = blocks.dropFirst(2).first else { return XCTFail("문단 뷰가 없다") }
+        XCTAssertTrue(window.makeFirstResponder(paragraph))
+
+        paragraph.setSelectedRange(NSRange(location: 0, length: 0))
+        paragraph.insertText("ab", replacementRange: paragraph.selectedRange())
+        settle()
+        // 캐럿을 **다른 곳으로** 옮기고 또 친다.
+        paragraph.setSelectedRange(NSRange(location: paragraph.string.utf16.count - 1, length: 0))
+        settle()
+        paragraph.insertText("Z", replacementRange: paragraph.selectedRange())
+        settle()
+
+        container.documentUndoManager.undo()
+        settle()
+        XCTAssertFalse(container.markdown.contains("Z"), "뒤의 편집만 되돌아가야 한다")
+        XCTAssertTrue(container.markdown.contains("ab첫 문단이다."),
+                      "앞의 타이핑은 남아 있어야 한다 — 함께 되돌아가면 고치지 않은 자리가 사라진다")
+    }
+
+    func testTypingInAnotherBlockStartsANewUndoStep() {
+        let views = blocks
+        guard views.count > 4 else { return XCTFail("블록이 모자라다") }
+        XCTAssertTrue(window.makeFirstResponder(views[2]))
+        views[2].setSelectedRange(NSRange(location: 0, length: 0))
+        views[2].insertText("a", replacementRange: views[2].selectedRange())
+        settle()
+
+        XCTAssertTrue(window.makeFirstResponder(views[4]))
+        views[4].setSelectedRange(NSRange(location: 0, length: 0))
+        views[4].insertText("b", replacementRange: views[4].selectedRange())
+        settle()
+
+        container.documentUndoManager.undo()
+        settle()
+        XCTAssertTrue(container.markdown.contains("a첫 문단이다."),
+                      "다른 블록의 편집이 함께 되돌아갔다")
+        XCTAssertFalse(container.markdown.contains("b둘째"), "뒤의 편집은 되돌아가야 한다")
+    }
+
+    /// 묶인 런도 다시 하기(⌘⇧Z) 한 번에 되살아나야 한다.
+    func testRedoRestoresACoalescedRunInOneStep() {
+        guard let paragraph = blocks.dropFirst(2).first else { return XCTFail("문단 뷰가 없다") }
+        XCTAssertTrue(window.makeFirstResponder(paragraph))
+        paragraph.setSelectedRange(NSRange(location: 0, length: 0))
+        for ch in ["a", "b", "c"] {
+            paragraph.insertText(ch, replacementRange: paragraph.selectedRange())
+            settle()
+        }
+        let typed = container.markdown
+
+        container.documentUndoManager.undo()
+        settle()
+        XCTAssertEqual(container.markdown, body)
+
+        var redos = 0
+        while container.documentUndoManager.canRedo, redos < 10 {
+            container.documentUndoManager.redo(); settle(); redos += 1
+        }
+        XCTAssertEqual(redos, 1, "묶인 런은 다시 하기도 한 번이어야 한다")
+        XCTAssertEqual(container.markdown, typed)
+    }
+
+    /// 줄바꿈은 런을 가른다.
+    ///
+    /// Enter 한 번은 **구조를 바꾸지 않는다** — 마크다운에서 `a\n첫 문단`은 여전히
+    /// 한 문단이라 블록이 쪼개지지 않고, 그래서 이 편집도 타이핑과 같은 경로를 지난다.
+    /// 가르지 않으면 "ab" + Enter + "cd"가 ⌘Z 하나가 되어, 줄바꿈만 되돌리려던
+    /// 사용자가 앞 문장까지 잃는다(실측으로 드러났다 — 처음엔 이 경우를 구조 변경으로
+    /// 잘못 알고 테스트를 썼다).
+    func testLineBreakIsItsOwnUndoStep() {
+        guard let paragraph = blocks.dropFirst(2).first else { return XCTFail("문단 뷰가 없다") }
+        XCTAssertTrue(window.makeFirstResponder(paragraph))
+        paragraph.setSelectedRange(NSRange(location: 0, length: 0))
+        paragraph.insertText("ab", replacementRange: paragraph.selectedRange())
+        settle()
+        paragraph.insertNewline(nil)
+        settle()
+        paragraph.insertText("cd", replacementRange: paragraph.selectedRange())
+        settle()
+        XCTAssertTrue(container.markdown.contains("ab\ncd첫 문단이다."),
+                      "전제: 줄바꿈 앞뒤로 쳤다 — 실제 \(container.markdown.debugDescription)")
+
+        container.documentUndoManager.undo()      // "cd"만
+        settle()
+        XCTAssertTrue(container.markdown.contains("ab\n첫 문단이다."),
+                      "뒤의 타이핑만 되돌아가야 한다 — 실제 \(container.markdown.debugDescription)")
+
+        container.documentUndoManager.undo()      // 줄바꿈만
+        settle()
+        XCTAssertTrue(container.markdown.contains("ab첫 문단이다."),
+                      "줄바꿈만 되돌아가야 한다 — 실제 \(container.markdown.debugDescription)")
+
+        container.documentUndoManager.undo()      // "ab"
+        settle()
+        XCTAssertEqual(container.markdown, body)
+    }
+
+    /// 구조가 바뀌는 편집(빈 줄로 문단을 둘로 쪼개기)은 런을 끊는다.
+    ///
+    /// Enter **두 번**이어야 블록이 쪼개진다 — 한 번은 위의 소프트 줄바꿈이다.
+    func testStructuralEditBreaksTheRun() {
+        guard let paragraph = blocks.dropFirst(2).first else { return XCTFail("문단 뷰가 없다") }
+        XCTAssertTrue(window.makeFirstResponder(paragraph))
+        paragraph.setSelectedRange(NSRange(location: 0, length: 0))
+        paragraph.insertText("a", replacementRange: paragraph.selectedRange())
+        settle()
+        paragraph.insertNewline(nil)
+        settle()
+        paragraph.insertNewline(nil)
+        settle()
+        let afterSplit = container.markdown
+        XCTAssertTrue(afterSplit.contains("a\n\n첫 문단이다."),
+                      "전제: 쪼개졌다 — 실제 \(afterSplit.debugDescription)")
+
+        container.documentUndoManager.undo()
+        settle()
+        XCTAssertTrue(container.markdown.contains("a"),
+                      "쪼개기를 되돌렸을 때 그 앞의 타이핑까지 사라지면 안 된다 — "
+                      + "실제 \(container.markdown.debugDescription)")
+    }
+
+    /// 앞으로 지우기(fn+Delete) 뒤의 되돌리기 캐럿.
+    ///
+    /// 길이 차이로 어림하면 한 칸 밀린다(실측: 기대 2, 실제 3). Backspace는 캐럿 앞을,
+    /// 앞으로 지우기는 캐럿 뒤를 고치는데 **편집 뒤의 캐럿은 두 경우가 같은 자리**라
+    /// (old, new, 지금 캐럿)만으로는 가를 수 없다. 그래서 편집 전 캐럿을 잡아 쓴다.
+    func testUndoAfterForwardDeleteKeepsTheCaretWhereItWas() {
+        guard let paragraph = blocks.dropFirst(2).first else { return XCTFail("문단 뷰가 없다") }
+        XCTAssertTrue(window.makeFirstResponder(paragraph))
+        paragraph.setSelectedRange(NSRange(location: 2, length: 0))
+        paragraph.deleteForward(nil)
+        settle()
+        XCTAssertTrue(container.markdown.contains("첫 단이다."), "전제: 캐럿 뒤 글자가 지워졌다")
+
+        container.documentUndoManager.undo()
+        settle()
+        XCTAssertEqual(container.markdown, body)
+        let caret = (window.firstResponder as? NSTextView)?.selectedRange().location
+        XCTAssertEqual(caret, 2,
+                       "앞으로 지우기는 캐럿을 옮기지 않으므로 되돌린 뒤에도 2여야 한다")
+    }
+
+    /// Backspace 쪽도 함께 못박는다 — 두 방향이 같은 코드를 지나므로, 한쪽만 맞는
+    /// 보정은 다른 쪽을 깨뜨린다.
+    func testUndoAfterBackspaceKeepsTheCaretWhereItWas() {
+        guard let paragraph = blocks.dropFirst(2).first else { return XCTFail("문단 뷰가 없다") }
+        XCTAssertTrue(window.makeFirstResponder(paragraph))
+        paragraph.setSelectedRange(NSRange(location: 3, length: 0))
+        paragraph.deleteBackward(nil)
+        settle()
+
+        container.documentUndoManager.undo()
+        settle()
+        XCTAssertEqual(container.markdown, body)
+        let caret = (window.firstResponder as? NSTextView)?.selectedRange().location
+        XCTAssertEqual(caret, 3, "Backspace는 캐럿 앞을 지우므로 되돌린 뒤 3이어야 한다")
+    }
+
     /// 블록을 넘어갈 때 **가로 위치**를 지킨다 — 설계 §5.3의 약속.
     func testCaretKeepsItsHorizontalPositionAcrossBlocks() {
         // 빈 줄을 두지 않는다 — 빈 줄 블록은 캐럿 자리가 0뿐이라 가로 위치를
