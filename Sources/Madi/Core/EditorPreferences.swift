@@ -153,6 +153,10 @@ public struct EditorPreferences: Equatable, Sendable {
     public var printMargin: PrintMargin
     public var printOrientation: PrintOrientation
     public var printPaper: PrintPaper
+    /// 한국어 문서를 내보낼 때의 대상 언어(BCP-47 기본 코드). 사용자가 메뉴에서 고른
+    /// 것을 기억한다 — 한 문서를 여러 번 번역하는 동안 매번 다시 고르게 하면 안 된다.
+    /// 원문이 한국어가 **아닐** 때는 대상이 늘 한국어이므로 이 값이 쓰이지 않는다.
+    public var translationTarget: String
 
     /// 글자 크기의 허용 범위. 너무 작으면 한글이 뭉개지고, 너무 크면 표 열 맞추기가
     /// 한 줄에 들어가지 않는다.
@@ -170,7 +174,8 @@ public struct EditorPreferences: Equatable, Sendable {
         loadsRemoteImages: false,
         printMargin: .normal,
         printOrientation: .portrait,
-        printPaper: .system
+        printPaper: .system,
+        translationTarget: "en"
     )
 
     public init(bodyPointSize: Double, highlightCode: Bool, alignTables: Bool,
@@ -181,7 +186,8 @@ public struct EditorPreferences: Equatable, Sendable {
                 loadsRemoteImages: Bool = false,
                 printMargin: PrintMargin = .normal,
                 printOrientation: PrintOrientation = .portrait,
-                printPaper: PrintPaper = .system) {
+                printPaper: PrintPaper = .system,
+                translationTarget: String = "en") {
         self.bodyPointSize = Self.clamp(bodyPointSize)
         self.highlightCode = highlightCode
         self.alignTables = alignTables
@@ -194,6 +200,9 @@ public struct EditorPreferences: Equatable, Sendable {
         self.printMargin = printMargin
         self.printOrientation = printOrientation
         self.printPaper = printPaper
+        // 빈 값이나 공백이 저장소에 들어와도 읽을 수 있는 상태를 지킨다.
+        let trimmed = translationTarget.trimmingCharacters(in: .whitespaces)
+        self.translationTarget = trimmed.isEmpty ? "en" : trimmed
     }
 
     /// 범위를 벗어난 값을 가둔다. 저장소에 손으로 쓴 값이나 옛 버전의 값이 들어와도
@@ -225,10 +234,12 @@ public final class PreferenceStore {
         static let printMargin = "print.margin"
         static let printOrientation = "print.orientation"
         static let printPaper = "print.paper"
+        static let translationTarget = "translation.target"
 
         static let all = [bodyPointSize, highlightCode, alignTables, syntheticSlant,
                           openInCodeView, appearance, lineSpacing, documentWidth,
-                          loadsRemoteImages, printMargin, printOrientation, printPaper]
+                          loadsRemoteImages, printMargin, printOrientation, printPaper,
+                          translationTarget]
     }
 
     private let defaults: UserDefaults
@@ -268,7 +279,9 @@ public final class PreferenceStore {
                 ?? standard.loadsRemoteImages,
             printMargin: value(Key.printMargin, standard.printMargin),
             printOrientation: value(Key.printOrientation, standard.printOrientation),
-            printPaper: value(Key.printPaper, standard.printPaper)
+            printPaper: value(Key.printPaper, standard.printPaper),
+            translationTarget: defaults.string(forKey: Key.translationTarget)
+                ?? standard.translationTarget
         )
     }
 
@@ -286,6 +299,7 @@ public final class PreferenceStore {
         defaults.set(preferences.printMargin.rawValue, forKey: Key.printMargin)
         defaults.set(preferences.printOrientation.rawValue, forKey: Key.printOrientation)
         defaults.set(preferences.printPaper.rawValue, forKey: Key.printPaper)
+        defaults.set(preferences.translationTarget, forKey: Key.translationTarget)
     }
 
     /// 전부 기본값으로. 키를 지워 두면 다음에 기본값이 다시 읽힌다.

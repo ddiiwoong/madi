@@ -98,6 +98,10 @@ enum AppMenu {
             // 선택이 있으면 그 자리에서, 없으면 문서 전체를 새 문서로.
             Command("Apple 번역", #selector(DocumentWindowController.translateAction(_:)), "t",
                     [.command, .shift], windowTarget: true),
+            // 짐작이 틀렸거나 한국어를 다른 언어로 내보낼 때.
+            Command("번역 언어 선택…",
+                    #selector(DocumentWindowController.chooseTranslationLanguageAction(_:)),
+                    "t", [.command, .shift, .option], windowTarget: true),
             nil,
             Command("기록 보기", #selector(DocumentWindowController.showActivityLog(_:)), "l",
                     [.command, .shift], windowTarget: true),
@@ -206,6 +210,10 @@ enum AppMenu {
             nil,
             Command("Apple 번역", #selector(DocumentWindowController.translateAction(_:)), "t",
                     [.command, .shift], windowTarget: true),
+            // 짐작이 틀렸거나 한국어를 다른 언어로 내보낼 때.
+            Command("번역 언어 선택…",
+                    #selector(DocumentWindowController.chooseTranslationLanguageAction(_:)),
+                    "t", [.command, .shift, .option], windowTarget: true),
             Command("기록 보기", #selector(DocumentWindowController.showActivityLog(_:)), "l",
                     [.command, .shift], windowTarget: true),
             nil,

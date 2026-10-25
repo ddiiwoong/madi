@@ -384,6 +384,13 @@ final class DocumentWindowController: NSWindowController {
     /// 마크업은 번역기에 넘기지 않는다(`MarkdownTranslationPlan`). 코드 블록·인라인 코드·
     /// 링크 URL·표 구분선·마커는 그대로 남고 본문 조각만 번역된다.
     @objc func translateAction(_ sender: Any?) {
+        // 메뉴 항목이 방향을 들고 온다(언어 하위 메뉴). 없으면 글에서 짐작한다.
+        let requested = (sender as? NSMenuItem)?.representedObject as? TranslationDirection
+        translate(direction: requested)
+    }
+
+    /// 번역을 시작한다. `direction`이 nil이면 글에서 짐작한다.
+    private func translate(direction requested: TranslationDirection?) {
         guard #available(macOS 26.0, *) else {
             report("Apple 번역은 macOS 26 이상에서만 됩니다.")
             return
@@ -419,7 +426,9 @@ final class DocumentWindowController: NSWindowController {
             // **시트를 띄우기 전에 먼저 잰다.** 전에는 시트를 먼저 띄웠고, 언어 팩이
             // 없으면 시트가 떴다 사라진 뒤 경고창이 떠서 화면이 두 번 바뀌었다 —
             // 사용자가 읽을 틈이 없다. 재는 일은 싸다(계획 만들기 + 가용성 조회 한 번).
-            let preflight = await AppleTranslator.preflight(markdown: source)
+            let preflight = await AppleTranslator.preflight(
+                markdown: source, direction: requested,
+                preferredTarget: self?.preferences.current.translationTarget ?? "en")
             guard let self else { return }
             guard preflight.state == .ready else {
                 self.translationTask = nil
@@ -428,6 +437,8 @@ final class DocumentWindowController: NSWindowController {
                 case .nothingToTranslate: failure = .nothingToTranslate
                 case .needsLanguagePack: failure = .languagePackMissing(direction: preflight.direction)
                 case .unsupported: failure = .unsupported(direction: preflight.direction)
+                case .sameLanguage:
+                    failure = .sameLanguage(language: preflight.direction.sourceLanguageName)
                 case .ready: return
                 }
                 self.presentTranslationFailure(failure)
@@ -457,6 +468,48 @@ final class DocumentWindowController: NSWindowController {
         }
     }
 
+    /// 번역할 언어를 고른다 — 짐작이 틀렸거나 한국어를 다른 언어로 내보낼 때.
+    ///
+    /// 목록을 시스템에 묻는 일이 비동기이므로 시트를 **받은 뒤에** 띄운다. 먼저 띄우고
+    /// 채우면 빈 목록이 한순간 보인다(진행 시트에서 겪은 것과 같은 종류의 깜빡임이다).
+    @objc func chooseTranslationLanguageAction(_ sender: Any?) {
+        guard #available(macOS 26.0, *) else {
+            report("Apple 번역은 macOS 26 이상에서만 됩니다.")
+            return
+        }
+        guard translationTask == nil else {
+            report("번역이 이미 진행 중입니다.")
+            return
+        }
+        let detected = TranslationDirection.resolve(
+            editor.markdown, preferredTarget: preferences.current.translationTarget)
+
+        Task { @MainActor [weak self] in
+            let languages = await AppleTranslator.supportedLanguagesWithKorean()
+            guard let self else { return }
+            guard !languages.isEmpty else {
+                self.report("이 Mac에서 한국어와 번역할 수 있는 언어를 찾지 못했습니다.")
+                return
+            }
+            let sheet = TranslationLanguageSheet(
+                detectedSource: detected.source,
+                initialTarget: self.preferences.current.translationTarget,
+                languages: languages)
+            sheet.onTranslate = { [weak self] direction in
+                guard let self else { return }
+                // 한국어에서 내보낼 때 고른 언어를 기억한다. 가져올 때는 대상이 늘
+                // 한국어이므로 기억할 것이 없다.
+                if direction.source == "ko" {
+                    var updated = self.preferences.current
+                    updated.translationTarget = direction.target
+                    self.preferences.save(updated)
+                }
+                self.translate(direction: direction)
+            }
+            self.splitController.presentAsSheet(sheet)
+        }
+    }
+
     /// 제자리 교체. `NSTextView`의 되돌리기에 등록되도록 텍스트 뷰를 통해 바꾼다 —
     /// 저장소를 직접 고치면 ⌘Z로 돌릴 수 없다.
     private func replaceSelection(_ range: NSRange, with text: String) {
@@ -479,6 +532,13 @@ final class DocumentWindowController: NSWindowController {
             let composed = frontMatter.map { $0.joined(withBody: text) } ?? text
             document.markdown = composed
             document.updateChangeCount(.changeDone)
+            // 이름을 제안한다 — 저장하지 않은 '무제'로 두면 사용자가 다른 이름으로
+            // 저장에서 직접 적어야 한다. `displayName`을 주면 창 제목과 저장 대화상자의
+            // 기본 이름이 그 값이 된다(저장 위치는 여전히 사용자가 고른다 — 원본 옆에
+            // 말없이 파일을 만들지 않는다).
+            if let suggested = direction.translatedFileName(for: markdownDocument?.fileURL) {
+                document.displayName = suggested
+            }
             (document.windowControllers.first as? DocumentWindowController)?.load(markdown: composed)
             report("번역본을 새 문서로 열었습니다 (\(direction.label))")
         } catch {

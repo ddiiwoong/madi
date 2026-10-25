@@ -19,6 +19,8 @@ enum AppleTranslator {
         /// 번역할 글이 없다. 오류로 두는 이유: 조용히 성공을 보고하면 사용자가 같은
         /// 글이 새 창으로 열린 것을 "번역이 됐다"로 읽는다.
         case nothingToTranslate
+        /// 원문과 대상이 같은 언어다.
+        case sameLanguage(language: String)
         case other(String)
 
         var isLanguagePackMissing: Bool {
@@ -31,7 +33,7 @@ enum AppleTranslator {
         var suggestsLanguageSettings: Bool {
             switch self {
             case .languagePackMissing, .unsupported: return true
-            case .nothingToTranslate, .other: return false
+            case .nothingToTranslate, .sameLanguage, .other: return false
             }
         }
 
@@ -45,6 +47,8 @@ enum AppleTranslator {
                 "Apple 번역이 \(direction.label)을 지원하지 않습니다."
             case .nothingToTranslate:
                 "번역할 글이 없습니다."
+            case let .sameLanguage(language):
+                "원문과 번역할 언어가 모두 \(language)입니다."
             case let .other(message):
                 message
             }
@@ -72,6 +76,11 @@ enum AppleTranslator {
                 일부러 건드리지 않습니다. 글의 일부만 번역하려면 그 부분을 선택하고 \
                 ⌘⇧T를 누르십시오.
                 """
+            case .sameLanguage:
+                """
+                도구 ▸ Apple 번역에서 다른 언어를 고르십시오. 같은 언어로는 옮길 것이 \
+                없습니다.
+                """
             case .other:
                 nil
             }
@@ -95,6 +104,44 @@ enum AppleTranslator {
     static func availability(for direction: TranslationDirection) async -> LanguageAvailability.Status {
         await LanguageAvailability().status(from: Locale.Language(identifier: direction.sourceIdentifier),
                                            to: Locale.Language(identifier: direction.targetIdentifier))
+    }
+
+    /// 한국어와 오갈 수 있는 언어들. 언어 선택 메뉴가 이것으로 만들어진다.
+    ///
+    /// **목록을 손으로 적지 않는다.** 시스템이 `supportedLanguages`로 알려 주고(이 Mac에서
+    /// 47개를 돌려줬다), 손으로 적으면 OS가 언어를 더해도 마디는 모른다.
+    ///
+    /// 두 가지를 다듬는다. 첫째, 목록에 **지역 변종이 섞여 있다**(`en`이 여덟 번,
+    /// `zh`가 세 번 나왔다) — 기본 언어 코드로 모은다. 둘째, 한국어를 한쪽에 둔 쌍이
+    /// 실제로 되는지 **물어서 가린다** — `supportedLanguages`에 있다고 한국어와 짝이
+    /// 되는 것은 아니다.
+    ///
+    /// 돌려주는 것은 코드와 **받아져 있는지**다. 받아지지 않은 언어도 목록에 남기고
+    /// 화면에서 표시한다 — 고를 수 있어야 그 언어의 안내(받는 길)를 볼 수 있다.
+    static func supportedLanguagesWithKorean() async -> [TranslationDirection.Language] {
+        let availability = LanguageAvailability()
+        let korean = Locale.Language(identifier: "ko")
+
+        var codes: Set<String> = []
+        for language in await availability.supportedLanguages {
+            guard let code = language.languageCode?.identifier, code != "ko" else { continue }
+            codes.insert(code)
+        }
+
+        var result: [TranslationDirection.Language] = []
+        for code in codes {
+            let language = Locale.Language(identifier: code)
+            let out = await availability.status(from: korean, to: language)
+            let into = await availability.status(from: language, to: korean)
+            // 어느 방향도 지원되지 않으면 목록에 둘 이유가 없다.
+            guard out != .unsupported || into != .unsupported else { continue }
+            result.append(TranslationDirection.Language(code: code,
+                                            name: TranslationDirection.name(of: code),
+                                            outboundInstalled: out == .installed,
+                                            inboundInstalled: into == .installed))
+        }
+        // 이름으로 정렬한다 — 코드 순(`ar`, `da`, `de`…)은 한국어 화면에서 뜻이 없다.
+        return result.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
     /// 마크다운을 번역해 **원래 구조 그대로** 돌려준다.
@@ -121,6 +168,8 @@ enum AppleTranslator {
             case needsLanguagePack
             /// 이 Mac에서 이 방향은 지원되지 않는다.
             case unsupported
+            /// 원문과 대상이 같은 언어다. 사용자가 그렇게 고를 수 있다.
+            case sameLanguage
         }
 
         let plan: MarkdownTranslationPlan
@@ -128,17 +177,33 @@ enum AppleTranslator {
         let state: State
     }
 
-    static func preflight(markdown: String) async -> Preflight {
+    /// - Parameters:
+    ///   - markdown: 번역할 글.
+    ///   - direction: 쓸 방향. `nil`이면 글에서 짐작한다(`TranslationDirection.resolve`).
+    ///     사용자가 메뉴에서 고른 경우에는 그 값이 들어온다 — 짐작이 틀렸을 때
+    ///     사용자가 고칠 수 있어야 하고, 그것이 문자 기반 짐작을 받아들일 수 있는 이유다.
+    ///   - preferredTarget: 짐작할 때 쓸 기본 대상 언어(원문이 한국어일 때).
+    static func preflight(markdown: String,
+                          direction requested: TranslationDirection? = nil,
+                          preferredTarget: String = "en") async -> Preflight {
         let plan = MarkdownTranslationPlan.make(markdown)
         let units = plan.units
         guard !units.isEmpty else {
             // 방향을 꾸며 내지 않는다. 전에는 여기서 `.englishToKorean`을 돌려줘
             // 부르는 쪽이 "번역했습니다 (영어 → 한국어)"라고 **거짓 보고**했다 —
             // 코드만 있는 문서를 번역하면 같은 글이 새 창으로 열리면서 성공 문구가 떴다.
-            return Preflight(plan: plan, direction: .resolve(markdown), state: .nothingToTranslate)
+            let fallback = requested
+                ?? .resolve(markdown, preferredTarget: preferredTarget)
+            return Preflight(plan: plan, direction: fallback, state: .nothingToTranslate)
         }
 
-        let direction = TranslationDirection.resolve(units.map(\.text).joined(separator: " "))
+        let direction = requested
+            ?? .resolve(units.map(\.text).joined(separator: " "), preferredTarget: preferredTarget)
+        // 원문과 대상이 같으면 번역이 아니다. 사용자가 그렇게 고를 수 있으므로 가린다.
+        guard !direction.isTrivial else {
+            return Preflight(plan: plan, direction: direction, state: .sameLanguage)
+        }
+
         let state: Preflight.State
         switch await availability(for: direction) {
         case .installed: state = .ready
@@ -171,6 +236,7 @@ enum AppleTranslator {
         switch preflight.state {
         case .ready: break
         case .nothingToTranslate: throw Failure.nothingToTranslate
+        case .sameLanguage: throw Failure.sameLanguage(language: direction.sourceLanguageName)
         case .needsLanguagePack: throw Failure.languagePackMissing(direction: direction)
         case .unsupported: throw Failure.unsupported(direction: direction)
         }
