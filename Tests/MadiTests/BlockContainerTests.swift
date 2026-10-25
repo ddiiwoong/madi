@@ -240,6 +240,27 @@ final class BlockContainerTests: XCTestCase {
                        "조합이 끝나면 경계를 넘어야 한다")
     }
 
+    /// 블록을 넘는 선택 위에 글자를 치면 **선택된 전부**가 대체되어야 한다.
+    ///
+    /// MarkText의 `crossBlockFormat.spec.ts`를 읽다 확인할 생각이 났다. 블록마다
+    /// 텍스트 뷰가 따로이므로 `insertText`는 **자기 블록의 몫만** 지운다 — 나머지
+    /// 블록의 선택된 글은 그대로 남아, 사용자가 보기에는 "선택했는데 일부만 바뀐다".
+    func testTypingOverACrossBlockSelectionReplacesAllOfIt() {
+        guard let first = blocks.first else { return XCTFail("블록 뷰가 없다") }
+        XCTAssertTrue(window.makeFirstResponder(first))
+        container.selectAll()
+        XCTAssertTrue(container.selectionSpansBlocks, "전제: 블록을 넘는 선택")
+
+        first.insertText("가", replacementRange: first.selectedRange())
+        settle()
+
+        // 전체 선택은 문서 끝의 줄바꿈까지 포함하므로, 대체 결과에 줄바꿈이 없는 것이
+        // 맞다(일반 편집기도 그렇다).
+        XCTAssertEqual(container.markdown, "가",
+                       "선택한 전부가 대체되어야 한다 — 다른 블록의 글이 남으면 안 된다")
+        XCTAssertEqual(container.blockCount, 1)
+    }
+
     func testCaretCrossesBlocksOnArrowAtTheBoundary() {
         guard let first = blocks.first, blocks.count > 1 else { return XCTFail("블록이 부족하다") }
         XCTAssertTrue(window.makeFirstResponder(first))
@@ -247,5 +268,56 @@ final class BlockContainerTests: XCTestCase {
         first.moveDown(nil)
         XCTAssertFalse(window.firstResponder === first,
                        "마지막 줄에서 ↓는 다음 블록으로 가야 한다")
+    }
+
+    /// 조합 중에는 **문서가 바뀌지 않는다.**
+    ///
+    /// 한글은 조합 중에 Backspace로 자모를 하나씩 되돌린다(`각` → `가` → `ㄱ`).
+    /// 그 사이에 편집기가 블록을 허물고 다시 세우면 치던 글자가 사라진다.
+    /// MarkText(Muya)는 같은 규칙을 키마다 테스트로 고정해 두었다
+    /// (`imeBackspaceComposition.spec.ts` · `imeTabComposition.spec.ts`).
+    ///
+    /// **이 테스트가 증명하지 않는 것:** `deleteBackward`에 넣은
+    /// `!hasMarkedText()` 가드가 걸린다는 것. 변이로 확인해 보니 그 가드를 없애도
+    /// 이 테스트는 초록이다 — 조합이 캐럿을 (0,0)에 두지 않아 합치기 조건 자체가
+    /// 거짓이고, 블록을 넘는 삭제는 조합이 선택을 줄여서 닿지 않는다. 가드는 그
+    /// 두 경로가 바뀌었을 때를 위한 방어로 남겼고, 여기 있는 것은 **동작**에 대한
+    /// 약속이다.
+    func testBackspaceDuringCompositionDoesNotChangeTheDocument() {
+        guard let second = blocks.dropFirst(4).first else { return XCTFail("둘째 문단 뷰가 없다") }
+        XCTAssertEqual(second.string, "둘째 문단이다.\n", "전제: 마지막 블록")
+        XCTAssertTrue(window.makeFirstResponder(second))
+        second.setSelectedRange(NSRange(location: 0, length: 0))
+        let before = container.markdown
+        let blocksBefore = container.blockCount
+
+        second.setMarkedText("ㄱ", selectedRange: NSRange(location: 0, length: 1),
+                             replacementRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertTrue(second.hasMarkedText(), "전제: 조합 중")
+        second.deleteBackward(nil)
+        settle()
+
+        XCTAssertEqual(container.blockCount, blocksBefore,
+                       "조합 중의 Backspace가 블록을 합쳤다 — 입력기에 넘겨야 한다")
+        XCTAssertEqual(container.markdown, before, "조합 중의 Backspace로 문서가 바뀌었다")
+        second.unmarkText()
+    }
+
+    /// 조합 중의 ⌘A는 문서 전체를 잡지 않는다.
+    ///
+    /// 위와 같이 **동작에 대한 약속**이다. 오늘은 조합이 시작될 때 선택이 그 블록
+    /// 안으로 줄어들어서 저절로 성립하고, `selectAll`의 조합 가드를 없애도 이
+    /// 테스트는 초록이다.
+    func testSelectAllDuringCompositionDoesNotSpanBlocks() {
+        guard let first = blocks.first else { return XCTFail("블록 뷰가 없다") }
+        XCTAssertTrue(window.makeFirstResponder(first))
+        first.setSelectedRange(NSRange(location: 0, length: 0))
+        first.setMarkedText("ㄱ", selectedRange: NSRange(location: 0, length: 1),
+                            replacementRange: NSRange(location: NSNotFound, length: 0))
+
+        first.selectAll(nil)
+        XCTAssertFalse(container.selectionSpansBlocks,
+                       "조합 중의 ⌘A가 문서 전체를 잡으면 조합 중인 범위가 밀린다")
+        first.unmarkText()
     }
 }

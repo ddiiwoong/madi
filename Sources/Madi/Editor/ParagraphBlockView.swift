@@ -307,7 +307,10 @@ final class BlockTextView: DecoratedTextView {
     // 문서의 일부일 뿐이라, 블록을 넘는 선택이 걸려 있으면 컨테이너에 넘긴다.
 
     override func selectAll(_ sender: Any?) {
-        guard let container = blockOwner?.owner as? BlockContainerView else {
+        // 조합 중에는 선택을 건드리지 않는다 — 선택을 다시 싣는 순간 조합 중인
+        // 블록의 범위가 바뀌어 치던 글자가 깨진다.
+        guard !hasMarkedText(),
+              let container = blockOwner?.owner as? BlockContainerView else {
             return super.selectAll(sender)
         }
         container.selectAll()
@@ -322,14 +325,19 @@ final class BlockTextView: DecoratedTextView {
     }
 
     override func deleteBackward(_ sender: Any?) {
-        guard let container = blockOwner?.owner as? BlockContainerView else {
+        // 조합 중의 Backspace는 **입력기의 것**이다. 한글은 조합 중에 Backspace로
+        // 자모를 하나씩 되돌리고(`각` → `가` → `ㄱ`), 그 사이에 편집기가 블록을
+        // 허물면 치던 글자가 사라진다. MarkText(Muya)도 같은 규칙을 테스트로
+        // 고정해 두었다(`imeBackspaceComposition.spec.ts`).
+        guard !hasMarkedText(),
+              let container = blockOwner?.owner as? BlockContainerView else {
             return super.deleteBackward(sender)
         }
         if container.selectionSpansBlocks {
             return container.deleteSelectionAcrossBlocks()
         }
         // 블록 처음에서 Backspace는 앞 블록과 합치는 것이다.
-        if !hasMarkedText(), selectedRange() == NSRange(location: 0, length: 0),
+        if selectedRange() == NSRange(location: 0, length: 0),
            container.mergeWithPreviousBlock(from: self) {
             return
         }
@@ -337,7 +345,8 @@ final class BlockTextView: DecoratedTextView {
     }
 
     override func deleteForward(_ sender: Any?) {
-        guard let container = blockOwner?.owner as? BlockContainerView,
+        guard !hasMarkedText(),
+              let container = blockOwner?.owner as? BlockContainerView,
               container.selectionSpansBlocks else {
             return super.deleteForward(sender)
         }
@@ -373,7 +382,25 @@ final class BlockTextView: DecoratedTextView {
     }
 
     override func insertText(_ string: Any, replacementRange: NSRange) {
+        // 블록을 넘는 선택 위에 치면 **선택한 전부**가 바뀌어야 한다. 이 뷰에 맡기면
+        // 자기 블록의 몫만 지워지고 나머지 블록의 글이 남는다.
+        if !hasMarkedText(),
+           let container = blockOwner?.owner as? BlockContainerView,
+           container.selectionSpansBlocks {
+            container.replaceSelectionAcrossBlocks(with: (string as? String)
+                ?? (string as? NSAttributedString)?.string ?? "")
+            return
+        }
         super.insertText(string, replacementRange: replacementRange)
         if let blockOwner { blockOwner.owner?.blockViewDidChangeCompositionState(blockOwner) }
+    }
+
+    override func paste(_ sender: Any?) {
+        guard let container = blockOwner?.owner as? BlockContainerView,
+              container.selectionSpansBlocks,
+              let text = NSPasteboard.general.string(forType: .string) else {
+            return super.paste(sender)
+        }
+        container.replaceSelectionAcrossBlocks(with: text, name: "붙여넣기")
     }
 }

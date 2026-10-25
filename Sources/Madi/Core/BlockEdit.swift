@@ -134,10 +134,16 @@ public struct BlockEditFactory: Sendable {
                          old: [oldBlock], new: [newBlock], name: name)
     }
 
-    /// 블록을 넘는 선택을 지운다. 걸친 블록들을 **한 조각으로 합쳐** 다시 읽는다 —
-    /// 양쪽 토막이 한 블록이 되는 경우(문단 둘의 가운데를 지우면 한 문단)가 흔하다.
-    public func deletion(in document: BlockDocument, selection: BlockSelection,
-                         name: String = "삭제") -> BlockEdit? {
+    /// 블록을 넘는 선택을 `replacement`로 바꾼다. 걸친 블록들을 **한 조각으로 합쳐**
+    /// 다시 읽는다 — 양쪽 토막이 한 블록이 되는 경우(문단 둘의 가운데를 지우면 한 문단)가
+    /// 흔하다.
+    ///
+    /// 지우기와 치기가 같은 연산인 이유: 블록마다 텍스트 뷰가 따로이므로
+    /// `insertText`는 **자기 블록의 몫만** 지운다. 그대로 두면 블록을 넘는 선택 위에
+    /// 글자를 쳤을 때 나머지 블록의 선택된 글이 남는다. 그래서 치기·붙이기도 이 길을
+    /// 지나 하나의 되돌릴 수 있는 편집이 된다.
+    public func replacement(in document: BlockDocument, selection: BlockSelection,
+                            with replacement: String, name: String = "삭제") -> BlockEdit? {
         guard !selection.isCollapsed else { return nil }
         let from = selection.start
         let to = selection.end
@@ -151,8 +157,14 @@ public struct BlockEditFactory: Sendable {
 
         let range = from.blockIndex ..< (to.blockIndex + 1)
         let old = Array(document.blocks[range])
-        let merged = head + tail
+        let merged = head + replacement + tail
         let new = merged.isEmpty ? [] : parser.parseBlocks(merged)
         return BlockEdit(range: range, old: old, new: new, name: name)
+    }
+
+    /// 블록을 넘는 선택을 지운다.
+    public func deletion(in document: BlockDocument, selection: BlockSelection,
+                         name: String = "삭제") -> BlockEdit? {
+        replacement(in: document, selection: selection, with: "", name: name)
     }
 }
