@@ -51,7 +51,9 @@ public enum CodeLanguage: Sendable, Equatable, CaseIterable {
 public enum CodeHighlighter {
 
     public struct Span: Equatable, Sendable {
-        public enum Role: Sendable, Equatable {
+        /// `CaseIterable`인 이유: 테마의 대비 테스트가 **모든** 역할을 돌기 때문이다.
+        /// 역할을 더하면서 색을 고르지 않으면 그 테스트가 바로 빨개진다.
+        public enum Role: Sendable, Equatable, CaseIterable {
             case keyword
             case type
             case string

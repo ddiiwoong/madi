@@ -426,7 +426,15 @@ public final class MarkdownStyler {
         case .listItem:
             styleInline(in: storage, text: text, content: line.contentRange, onCaretLine: onCaretLine)
 
-        case .codeFence, .codeBody:
+        case .codeFence:
+            // 펜스 줄에 남아 보이는 것은 **언어 이름**이다(백틱은 마커로 숨는다).
+            // 코드 본문과 같은 색으로 두면 코드의 첫 줄처럼 보이므로 흐린 라벨로 둔다.
+            storage.addAttributes([
+                .font: theme.monoFont,
+                .foregroundColor: theme.dim,
+            ], range: line.range)
+
+        case .codeBody:
             // 배경은 여기서 칠하지 않는다. 글자마다 칠하면 글자가 있는 만큼만
             // 칠해져 오른쪽이 들쭉날쭉해진다. 블록 하나를 둥근 사각형 하나로
             // 그리는 일은 텍스트 뷰가 `codeBlockRanges`를 읽어서 한다.

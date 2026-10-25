@@ -116,14 +116,27 @@ public struct MarkdownSyntax: Sendable {
         if let m = Self.fence.firstMatch(in: line, range: NSRange(location: 0, length: ns.length)) {
             let opening = !inFence
             inFence.toggle()
+            let info = m.range(at: 2)
             if opening {
                 // 정보 문자열은 여는 펜스에만 있다. 닫는 펜스는 여는 쪽의 언어를 물려받아
                 // 블록 전체가 같은 언어로 보이게 한다.
-                let info = m.range(at: 2)
                 fenceLanguage = (info.location != NSNotFound && info.length > 0)
                     ? ns.substring(with: info) : nil
             }
-            let result = token(.codeFence, markers: [range],
+            // 숨길 것은 **백틱까지**다. 정보 문자열은 남겨 둔다.
+            //
+            // 전에는 줄 전체를 마커로 두어 통째로 숨겼다. 그러면 ``` ``` import ```
+            // 처럼 치는 사람의 글자가 흔적도 없이 사라진다 — 사용자가 "코드블록 글자가
+            // 투명하게 안 보인다"고 신고한 것이 이것이었다. 정보 문자열은 코드의
+            // 내용이 아니라 **언어 이름**이라 렌더러가 그리지 않는 것이 맞지만,
+            // 편집기에서는 자기가 친 글자가 어디로 갔는지 보여야 하고 블록의 언어도
+            // 그렇게 알 수 있다. 그래서 흐린 라벨로 남긴다(색은 스타일러가 준다).
+            let fenceRun = m.range(at: 1)
+            let hideUpTo = (info.location != NSNotFound && info.length > 0)
+                ? info.location                      // 백틱과 사이 공백까지
+                : NSMaxRange(fenceRun)               // 정보 문자열이 없으면 백틱까지
+            let marker = NSRange(location: 0, length: max(hideUpTo, NSMaxRange(fenceRun)))
+            let result = token(.codeFence, markers: [shift(marker, by: range.location)],
                                content: shift(m.range, by: range.location),
                                language: fenceLanguage)
             if !opening { fenceLanguage = nil }
