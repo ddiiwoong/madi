@@ -124,10 +124,13 @@ public final class MarkdownStyler {
 
         let lines = syntax.scanLines(in: text)
         codeBlockRanges = codeBlocks(in: lines)
-        for line in lines {
+        // `> [!NOTE]`로 시작하는 인용 덩이는 색이 있는 안내 상자다. 줄 하나만 보고는
+        // 알 수 없어서(덩이의 첫 줄이 종류를 말한다) 미리 한 번 훑는다.
+        let alerts = GithubAlert.map(lines: lines, in: text)
+        for (index, line) in lines.enumerated() {
             guard line.range.length == 0 || NSIntersectionRange(line.range, writeRange).length > 0
                     || NSLocationInRange(line.range.location, writeRange) else { continue }
-            apply(line, in: storage, text: text, caretLine: caretLine)
+            apply(line, in: storage, text: text, caretLine: caretLine, alert: alerts[index])
         }
 
         placeImages(lines, in: storage, text: text, caretLine: caretLine, writeRange: writeRange)
@@ -406,7 +409,8 @@ public final class MarkdownStyler {
 
     // MARK: Blocks
 
-    private func apply(_ line: LineToken, in storage: NSTextStorage, text: NSString, caretLine: Int?) {
+    private func apply(_ line: LineToken, in storage: NSTextStorage, text: NSString,
+                       caretLine: Int?, alert: GithubAlert? = nil) {
         guard line.range.length > 0 || line.kind == .blank else { return }
         let onCaretLine = caretLine == line.lineNumber
         let style = paragraphStyle(for: line.kind)
@@ -420,7 +424,20 @@ public final class MarkdownStyler {
             styleInline(in: storage, text: text, content: line.contentRange, onCaretLine: onCaretLine)
 
         case .quote:
-            storage.addAttributes([.foregroundColor: theme.quote], range: line.range)
+            if let alert {
+                // 알림 상자. 글은 본문 색으로 읽히게 두고 **막대와 표식만** 종류 색으로
+                // 칠한다 — 글 전체를 색칠하면 읽기 어려워진다.
+                storage.addAttributes([.foregroundColor: theme.text], range: line.range)
+                if GithubAlert.marker(inQuoteContent: line.contentRange.length > 0
+                                        ? text.substring(with: line.contentRange) : "") != nil {
+                    storage.addAttributes([
+                        .foregroundColor: theme.alertColor(for: alert),
+                        .font: NSFont.systemFont(ofSize: theme.bodyPointSize, weight: .semibold),
+                    ], range: line.contentRange)
+                }
+            } else {
+                storage.addAttributes([.foregroundColor: theme.quote], range: line.range)
+            }
             styleInline(in: storage, text: text, content: line.contentRange, onCaretLine: onCaretLine)
 
         case .listItem:
@@ -441,6 +458,14 @@ public final class MarkdownStyler {
             storage.addAttributes([
                 .font: theme.monoFont,
                 .foregroundColor: theme.codeText,
+            ], range: line.range)
+
+        case .setextUnderline:
+            // 제목의 밑줄. 제목 글꼴로 그리면 숨겨도 그 줄만큼 큰 빈 자리가 남으므로
+            // 본문 크기의 흐린 표시로 둔다(마커라서 캐럿이 없는 줄에서는 숨는다).
+            storage.addAttributes([
+                .font: theme.bodyFont,
+                .foregroundColor: theme.dim,
             ], range: line.range)
 
         case .thematicBreak:
@@ -472,7 +497,11 @@ public final class MarkdownStyler {
             if case .thematicBreak = line.kind { continue }
             if case .tableDelimiter = line.kind { continue }
 
-            storage.addAttribute(.foregroundColor, value: theme.dim, range: marker)
+            // 알림 상자의 `>` 막대는 종류 색으로 칠한다 — 상자의 종류를 한눈에
+            // 가리는 것이 그 색이다. 그래서 흐린 색으로 덮지 않는다.
+            storage.addAttribute(.foregroundColor,
+                                 value: alert.map(theme.alertColor(for:)) ?? theme.dim,
+                                 range: marker)
             // A list bullet and a quote bar are part of the rendered look, so
             // they stay; only the markup that a renderer would consume is hidden.
             if !onCaretLine, shouldHideMarker(for: line.kind) {
@@ -483,7 +512,7 @@ public final class MarkdownStyler {
 
     private func shouldHideMarker(for kind: BlockKind) -> Bool {
         switch kind {
-        case .heading, .codeFence: return true
+        case .heading, .codeFence, .setextUnderline: return true
         case .quote, .listItem, .thematicBreak, .tableRow, .tableDelimiter,
              .codeBody, .paragraph, .blank: return false
         }

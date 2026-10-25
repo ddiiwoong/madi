@@ -198,9 +198,48 @@ final class ParagraphBlockView: NSView {
     }
 
     /// 캐럿을 놓는다. 경계를 넘어 들어올 때 쓴다.
-    func placeCaret(at edge: BlockCaretNavigation.Edge) {
-        let location = edge == .top ? 0 : storage.length
-        textView.setSelectedRange(NSRange(location: location, length: 0))
+    ///
+    /// `preferredX`를 주면 그 **가로 위치에 가장 가까운 글자**에 놓는다. 설계 §5.3이
+    /// 약속한 "수평 위치를 보존해 캐럿을 놓는다"가 이것이다 — 없으면 ↓를 누를 때마다
+    /// 캐럿이 줄 맨 앞으로 떨어져, 긴 문단 사이를 오르내릴 수 없다.
+    /// MarkText(Muya)도 표 칸 사이에서 **열 번호를 보존**한다.
+    func placeCaret(at edge: BlockCaretNavigation.Edge, preferredX: CGFloat? = nil) {
+        guard let preferredX else {
+            let location = edge == .top ? 0 : storage.length
+            textView.setSelectedRange(NSRange(location: location, length: 0))
+            return
+        }
+        textLayout.ensureLayout(for: container)
+        let used = textLayout.usedRect(for: container)
+        // 들어온 쪽의 끝 줄에서 그 x에 가장 가까운 글자를 찾는다.
+        let y = edge == .top ? used.minY + 1 : max(used.minY, used.maxY - 2)
+        let localX = textView.convert(NSPoint(x: preferredX, y: 0), from: nil).x
+        let point = NSPoint(x: localX - textView.textContainerOrigin.x,
+                            y: y)
+        let index = textLayout.characterIndex(for: point, in: container,
+                                              fractionOfDistanceBetweenInsertionPoints: nil)
+        textView.setSelectedRange(NSRange(location: min(index, storage.length), length: 0))
+    }
+
+    /// 캐럿의 가로 위치(창 좌표). 블록을 넘어갈 때 그 값을 넘겨 자리를 보존한다.
+    var caretXInWindow: CGFloat? {
+        textLayout.ensureLayout(for: container)
+        let caret = textView.selectedRange()
+        guard caret.location <= storage.length else { return nil }
+        let glyphRange = textLayout.glyphRange(
+            forCharacterRange: NSRange(location: caret.location, length: 0),
+            actualCharacterRange: nil)
+        var box = textLayout.boundingRect(forGlyphRange: glyphRange, in: container)
+        if box.isEmpty, storage.length > 0, caret.location > 0 {
+            // 줄 끝에서는 빈 사각형이 나온다. 앞 글자의 오른쪽 끝을 쓴다.
+            let previous = textLayout.glyphRange(
+                forCharacterRange: NSRange(location: caret.location - 1, length: 1),
+                actualCharacterRange: nil)
+            box = textLayout.boundingRect(forGlyphRange: previous, in: container)
+            box.origin.x = box.maxX
+        }
+        let local = NSPoint(x: box.origin.x + textView.textContainerOrigin.x, y: 0)
+        return textView.convert(local, to: nil).x
     }
 
     func placeCaret(atOffset offset: Int) {

@@ -44,9 +44,50 @@ final class MarkdownThemeContrastTests: XCTestCase {
         }
     }
 
+    /// GitHub 알림 색도 같은 기준을 받는다. 알림 표식은 **읽는 글자**이고, 종류를
+    /// 가리는 유일한 신호라 흐리면 상자가 무슨 상자인지 알 수 없다.
     @MainActor
-    func testCodeRoleColorsAreOpaque() {
+    func testEveryAlertColorIsReadableInBothAppearances() {
         for name in [NSAppearance.Name.aqua, .darkAqua] {
+            guard let appearance = NSAppearance(named: name) else { continue }
+            appearance.performAsCurrentDrawingAppearance {
+                let theme = MarkdownTheme()
+                let page = NSColor.textBackgroundColor
+                for alert in GithubAlert.allCases {
+                    let color = theme.alertColor(for: alert)
+                    XCTAssertEqual(Double(color.usingColorSpace(.deviceRGB)?.alphaComponent ?? 0),
+                                   1.0, accuracy: 0.001,
+                                   "\(name.rawValue)의 \(alert.rawValue) 색이 반투명하다")
+                    let ratio = Self.contrast(Self.composite(color, over: page), page)
+                    XCTAssertGreaterThanOrEqual(
+                        ratio, minimumTextContrast,
+                        "\(name.rawValue)의 \(alert.rawValue) 대비가 "
+                        + "\(String(format: "%.2f", ratio)) : 1")
+                }
+            }
+        }
+    }
+
+    /// 다섯 종류가 서로 구별되어야 한다 — 색이 종류를 말하는 유일한 신호다.
+    @MainActor
+    func testAlertColorsAreDistinguishableFromEachOther() {
+        guard let appearance = NSAppearance(named: .aqua) else { return }
+        appearance.performAsCurrentDrawingAppearance {
+            let theme = MarkdownTheme()
+            let alerts = GithubAlert.allCases
+            for i in alerts.indices {
+                for j in alerts.indices where j > i {
+                    XCTAssertGreaterThan(
+                        Self.distance(theme.alertColor(for: alerts[i]),
+                                      theme.alertColor(for: alerts[j])), 0.15,
+                        "\(alerts[i].rawValue)과 \(alerts[j].rawValue)이 같은 색으로 보인다")
+                }
+            }
+        }
+    }
+
+    @MainActor
+    func testCodeRoleColorsAreOpaque() {        for name in [NSAppearance.Name.aqua, .darkAqua] {
             guard let appearance = NSAppearance(named: name) else { continue }
             appearance.performAsCurrentDrawingAppearance {
                 let theme = MarkdownTheme()

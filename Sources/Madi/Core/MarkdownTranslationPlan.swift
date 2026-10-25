@@ -168,6 +168,11 @@ public struct MarkdownTranslationPlan: Equatable {
         case .codeFence, .codeBody, .thematicBreak, .tableDelimiter, .blank:
             builder.literal(line.range)
 
+        case .setextUnderline:
+            // 밑줄은 번역할 글이 아니라 표시다. 번역기에 넘기면 `===`가 되돌아오지
+            // 않아 제목이 문단으로 떨어진다.
+            builder.literal(line.range)
+
         case .tableRow:
             appendTableRow(line.range, to: &builder, text: text, syntax: syntax)
 

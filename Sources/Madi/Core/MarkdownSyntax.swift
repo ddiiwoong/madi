@@ -3,6 +3,10 @@ import Foundation
 /// Block-level kind of a single source line.
 public enum BlockKind: Equatable, Sendable {
     case heading(level: Int)
+    /// setext 제목의 밑줄(`===` · `---`). 제목 글자가 아니라 **표시**라서 제목과
+    /// 다른 종류다 — 제목 글꼴로 그리면 숨겨도 그 줄만큼 큰 빈 자리가 남고,
+    /// 목차에 `=====`라는 항목이 생긴다.
+    case setextUnderline(level: Int)
     case quote(depth: Int)
     case listItem(ordered: Bool, checked: Bool?)
     case codeFence
@@ -100,7 +104,65 @@ public struct MarkdownSyntax: Sendable {
                 break
             }
         }
-        return tokens
+        return Self.applySetextHeadings(tokens, in: text)
+    }
+
+    /// setext 제목을 뒤에서 판정한다 — `제목` 다음 줄이 `===`면 제목 1, `---`면 제목 2.
+    ///
+    /// 왜 후처리인가: 줄을 하나씩 읽는 동안에는 **다음 줄을 모른다.** 밑줄을 보고
+    /// 나서야 앞 줄이 제목이었다는 것을 알 수 있어서, 읽기가 끝난 뒤 앞으로 거슬러
+    /// 고친다.
+    ///
+    /// 이것을 안 하면 `제목` 다음의 `---`가 **수평선**이 된다 — 문서에 없는 선을
+    /// 그리고, 제목은 목차에도 안 올라간다. CommonMark의 제목 두 꼴 가운데 하나라
+    /// 틀리게 그리는 쪽이 모르는 쪽보다 나쁘다.
+    ///
+    /// 밑줄 위의 **문단 전체**가 제목이다(CommonMark). 여러 줄 문단 뒤에 `===`가
+    /// 오면 그 문단의 모든 줄이 제목이 된다.
+    static func applySetextHeadings(_ tokens: [LineToken], in text: NSString) -> [LineToken] {
+        var out = tokens
+        var index = 1
+        while index < out.count {
+            let token = out[index]
+            // 밑줄 후보: `=` 또는 `-`만 있는 줄. `***`·`___`는 setext가 아니다.
+            guard token.kind == .paragraph || token.kind == .thematicBreak,
+                  token.range.length > 0,
+                  let level = setextLevel(of: text.substring(with: token.range)) else {
+                index += 1
+                continue
+            }
+            // 바로 위가 문단이어야 한다. 빈 줄·목록·인용 뒤의 `---`는 수평선이다.
+            guard out[index - 1].kind == .paragraph else {
+                index += 1
+                continue
+            }
+            // 문단 전체를 거슬러 올라가 제목으로 바꾼다.
+            var first = index - 1
+            while first > 0, out[first - 1].kind == .paragraph { first -= 1 }
+            for line in first ..< index {
+                let old = out[line]
+                out[line] = LineToken(lineNumber: old.lineNumber, range: old.range,
+                                      kind: .heading(level: level),
+                                      markerRanges: [], contentRange: old.range)
+            }
+            // 밑줄은 표시다. 내용 범위를 비워 두어 목차에 `=====`가 올라가지 않게 한다.
+            out[index] = LineToken(lineNumber: token.lineNumber, range: token.range,
+                                   kind: .setextUnderline(level: level),
+                                   markerRanges: [token.range],
+                                   contentRange: NSRange(location: token.range.location, length: 0))
+            index += 1
+        }
+        return out
+    }
+
+    /// `===`면 1, `---`면 2, 아니면 nil. 들여쓰기는 세 칸까지 허용한다(CommonMark).
+    static func setextLevel(of line: String) -> Int? {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard trimmed.count >= 1,
+              line.prefix(while: { $0 == " " }).count <= 3 else { return nil }
+        if trimmed.allSatisfy({ $0 == "=" }) { return 1 }
+        if trimmed.allSatisfy({ $0 == "-" }) { return 2 }
+        return nil
     }
 
     private func scanLine(_ line: String, at range: NSRange, lineNumber: Int,

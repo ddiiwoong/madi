@@ -67,6 +67,19 @@ public struct MarkdownTheme {
                 alpha: 1)
     }
 
+    /// GitHub 알림의 색. 역할마다 다르고, 코드 색과 같은 이유로 외관별 불투명 색이다
+    /// (시스템 틴트 색은 흰 배경의 작은 글자로 씻겨 보인다).
+    /// 값은 GitHub의 알림 색을 라이트/다크에서 각각 읽히게 조정한 것이다.
+    public func alertColor(for alert: GithubAlert) -> NSColor {
+        switch alert {
+        case .note:      return Self.dynamic(light: 0x0A_52_A1, dark: 0x6C_B6_FF)
+        case .tip:       return Self.dynamic(light: 0x1A_65_32, dark: 0x5E_D2_86)
+        case .important: return Self.dynamic(light: 0x6A_2D_9E, dark: 0xC2_97_FF)
+        case .warning:   return Self.dynamic(light: 0x8A_52_00, dark: 0xE3_B3_41)
+        case .caution:   return Self.dynamic(light: 0xA3_1C_1C, dark: 0xFF_81_82)
+        }
+    }
+
     /// Amber, matching the colour family a markdown editor conventionally uses
     /// for find-in-document highlighting.
     public var searchHighlight: NSColor {

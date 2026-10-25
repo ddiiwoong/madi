@@ -261,6 +261,52 @@ final class BlockContainerTests: XCTestCase {
         XCTAssertEqual(container.blockCount, 1)
     }
 
+    /// 되돌리면 캐럿이 **고치던 자리**로 돌아온다.
+    ///
+    /// MarkText(Muya)는 선택까지 undo 스택에 함께 쌓는다(`src/history/index.ts`).
+    /// 그렇게 하지 않으면 긴 문단 가운데를 고치고 ⌘Z를 눌렀을 때 캐럿이 문단
+    /// 처음으로 튀어, 고친 자리를 눈으로 다시 찾아야 한다.
+    func testUndoPutsTheCaretBackWhereTheEditHappened() {
+        guard let paragraph = blocks.dropFirst(2).first else { return XCTFail("문단 뷰가 없다") }
+        XCTAssertTrue(window.makeFirstResponder(paragraph))
+        // "첫 문단이다.\n"의 가운데(offset 4)에서 고친다.
+        paragraph.setSelectedRange(NSRange(location: 4, length: 0))
+        paragraph.insertText("X", replacementRange: NSRange(location: 4, length: 0))
+        settle()
+        XCTAssertTrue(container.markdown.contains("첫 문단X이다."), "전제: 가운데를 고쳤다")
+
+        container.documentUndoManager.undo()
+        settle()
+
+        XCTAssertEqual(container.markdown, body)
+        let caret = (window.firstResponder as? NSTextView)?.selectedRange().location
+        XCTAssertEqual(caret, 4,
+                       "되돌린 뒤 캐럿이 고치던 자리(4)가 아니라 \(caret ?? -1)에 있다")
+    }
+
+    /// 블록을 넘어갈 때 **가로 위치**를 지킨다 — 설계 §5.3의 약속.
+    func testCaretKeepsItsHorizontalPositionAcrossBlocks() {
+        // 빈 줄을 두지 않는다 — 빈 줄 블록은 캐럿 자리가 0뿐이라 가로 위치를
+        // 지켰는지 알 수 없다(처음 쓴 테스트가 그래서 0을 보고 실패했다).
+        container.markdown = "# 제목은 꽤 길게 쓴 제목입니다\n둘째 줄도 비슷하게 길게 씁니다\n"
+        settle()
+        guard let first = blocks.first, blocks.count >= 2 else { return XCTFail("블록이 부족하다") }
+        XCTAssertTrue(window.makeFirstResponder(first))
+
+        // 첫 블록의 글 가운데에 캐럿을 두고 ↓.
+        first.setSelectedRange(NSRange(location: 8, length: 0))
+        first.moveDown(nil)
+        settle()
+
+        guard let landed = window.firstResponder as? NSTextView else {
+            return XCTFail("캐럿이 어느 블록에도 없다")
+        }
+        XCTAssertFalse(landed === first, "다음 블록으로 가야 한다")
+        XCTAssertGreaterThan(landed.selectedRange().location, 0,
+                             "가로 위치를 버리면 줄 맨 앞(0)으로 떨어진다 — "
+                             + "긴 문단 사이를 오르내릴 수 없다")
+    }
+
     func testCaretCrossesBlocksOnArrowAtTheBoundary() {
         guard let first = blocks.first, blocks.count > 1 else { return XCTFail("블록이 부족하다") }
         XCTAssertTrue(window.makeFirstResponder(first))

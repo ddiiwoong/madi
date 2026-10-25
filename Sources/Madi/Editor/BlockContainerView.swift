@@ -314,17 +314,26 @@ public final class BlockContainerView: NSView {
     // MARK: 편집
 
     /// 편집을 문서에 싣고 되돌리기에 등록한다. **모든** 편집이 이 길을 지난다.
-    private func perform(_ edit: BlockEdit, caretOffsetWithinNew: Int?) {
+    ///
+    /// `restoring`은 **되돌릴 때 캐럿을 놓을 자리**다. MarkText(Muya)는 선택까지
+    /// undo 스택에 함께 쌓아 경로로 되살린다(`src/history/index.ts`) — 그렇게 하지
+    /// 않으면 긴 문단 가운데를 고치고 ⌘Z를 눌렀을 때 캐럿이 문단 처음으로 튄다.
+    private func perform(_ edit: BlockEdit, caretOffsetWithinNew: Int?,
+                         restoring caretOnUndo: BlockPosition? = nil) {
         guard !edit.isNoop else { return }
         let inverse = edit.inverted()
         var caretBefore = selection.start
+        // 되돌릴 때 돌아갈 자리: 지금 캐럿이 있던 곳.
+        let undoCaret = caretOnUndo ?? selection.start
 
         guard edit.apply(to: &document) else { return }
 
         documentUndoManager.setActionName(edit.name)
-        documentUndoManager.registerUndo(withTarget: self) { target in
+        documentUndoManager.registerUndo(withTarget: self) { [caretAfterUndo = undoCaret] target in
             // 되돌리기도 같은 길을 지난다 — 그래서 다시 하기(⌘⇧Z)가 공짜로 생긴다.
-            target.perform(inverse, caretOffsetWithinNew: 0)
+            // 되돌린 뒤의 캐럿은 **편집하던 자리**이고, 다시 하기로 돌아갈 자리는
+            // 그때의 캐럿이다.
+            target.performUndo(inverse, placingCaretAt: caretAfterUndo)
         }
 
         if let offset = caretOffsetWithinNew {
@@ -338,6 +347,29 @@ public final class BlockContainerView: NSView {
         selection = BlockSelection(caretAt: caretBefore)
 
         rebuildAfterStructureChange(focus: caretBefore)
+        containerDelegate?.blockContainerDidChangeText(self)
+    }
+
+    /// 되돌리기 — 캐럿을 **편집하던 자리**에 놓는다.
+    ///
+    /// `perform`과 갈라 둔 이유: 되돌릴 때 캐럿이 갈 곳은 "새 블록 안의 오프셋"이
+    /// 아니라 편집 전에 캐럿이 있던 자리다. 그 둘을 한 함수에 섞으면 어느 쪽
+    /// 좌표계인지 호출하는 쪽이 매번 생각해야 한다.
+    private func performUndo(_ edit: BlockEdit, placingCaretAt caret: BlockPosition) {
+        guard !edit.isNoop else { return }
+        let inverse = edit.inverted()
+        let caretForRedo = caret
+        guard edit.apply(to: &document) else { return }
+
+        documentUndoManager.setActionName(edit.name)
+        documentUndoManager.registerUndo(withTarget: self) { target in
+            target.performUndo(inverse, placingCaretAt: caretForRedo)
+        }
+
+        let clampedBlock = min(max(0, caret.blockIndex), max(0, document.blocks.count - 1))
+        let position = BlockPosition(blockIndex: clampedBlock, offset: caret.offset)
+        selection = BlockSelection(caretAt: position)
+        rebuildAfterStructureChange(focus: position)
         containerDelegate?.blockContainerDidChangeText(self)
     }
 
@@ -503,10 +535,21 @@ extension BlockContainerView: BlockViewOwner {
     private func applyWithoutRebuild(_ edit: BlockEdit, blockIndex: Int,
                                      view: ParagraphBlockView) {
         let inverse = edit.inverted()
+        // 되돌릴 때 돌아갈 자리 — **치기 전** 캐럿. 한 글자 쳤으면 그 글자 앞이다.
+        // 이 경로가 평소의 입력이므로, 여기서 0을 넘기면 ⌘Z마다 캐럿이 블록 처음으로
+        // 튄다(처음에 `perform`만 고치고 이 경로를 빠뜨려 테스트가 잡았다).
+        //
+        // 편집이 캐럿 **앞**에서 일어났다고 보고 길이 차이만큼 되돌린다 — 치기·지우기·
+        // 붙이기가 모두 그렇다. 캐럿 뒤를 고치는 경로는 지금 없다.
+        let oldLength = (edit.old.first?.sourceSlice as NSString?)?.length ?? 0
+        let newLength = (edit.new.first?.sourceSlice as NSString?)?.length ?? 0
+        let caretNow = view.textView.selectedRange().location
+        let caretOnUndo = BlockPosition(blockIndex: blockIndex,
+                                        offset: max(0, caretNow - newLength + oldLength))
         guard edit.apply(to: &document) else { return }
         documentUndoManager.setActionName(edit.name)
         documentUndoManager.registerUndo(withTarget: self) { target in
-            target.perform(inverse, caretOffsetWithinNew: 0)
+            target.performUndo(inverse, placingCaretAt: caretOnUndo)
         }
         // 종류가 바뀌었을 수 있다(`## `을 쳐서 제목이 됐다) — 다시 칠한다.
         view.show(block: document.blocks[blockIndex], index: blockIndex,
@@ -532,7 +575,10 @@ extension BlockContainerView: BlockViewOwner {
               let target = BlockCaretNavigation.target(from: index, direction: direction,
                                                        blockCount: document.blocks.count)
         else { return }
-        focus(blockIndex: target.blockIndex, edge: target.edge)
+        // ↑↓는 가로 위치를 지켜야 한다. ←→는 글자 하나를 넘는 것이니 끝에 붙인다.
+        let keepsColumn = direction == .up || direction == .down
+        focus(blockIndex: target.blockIndex, edge: target.edge,
+              preferredX: keepsColumn ? view.caretXInWindow : nil)
     }
 
     func blockViewDidChangeCompositionState(_ view: ParagraphBlockView) {
@@ -561,7 +607,8 @@ extension BlockContainerView: BlockViewOwner {
     }
 
     /// 블록에 캐럿을 놓는다. 보이지 않는 블록이면 먼저 보이게 굴린다.
-    func focus(blockIndex: Int, edge: BlockCaretNavigation.Edge) {
+    func focus(blockIndex: Int, edge: BlockCaretNavigation.Edge,
+               preferredX: CGFloat? = nil) {
         guard document.blocks.indices.contains(blockIndex),
               placements.indices.contains(blockIndex) else { return }
         let placement = placements[blockIndex]
@@ -571,11 +618,11 @@ extension BlockContainerView: BlockViewOwner {
         let id = document.blocks[blockIndex].id
         guard let view = activeViews[id] else { return }
         focusedBlockID = id
-        view.placeCaret(at: edge)
+        view.placeCaret(at: edge, preferredX: preferredX)
         window?.makeFirstResponder(view.textView)
+        // 실제로 놓인 자리를 쓴다 — `preferredX`로 줄 가운데에 놓였을 수 있다.
         selection = BlockSelection(caretAt: BlockPosition(
-            blockIndex: blockIndex,
-            offset: edge == .top ? 0 : (document.blocks[blockIndex].sourceSlice as NSString).length))
+            blockIndex: blockIndex, offset: view.textView.selectedRange().location))
     }
 }
 

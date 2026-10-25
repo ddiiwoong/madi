@@ -72,6 +72,18 @@ public struct BlockParser: Sendable {
                 index += 1
 
             case .heading(let level):
+                // setext 제목은 밑줄까지 한 블록이다 — 문단 줄들 + `===` 줄.
+                // 묶지 않으면 제목과 밑줄이 따로 떨어져, 제목을 고칠 때 밑줄이
+                // 남거나 따로 움직인다.
+                var end = index + 1
+                while end < lines.count, lines[end].kind == .heading(level: level) { end += 1 }
+                if end < lines.count, case .setextUnderline = lines[end].kind { end += 1 }
+                append(.heading(level: level), index, end)
+                index = end
+
+            case .setextUnderline(let level):
+                // 위의 제목에 붙지 못한 밑줄(제목 없이 혼자 남은 경우). 제목으로 다룬다 —
+                // 떨어뜨리면 그 줄의 바이트가 사라진다.
                 append(.heading(level: level), index, index + 1)
                 index += 1
 
