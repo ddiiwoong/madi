@@ -242,6 +242,19 @@ final class ParagraphBlockView: NSView {
         return textView.convert(local, to: nil).x
     }
 
+    /// 창 좌표의 점에 가장 가까운 **캐럿 자리**(이 블록 안의 UTF-16 오프셋).
+    ///
+    /// 마우스로 블록을 넘겨 끌 때 쓴다. 점이 이 블록보다 위면 0, 아래면 끝이다 —
+    /// `characterIndexForInsertion`에 맡기면 위아래로 벗어난 점도 가장 가까운 줄로
+    /// 끌어와, 블록 아래 틈을 가리킨 선택이 마지막 줄 가운데에서 멈춘다.
+    func offset(atWindowPoint point: NSPoint) -> Int {
+        let local = textView.convert(point, from: nil)
+        if local.y < textView.bounds.minY { return 0 }
+        if local.y >= textView.bounds.maxY { return storage.length }
+        let index = textView.characterIndexForInsertion(at: local)
+        return min(max(0, index), storage.length)
+    }
+
     func placeCaret(atOffset offset: Int) {
         let location = min(max(0, offset), storage.length)
         textView.setSelectedRange(NSRange(location: location, length: 0))
@@ -407,6 +420,62 @@ final class BlockTextView: DecoratedTextView {
               container.extendSelection(from: blockOwner, direction: .up) else {
             return super.moveUpAndModifySelection(sender)
         }
+    }
+
+    // MARK: 마우스로 블록을 넘는 선택
+    //
+    // `NSTextView.mouseDown`은 마우스를 놓을 때까지 **자기 안에서** 끌기를 처리하고,
+    // 자기 글 밖으로 끌면 자기 처음이나 끝에서 선택을 멈춘다. 그래서 블록을 넘어
+    // 끌 수가 없었다. 끌기만 컨테이너가 맡고, 클릭은 그대로 `super`에 둔다 —
+    // 링크 열기, 두 번·세 번 클릭의 낱말·문단 선택, 선택한 글을 끌어 옮기기가
+    // 모두 `NSTextView`의 것이라 다시 짜면 그만큼 잃는다.
+
+    /// 끌기로 볼 최소 거리(pt). 클릭하다 손이 조금 떨린 것을 끌기로 보지 않는다.
+    static let dragThreshold: CGFloat = 3
+
+    override func mouseDown(with event: NSEvent) {
+        guard shouldTrackDragItself(event),
+              let blockOwner,
+              let container = blockOwner.owner as? BlockContainerView,
+              let window else {
+            return super.mouseDown(with: event)
+        }
+
+        // 끌기인지 클릭인지는 다음 이벤트를 봐야 안다.
+        let start = event.locationInWindow
+        while let next = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp],
+                                          until: .distantFuture, inMode: .eventTracking,
+                                          dequeue: true) {
+            if next.type == .leftMouseUp {
+                // 클릭이었다. 놓기를 되돌려 넣고 평소대로 처리한다 — `super`의
+                // 추적 고리가 그 놓기를 바로 꺼내 클릭 하나로 끝낸다.
+                window.postEvent(next, atStart: true)
+                return super.mouseDown(with: event)
+            }
+            let moved = hypot(next.locationInWindow.x - start.x,
+                              next.locationInWindow.y - start.y)
+            guard moved >= Self.dragThreshold else { continue }
+            container.trackDragSelection(from: self, mouseDown: event, firstDrag: next)
+            return
+        }
+    }
+
+    /// 이 누르기를 컨테이너의 끌기로 볼 수 있는가.
+    ///
+    /// 한 번 클릭·보조 키 없음·조합 중 아님·선택한 글 바깥일 때만이다. 선택한 글
+    /// 위에서 누르면 `NSTextView`가 그 글을 끌어 옮기는 동작이고, 두 번 클릭은 낱말
+    /// 선택이며, Shift·⌥ 클릭은 선택 늘리기와 사각 선택이다 — 모두 `super`의 일이다.
+    private func shouldTrackDragItself(_ event: NSEvent) -> Bool {
+        guard event.clickCount == 1, !hasMarkedText() else { return false }
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        guard modifiers.isDisjoint(with: [.shift, .option, .command, .control]) else { return false }
+        let selected = selectedRange()
+        if selected.length > 0 {
+            let point = convert(event.locationInWindow, from: nil)
+            let index = characterIndexForInsertion(at: point)
+            if index > selected.location, index < NSMaxRange(selected) { return false }
+        }
+        return true
     }
 
     /// 조합의 시작과 끝. 주인이 이 신호로 `BlockInputGuard`를 세운다.

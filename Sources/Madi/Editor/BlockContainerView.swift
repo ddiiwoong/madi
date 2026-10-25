@@ -501,6 +501,89 @@ public final class BlockContainerView: NSView {
         guard let id = view.blockID else { return nil }
         return document.blocks.firstIndex { $0.id == id }
     }
+
+    // MARK: 마우스로 블록을 넘는 선택
+
+    /// 창 좌표의 점이 가리키는 문서 위치.
+    ///
+    /// 문서 위의 여백이면 문서 처음, 아래 여백이면 문서 끝이다 — 끌어서 창 끝까지
+    /// 내리면 마지막 블록의 끝까지 잡혀야 한다.
+    func position(atWindowPoint point: NSPoint) -> BlockPosition? {
+        guard let last = document.blocks.indices.last else { return nil }
+        let y = Double(canvas.convert(point, from: nil).y) - Double(theme.textInsets.height)
+        guard let index = geometry.blockIndex(at: y, placements: placements),
+              document.blocks.indices.contains(index) else { return nil }
+        let block = document.blocks[index]
+        if let view = activeViews[block.id] {
+            return BlockPosition(blockIndex: index, offset: view.offset(atWindowPoint: point))
+        }
+        // 뷰가 없는 블록(보이는 범위 밖). 자리의 위쪽 절반이면 처음, 아래면 끝.
+        let length = (block.sourceSlice as NSString).length
+        guard placements.indices.contains(index) else {
+            return BlockPosition(blockIndex: last, offset: length)
+        }
+        let placement = placements[index]
+        return BlockPosition(blockIndex: index,
+                             offset: y < placement.y + placement.height / 2 ? 0 : length)
+    }
+
+    /// 끌기 한 걸음 — 선택의 머리를 그 점으로 옮긴다. 닻은 그대로다.
+    func extendDragSelection(toWindowPoint point: NSPoint) {
+        guard let head = position(atWindowPoint: point) else { return }
+        selection = BlockSelection(anchor: selection.anchor, head: head)
+        applySelectionToViews()
+    }
+
+    /// 끌기를 시작한다 — 닻을 누른 자리에 놓는다.
+    func beginDragSelection(in view: ParagraphBlockView, atWindowPoint point: NSPoint) {
+        // first responder를 먼저 옮긴다. 캐럿이 들어온 블록은 마커가 드러나 글자
+        // 자리가 바뀌므로, 닻은 **그 다음에** 잰다 — 순서를 바꾸면 닻이 누른
+        // 글자에서 마커 길이만큼 밀린다.
+        if window?.firstResponder !== view.textView {
+            window?.makeFirstResponder(view.textView)
+        }
+        guard let index = index(of: view) else { return }
+        let anchor = BlockPosition(blockIndex: index, offset: view.offset(atWindowPoint: point))
+        selection = BlockSelection(caretAt: anchor)
+        applySelectionToViews()
+    }
+
+    /// 마우스를 놓을 때까지 끌기를 따라간다. `BlockTextView.mouseDown`이 끌기로
+    /// 판정한 뒤에 부른다.
+    ///
+    /// 창 밖으로 끌고 멈춰 있어도 계속 굴러야 하므로 주기 이벤트를 받는다 —
+    /// 끌기 이벤트는 마우스가 움직일 때만 온다.
+    func trackDragSelection(from textView: BlockTextView, mouseDown: NSEvent,
+                            firstDrag: NSEvent) {
+        guard let view = textView.blockOwner, let window else { return }
+        beginDragSelection(in: view, atWindowPoint: mouseDown.locationInWindow)
+
+        var lastDrag = firstDrag
+        let step = { [unowned self] (event: NSEvent) in
+            // 굴리기가 먼저다. 굴리면 보이는 블록이 바뀌어(뷰가 붙는다) 그 다음에
+            // 재야 새로 들어온 블록 안의 자리가 잡힌다.
+            canvas.autoscroll(with: event)
+            extendDragSelection(toWindowPoint: event.locationInWindow)
+        }
+        step(firstDrag)
+
+        NSEvent.startPeriodicEvents(afterDelay: 0.1, withPeriod: 0.05)
+        defer { NSEvent.stopPeriodicEvents() }
+        while let event = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp, .periodic],
+                                           until: .distantFuture, inMode: .eventTracking,
+                                           dequeue: true) {
+            switch event.type {
+            case .leftMouseDragged:
+                lastDrag = event
+                step(event)
+            case .periodic:
+                step(lastDrag)
+            default:
+                extendDragSelection(toWindowPoint: event.locationInWindow)
+                return
+            }
+        }
+    }
 }
 
 // MARK: - 블록 뷰에서 올라오는 신호
@@ -562,9 +645,14 @@ extension BlockContainerView: BlockViewOwner {
     func blockView(_ view: ParagraphBlockView, didChangeSelection range: NSRange) {
         guard !isApplyingSelection, let index = index(of: view) else { return }
         guard view.textView == window?.firstResponder else { return }
+        let spannedBlocks = selectionSpansBlocks
         selection = BlockSelection(anchor: BlockPosition(blockIndex: index, offset: range.location),
                                    head: BlockPosition(blockIndex: index,
                                                        offset: range.location + range.length))
+        // 블록을 넘던 선택이 한 블록으로 줄었다(끈 뒤에 클릭했다). 다른 블록들에 남은
+        // 회색 선택 몫을 지운다 — 지우지 않으면 화면에는 선택이 남아 있는데 ⌘C는
+        // 이 블록만 복사한다.
+        if spannedBlocks { applySelectionToViews() }
         // 캐럿이 움직이면 마커 보임이 달라진다 — 그 블록만 다시 칠한다.
         view.restyle(width: contentWidth, isFocusedBlock: true)
     }

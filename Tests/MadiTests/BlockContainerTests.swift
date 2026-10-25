@@ -147,6 +147,119 @@ final class BlockContainerTests: XCTestCase {
                        "블록을 넘는 복사는 블록 뷰 하나가 아니라 컨테이너가 조립해야 한다")
     }
 
+    // MARK: 마우스로 블록을 넘는 선택 — 실제 이벤트 경로
+
+    /// 블록 뷰 안의 글자 자리 → 창 좌표. 그 글자의 **왼쪽 끝 바로 안**을 가리켜
+    /// `characterIndexForInsertion`이 그 글자 앞(= `offset`)을 돌려주게 한다.
+    private func windowPoint(in textView: NSTextView, offset: Int) -> NSPoint {
+        guard let layout = textView.layoutManager, let box = textView.textContainer else {
+            return .zero
+        }
+        layout.ensureLayout(for: box)
+        let glyphs = layout.glyphRange(forCharacterRange: NSRange(location: offset, length: 1),
+                                       actualCharacterRange: nil)
+        let rect = layout.boundingRect(forGlyphRange: glyphs, in: box)
+        let local = NSPoint(x: rect.minX + 1 + textView.textContainerOrigin.x,
+                            y: rect.midY + textView.textContainerOrigin.y)
+        return textView.convert(local, to: nil)
+    }
+
+    private func mouse(_ type: NSEvent.EventType, at point: NSPoint) -> NSEvent {
+        NSEvent.mouseEvent(with: type, location: point, modifierFlags: [],
+                           timestamp: ProcessInfo.processInfo.systemUptime,
+                           windowNumber: window.windowNumber, context: nil,
+                           eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1)!
+    }
+
+    /// 누른다. 실제 앱에서 누른 뷰를 first responder로 만드는 것은 `NSWindow.sendEvent`이고
+    /// 그 다음에 뷰의 `mouseDown`이 불린다 — 그 순서를 그대로 밟는다. `sendEvent`로
+    /// 보내지 않는 이유: 화면 밖의 key가 아닌 창은 첫 클릭을 창 활성화로 먹는다(실측:
+    /// 다섯 테스트가 아무 선택도 없이 끝났다).
+    private func press(_ textView: NSTextView, at point: NSPoint) {
+        window.makeFirstResponder(textView)
+        textView.mouseDown(with: mouse(.leftMouseDown, at: point))
+    }
+
+    /// 누르고, `path`를 따라 끌고, 마지막 점에서 놓는다 — `mouseDown`이 도는 추적
+    /// 고리가 꺼내 가도록 끌기·놓기를 **먼저** 큐에 넣는다.
+    private func drag(on textView: NSTextView, from start: NSPoint, through path: [NSPoint]) {
+        for point in path { window.postEvent(mouse(.leftMouseDragged, at: point), atStart: false) }
+        window.postEvent(mouse(.leftMouseUp, at: path.last ?? start), atStart: false)
+        press(textView, at: start)
+        settle()
+    }
+
+    /// 마커가 없는 문단 둘 — 캐럿이 들어와 마커가 드러나도 글자 자리가 바뀌지 않는다.
+    private func paragraphs() -> (first: NSTextView, second: NSTextView)? {
+        let views = blocks
+        guard views.count == 5 else { return nil }
+        XCTAssertEqual(views[2].string, "첫 문단이다.\n", "전제: 셋째 블록이 첫 문단")
+        XCTAssertEqual(views[4].string, "둘째 문단이다.\n", "전제: 다섯째 블록이 둘째 문단")
+        return (views[2], views[4])
+    }
+
+    func testMouseDragAcrossBlocksSelectsEverythingInBetween() {
+        guard let (first, second) = paragraphs() else { return XCTFail("블록이 부족하다") }
+        let start = windowPoint(in: first, offset: 2)    // "첫 " 뒤
+        let end = windowPoint(in: second, offset: 3)     // "둘째 " 뒤
+        drag(on: first, from: start, through: [end])
+
+        XCTAssertTrue(container.selectionSpansBlocks,
+                      "끌기가 누른 블록 끝에서 멈추면 블록을 넘을 수 없다")
+        XCTAssertEqual(container.selectedMarkdown, "문단이다.\n\n둘째 ")
+    }
+
+    func testMouseDragUpwardsSelectsTheSameRange() {
+        guard let (first, second) = paragraphs() else { return XCTFail("블록이 부족하다") }
+        let start = windowPoint(in: second, offset: 3)
+        let end = windowPoint(in: first, offset: 2)
+        drag(on: second, from: start, through: [end])
+
+        XCTAssertEqual(container.selectedMarkdown, "문단이다.\n\n둘째 ",
+                       "위로 끌어도 같은 범위여야 한다")
+    }
+
+    func testMouseDragBelowTheLastBlockSelectsToTheEndOfTheDocument() {
+        guard let (first, second) = paragraphs() else { return XCTFail("블록이 부족하다") }
+        let start = windowPoint(in: first, offset: 2)
+        let bottom = second.convert(NSPoint(x: 10, y: second.bounds.maxY + 40), to: nil)
+        drag(on: first, from: start, through: [bottom])
+
+        XCTAssertEqual(container.selectedMarkdown, "문단이다.\n\n둘째 문단이다.\n",
+                       "문서 아래 빈 곳까지 끌면 마지막 블록의 끝까지 잡혀야 한다 — "
+                       + "마지막 줄 가운데에서 멈추면 안 된다")
+    }
+
+    /// 끌기를 가로챘어도 **클릭은 `NSTextView`의 것**으로 남아야 한다 — 링크 열기·
+    /// 캐럿 놓기가 모두 이 길이다.
+    func testAPlainClickStillPlacesTheCaretInThatBlock() {
+        guard let (_, second) = paragraphs() else { return XCTFail("블록이 부족하다") }
+        let point = windowPoint(in: second, offset: 3)
+        window.postEvent(mouse(.leftMouseUp, at: point), atStart: false)
+        press(second, at: point)
+        settle()
+
+        XCTAssertTrue(window.firstResponder === second, "클릭한 블록이 first responder여야 한다")
+        XCTAssertEqual(second.selectedRange(), NSRange(location: 3, length: 0))
+        XCTAssertFalse(container.selectionSpansBlocks)
+    }
+
+    func testClickingAfterADragClearsTheSelectionInOtherBlocks() {
+        guard let (first, second) = paragraphs() else { return XCTFail("블록이 부족하다") }
+        drag(on: first, from: windowPoint(in: first, offset: 2),
+             through: [windowPoint(in: second, offset: 3)])
+        XCTAssertTrue(container.selectionSpansBlocks, "전제: 블록을 넘는 선택")
+
+        let point = windowPoint(in: first, offset: 1)
+        window.postEvent(mouse(.leftMouseUp, at: point), atStart: false)
+        press(first, at: point)
+        settle()
+
+        XCTAssertFalse(container.selectionSpansBlocks)
+        XCTAssertEqual(second.selectedRange().length, 0,
+                       "다른 블록에 회색 선택이 남으면 화면과 ⌘C가 어긋난다")
+    }
+
     // MARK: 문서 레벨 되돌리기
 
     func testTypingRegistersOnTheDocumentUndoManagerNotTheTextView() {
