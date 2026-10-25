@@ -141,6 +141,10 @@ final class DocumentWindowController: NSWindowController {
         splitController.addSplitViewItem(sidebarItem)
         splitController.addSplitViewItem(NSSplitViewItem(viewController: editorController))
         window?.contentViewController = splitController
+        // 이름이 Md → Madi로 바뀌어도 이 문자열은 그대로 둔다. 자동 저장 이름과
+        // 도구 막대 식별자는 **저장된 상태를 찾는 열쇠**이고 사람이 읽는 이름이
+        // 아니다. 바꾸면 기존 사용자의 창 위치·크기와 도구 막대 구성이 한 번
+        // 사라진다. 번들 식별자를 그대로 둔 것과 같은 이유다.
         window?.setFrameAutosaveName("MdDocumentWindow")
 
         matchLabel.font = .systemFont(ofSize: 11)

@@ -1,12 +1,12 @@
-PROJECT := Md.xcodeproj
-SCHEME  := Md
+PROJECT := Madi.xcodeproj
+SCHEME  := Madi
 CONFIG  := Debug
 BUILD   := .build
 DERIVED := $(BUILD)/DerivedData
-APP     := $(DERIVED)/Build/Products/$(CONFIG)/Md.app
+APP     := $(DERIVED)/Build/Products/$(CONFIG)/Madi.app
 UNIVERSAL       := $(BUILD)/universal
-UNIVERSAL_APP   := $(UNIVERSAL)/Build/Products/Release/Md.app
-UNIVERSAL_BIN   := $(UNIVERSAL_APP)/Contents/MacOS/Md
+UNIVERSAL_APP   := $(UNIVERSAL)/Build/Products/Release/Madi.app
+UNIVERSAL_BIN   := $(UNIVERSAL_APP)/Contents/MacOS/Madi
 
 .PHONY: all generate build test run clean open-log universal
 
@@ -105,7 +105,7 @@ universal: generate
 .PHONY: core-only
 core-only:
 	@rm -rf $(BUILD)/core-only && mkdir -p $(BUILD)/core-only
-	@cp Sources/Md/Core/*.swift $(BUILD)/core-only/
+	@cp Sources/Madi/Core/*.swift $(BUILD)/core-only/
 	@cd $(BUILD)/core-only && swiftc -swift-version 6 -typecheck *.swift > parse.log 2>&1; \
 	status=$$?; \
 	if [ $$status -ne 0 ]; then \
@@ -115,7 +115,7 @@ core-only:
 		echo "CoreGraphics API(CGSize.zero…)가 들어왔는지 보세요. 평범한 컴파일 오류일 수도 있습니다."; \
 		exit 1; \
 	fi
-	@echo "core-only: Core $$(ls Sources/Md/Core/*.swift | wc -l | tr -d ' ')개 파일이 Foundation만으로 섭니다"
+	@echo "core-only: Core $$(ls Sources/Madi/Core/*.swift | wc -l | tr -d ' ')개 파일이 Foundation만으로 섭니다"
 
 clean:
 	rm -rf $(BUILD) $(PROJECT)

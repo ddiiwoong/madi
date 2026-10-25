@@ -7,7 +7,7 @@
 ## 1. 지금 구조가 막히는 지점
 
 현재 편집기는 `NSTextStorage` 하나에 마크다운 원문을 담고, 그것을 서식 있는 문서처럼
-그린다(`Sources/Md/Editor/MarkdownEditorView.swift`). 제목·굵게·
+그린다(`Sources/Madi/Editor/MarkdownEditorView.swift`). 제목·굵게·
 코드·링크는 글자 속성으로 표현되고, 마커는 글리프를 제어문자로 바꿔 폭 0으로 만든다.
 
 표가 막히는 이유는 성능이나 구현 난이도가 아니라 **텍스트 시스템의 모델 자체**다.
@@ -73,7 +73,7 @@ struct BlockDocument {
 ```
 
 핵심 규칙 하나: **파서가 이해하지 못한 블록은 `sourceSlice`를 그대로 다시 쓴다.**
-front matter에서 이미 택한 원칙과 같다(`Sources/Md/Core/FrontMatter.swift`).
+front matter에서 이미 택한 원칙과 같다(`Sources/Madi/Core/FrontMatter.swift`).
 재직렬화는 모델링한 블록에만 적용한다. 그렇지 않으면 저장할 때마다 사용자의 파일이
 조용히 다시 쓰인다.
 

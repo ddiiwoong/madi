@@ -12,8 +12,10 @@
 	<string>6.0</string>
 	<key>CFBundleName</key>
 	<string>$(PRODUCT_NAME)</string>
+	<!-- 사용자에게 보이는 이름은 한글, 번들·실행 파일 이름은 로마자 Madi.
+	     한 이름을 두 글자로 쓴 것이고 두 개의 이름이 아니다. -->
 	<key>CFBundleDisplayName</key>
-	<string>Md</string>
+	<string>마디</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -46,8 +48,11 @@
 				<string>net.daringfireball.markdown</string>
 				<string>public.plain-text</string>
 			</array>
+			<!-- `<모듈 이름>.<클래스 이름>`. 모듈 이름은 PRODUCT_NAME에서 오므로
+			     제품 이름을 바꿀 때 이 값도 함께 바꿔야 한다. 안 바꾸면 빌드는
+			     성공하고 문서 열기만 런타임에 조용히 실패한다. -->
 			<key>NSDocumentClass</key>
-			<string>Md.MarkdownDocument</string>
+			<string>Madi.MarkdownDocument</string>
 		</dict>
 	</array>
 </dict>

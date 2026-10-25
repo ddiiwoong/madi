@@ -1,11 +1,16 @@
-# Md
+# 마디 (Madi)
+
+순우리말 **마디** — 토막·이음매, "한 마디 하다"의 그 마디입니다. 마크다운 문서는
+제목·문단·표·코드블록이라는 마디의 줄이고, 이 앱은 그 마디를 다룹니다. 로마자
+표기는 `Madi`이고, 번들·실행 파일 이름이 그것입니다 — 두 개의 이름이 아니라
+한 이름을 두 글자로 쓴 것입니다.
 
 macOS 네이티브 마크다운 에디터. **뷰어 상태에서 바로 편집**합니다 — 소스 창과 미리보기
 창이 따로 있지 않고, 렌더된 문서 자체가 편집 대상입니다.
 
 ```
 make build    # 빌드 (xcodegen → xcodebuild)
-make test     # 코어 테스트 22개
+make test     # 코어 테스트 215개
 make run      # 빌드 후 실행
 ```
 
@@ -34,7 +39,7 @@ PDF 내보내기는 버거 메뉴와 파일 메뉴에 있다(단축키 없음).
 창에서 열리므로 눈에 보이는 결과는 같다.
 
 버거 메뉴는 메뉴 바와 **같은 명령 표에서** 만든다
-(`Sources/Md/App/AppMenu.swift`) — 두 곳이 어긋날 수 없게 하려는
+(`Sources/Madi/App/AppMenu.swift`) — 두 곳이 어긋날 수 없게 하려는
 의도다.
 
 ## 문서 메타데이터 카드
@@ -46,16 +51,16 @@ YAML front matter는 편집기 위의 키/값 카드로 그려진다. 본문에�
 파서가 모델링하지 않는 구문(앵커, 중첩 매핑, 주석)이 조용히 다시 쓰인다. 그래서 원문
 블록을 바이트 그대로 보존하고 저장할 때 다시 붙인다. 빈 줄 구분자 유무까지 기록하는데,
 그러지 않으면 저장마다 줄이 하나 생기거나 사라진다. 왕복 불변식은 테스트로 못박혀 있다
-(`Tests/MdTests/FrontMatterTests.swift`).
+(`Tests/MadiTests/FrontMatterTests.swift`).
 
 ## "뷰어에서 편집"이 어떻게 되는가
 
 웹뷰도, 두 번째 버퍼도 없습니다. `NSTextStorage` 하나에 마크다운 원문만 들어 있고,
 그 위에 두 겹을 올립니다.
 
-1. **스타일링** (`Sources/Md/Editor/MarkdownStyler.swift`) — 제목은 큰 글씨, `**굵게**`는
+1. **스타일링** (`Sources/Madi/Editor/MarkdownStyler.swift`) — 제목은 큰 글씨, `**굵게**`는
    실제 굵게, 코드는 모노스페이스에 배경, 링크는 파란 밑줄.
-2. **마커 숨김** (`Sources/Md/Editor/MarkdownEditorView.swift`) — `#`, `**`, 백틱,
+2. **마커 숨김** (`Sources/Madi/Editor/MarkdownEditorView.swift`) — `#`, `**`, 백틱,
    링크의 `(URL)`, 코드 펜스는 **캐럿이 그 줄에 없을 때 화면에서 사라집니다.** 문자는
    문서에 그대로 있고 폭만 0이 됩니다. 캐럿을 그 줄로 옮기면 마커가 다시 나타나 구조를
    고칠 수 있습니다.
@@ -72,14 +77,14 @@ YAML front matter는 편집기 위의 키/값 카드로 그려진다. 본문에�
 
 ```
 project.yml                     xcodegen 명세 (.xcodeproj는 생성물·gitignore)
-Sources/Md/Core/                순수 로직 — Foundation만, AppKit 없음
+Sources/Madi/Core/                순수 로직 — Foundation만, AppKit 없음
   MarkdownSyntax.swift            블록·인라인 스캐너 (코드펜스 상태 추적 포함)
   DocumentSearch.swift            문서 내 검색
   Outline.swift                   제목 추출
-Sources/Md/Editor/              라이브 프리뷰 편집기
-Sources/Md/Panels/              목차 · 디렉토리 사이드바
-Sources/Md/App/                 NSDocument · 윈도우 · 메뉴 · main
-Tests/MdTests/                  코어 테스트 22개
+Sources/Madi/Editor/              라이브 프리뷰 편집기
+Sources/Madi/Panels/              목차 · 디렉토리 사이드바
+Sources/Madi/App/                 NSDocument · 윈도우 · 메뉴 · main
+Tests/MadiTests/                코어 테스트 215개
 web-prototype/                  초기 웹 프로토타입 (참고용, 지워도 됩니다)
 ```
 

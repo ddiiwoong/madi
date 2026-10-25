@@ -6,7 +6,7 @@ import Translation
 /// 구조는 Sogon의 `AppleTranslationService`를 따른다 — 설치된 언어로만 세션을 만들고,
 /// 팩이 없으면 `languagePackMissing`을 던진다. **언어 팩을 여기서 받지 않는다**: 받기는
 /// 사용자 동의 창이 필요하고 그 창은 SwiftUI `.translationTask`가 붙은 화면 위에만 뜬다.
-/// Md에는 그 화면이 없으므로 안내만 하고, 사용자가 시스템 설정에서 받는다.
+/// 마디에는 그 화면이 없으므로 안내만 하고, 사용자가 시스템 설정에서 받는다.
 ///
 /// Sogon과 다른 점은 **무엇을 넘기는가**다. Sogon은 받아쓴 말을 통째로 넘기지만 여기서는
 /// `MarkdownTranslationPlan`이 가른 본문 조각만 넘긴다 — 마크업을 넘기면 구조가 깨진다.

@@ -105,7 +105,7 @@ enum AppMenu {
 
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "Md 정보",
+        appMenu.addItem(withTitle: "마디 정보",
                         action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
                         keyEquivalent: "")
         appMenu.addItem(.separator())
@@ -113,7 +113,7 @@ enum AppMenu {
                         action: #selector(DocumentWindowController.showSettings(_:)),
                         keyEquivalent: ",")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Md 가리기", action: #selector(NSApplication.hide(_:)),
+        appMenu.addItem(withTitle: "마디 가리기", action: #selector(NSApplication.hide(_:)),
                         keyEquivalent: "h")
         let hideOthers = appMenu.addItem(withTitle: "기타 가리기",
                                          action: #selector(NSApplication.hideOtherApplications(_:)),
@@ -122,7 +122,7 @@ enum AppMenu {
         appMenu.addItem(withTitle: "모두 보기",
                         action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Md 종료", action: #selector(NSApplication.terminate(_:)),
+        appMenu.addItem(withTitle: "마디 종료", action: #selector(NSApplication.terminate(_:)),
                         keyEquivalent: "q")
         appItem.submenu = appMenu
         main.addItem(appItem)

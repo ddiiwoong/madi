@@ -27,6 +27,7 @@ final class ActivityLogPanel: NSWindowController {
         // 창을 계속 들고 있으므로, 사용자가 한 번 닫고 다시 열면 이미 해제된 창을
         // 보이려 들게 된다. 실제 버그다 — 끄는 것이 맞다.
         panel.isReleasedWhenClosed = false
+        // 저장된 창 위치를 찾는 열쇠다. 앱 이름이 바뀌어도 그대로 둔다.
         panel.setFrameAutosaveName("MdActivityLogPanel")
         super.init(window: panel)
         panel.contentViewController = makeContentController()

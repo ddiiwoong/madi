@@ -1,4 +1,4 @@
-name: Md
+name: Madi
 options:
   bundleIdPrefix: dev.jinwoong
   deploymentTarget:
@@ -16,44 +16,50 @@ settings:
     ENABLE_HARDENED_RUNTIME: "NO"
 
 targets:
-  Md:
+  Madi:
     type: application
     platform: macOS
     sources:
-      - path: Sources/Md
+      - path: Sources/Madi
         excludes:
           - "Resources/Info.plist"
     settings:
       base:
-        INFOPLIST_FILE: Sources/Md/Resources/Info.plist
+        INFOPLIST_FILE: Sources/Madi/Resources/Info.plist
+        # 이름은 Md → Madi로 바뀌었지만 식별자는 `dev.jinwoong.md` 그대로다.
+        # 창 위치·크기(setFrameAutosaveName)와 최근 문서 목록은 번들 식별자로
+        # 저장되므로, 바꾸면 기존 설치본의 그 상태가 한 번 초기화된다. 이름은
+        # 사람이 읽는 것이고 식별자는 시스템이 읽는 것이라 같이 움직일 필요가 없다.
         PRODUCT_BUNDLE_IDENTIFIER: dev.jinwoong.md
-        PRODUCT_NAME: Md
+        # 모듈 이름도 이 값에서 온다. Info.plist의 `NSDocumentClass`가
+        # `<모듈>.MarkdownDocument` 꼴이므로 둘은 반드시 함께 움직인다.
+        PRODUCT_NAME: Madi
         COMBINE_HIDPI_IMAGES: "YES"
         ENABLE_APP_SANDBOX: "NO"
 
-  MdTests:
+  MadiTests:
     type: bundle.unit-test
     platform: macOS
     # Deliberately NOT app-hosted. The core is pure Foundation, so the test
     # bundle compiles those files directly: an app-hosted bundle has to launch
-    # Md.app and wait for it to connect, which hangs the run and tells you
+    # Madi.app and wait for it to connect, which hangs the run and tells you
     # nothing about the logic under test.
     sources:
-      - Tests/MdTests
-      - Sources/Md/Core
+      - Tests/MadiTests
+      - Sources/Madi/Core
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.jinwoong.md.tests
         GENERATE_INFOPLIST_FILE: "YES"
 
 schemes:
-  Md:
+  Madi:
     build:
       targets:
-        Md: all
+        Madi: all
     run:
       config: Debug
     test:
       config: Debug
       targets:
-        - MdTests
+        - MadiTests

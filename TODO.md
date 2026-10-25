@@ -1,4 +1,4 @@
-# Md — 남은 일
+# 마디 (Madi) — 남은 일
 
 상태는 세 가지로만 적는다: **지금 할 것** · **설계가 끝난 것** · **결정이 필요한 것**.
 이 파일이 현재 상태를 주장하는 유일한 곳이다. 왜 그렇게 됐는지는
@@ -6,6 +6,13 @@
 
 ## 끝난 것
 
+- 앱 이름 `마디 / Madi` — 보이는 이름은 한글, 번들·실행 파일·모듈은 로마자.
+  **번들 식별자는 `dev.jinwoong.md` 그대로 두었다**(창 위치·크기와 최근 문서 목록이
+  식별자로 저장되므로 바꾸면 기존 설치본의 그 상태가 초기화된다). 같은 이유로
+  자동 저장 이름(`MdDocumentWindow` 등)도 그대로다 — 저장된 상태를 찾는 열쇠이고
+  사람이 읽는 이름이 아니다. 모듈 이름이 바뀌므로 `Info.plist`의 `NSDocumentClass`를
+  `Madi.MarkdownDocument`로 함께 고쳐야 한다 — 빼먹으면 빌드는 성공하고
+  **문서 열기만 런타임에 실패**한다.
 - 라이브 프리뷰 편집(뷰어 상태에서 바로 수정, 마커는 캐럿 줄에서만 보임)
 - 문서 내 검색 — 모든 일치 강조, `⌘G`/`⇧⌘G` 이동, 큰 문서 가드
 - 목차 · 파일 브라우저 · 최근 문서 사이드바, 도구 막대 **토글**로 상태 표시
@@ -35,7 +42,7 @@ Sogon의 구조를 가져왔다(`~/sogon/Sogon/Services/Translation/AppleTransla
 `Sogon/Models/TranslationChunker.swift`, `Sogon/Models/TranslationRunner.swift`).
 마크다운이라서 Sogon과 **다르게** 한 것이 핵심이다 — 마커마다 쪼개 넘기면 문맥이 사라지고,
 통째로 넘기면 마크업이 깨진다. 그래서 **문장은 통째로 넘기고 보호 구간만 자리표로** 바꾼다
-(`Sources/Md/Core/MarkdownTranslationPlan.swift`).
+(`Sources/Madi/Core/MarkdownTranslationPlan.swift`).
 
 측정 기록(ko→en, 이 Mac, 2026-10-25):
 
@@ -97,7 +104,7 @@ Constants.Limits.maxCorrectionCharacters = 1500   (이보다 길면 Sogon은 교
 **번역에서 이미 푼 문제를 다시 쓸 수 있다.** 마크업을 LLM에 넘기면 깨지는 것은 번역과
 같은 문제이고, `MarkdownTranslationPlan`의 자리표 방식이 그대로 통한다. 다만 이름이
 번역 전용이므로 교정과 함께 쓰려면 `MarkdownTextPlan` 같은 이름으로 일반화해야 한다
-(`Sources/Md/Core/MarkdownTranslationPlan.swift`).
+(`Sources/Madi/Core/MarkdownTranslationPlan.swift`).
 
 번역과 **다른** 점이 교정의 진짜 위험이다:
 
@@ -278,10 +285,10 @@ Mark 0.7.1의 설정 창을 띄워 다섯 탭을 모두 접근성 트리로 읽�
       `CFBundleDocumentTypes`로 열 수 있다고 **선언만** 하고 기본 앱으로 등록하는 길이 없다.
       `LSSetDefaultRoleHandlerForContentType`로 되고, 현재 핸들러는
       `LSCopyDefaultRoleHandlerForContentType`로 읽어 상태 문장을 만든다.
-- [ ] **UI 언어 (시스템 / English / 日本語 / 한국어).** Md는 **현지화가 아예 없다** —
+- [ ] **UI 언어 (시스템 / English / 日本語 / 한국어).** 마디는 **현지화가 아예 없다** —
       `NSLocalizedString` 사용이 0건이고 `.lproj`도 없어 한국어 문자열이 코드에 박혀 있다.
-      **영어 사용자는 지금 Md를 쓸 수 없다.** 앱 이름을 영어로도 읽히게 고르려는 것과 같은
-      결의 일이므로, 이름을 정할 때 함께 결정하는 것이 맞다. Mark은 앱 안에서 언어를 바꾸고
+      **영어 사용자는 지금 이 앱을 쓸 수 없다.** 이름은 `마디 / Madi`로 정해져 영어 쪽
+      입구가 생겼으므로, 남은 것은 UI 문자열이다. Mark은 앱 안에서 언어를 바꾸고
       즉시 반영하는데, 그건 웹 프런트엔드라 쉬운 것이고 AppKit에서는 창을 다시 짓는 쪽이
       현실적이다 — 1단계는 `.lproj`를 두어 **시스템 언어를 따르는 것**까지다.
 
@@ -401,7 +408,7 @@ meta charset 없음 + 옵션 있음 → 한국어 본문      ✓
 ```
 xcodebuild -configuration Release ONLY_ACTIVE_ARCH=NO ARCHS="arm64 x86_64" … build
 → BUILD SUCCEEDED
-lipo -archs …/Md.app/Contents/MacOS/Md → x86_64 arm64
+lipo -archs …/Madi.app/Contents/MacOS/Madi → x86_64 arm64
 ```
 
 `make build`가 arm64만 내는 것은 Debug 구성이 `ONLY_ACTIVE_ARCH=YES`라서다 — 설정 문제가
@@ -515,9 +522,8 @@ Swift on Windows에서 그대로 컴파일될 것으로 **예상**된다(확인 
   이야기인지 **애셋까지**인지를 정해야 한다. 시스템 글꼴만 쓰면 번들은 그대로지만 기계마다
   모양이 달라진다.
 - **UI를 영어로도 낼지.** 지금은 한국어 문자열이 코드에 박혀 있어 영어 사용자가 쓸 수 없다.
-  Mark은 English · 日本語 · 한국어 셋을 낸다. 앱 이름을 영어로도 읽히게 고르려는 것과 같은
-  결정이므로 **이름과 함께 정하는 것이 맞다** — 영어로 낼 생각이 없다면 이름이 로마자로
-  읽히는지도 덜 중요해진다.
+  Mark은 English · 日本語 · 한국어 셋을 낸다. 이름은 `마디 / Madi`로 정해져 로마자 쪽
+  입구가 이미 열렸으므로, 영어로 낼 생각이 없다면 그 이름의 값도 절반만 쓰는 셈이다.
 - **배포할지.** 지금은 ad-hoc 서명(`CODE_SIGN_IDENTITY=-`)이라 이 Mac에서만 돈다.
   배포하려면 Developer ID 서명 + 공증이 필요하다.
 - **표 격자 편집을 실제로 할지.** 설계는 끝났지만 비용이 크다. 하지 않기로 하면
