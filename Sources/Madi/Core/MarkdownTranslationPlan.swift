@@ -57,7 +57,19 @@ public struct MarkdownTranslationPlan: Equatable {
         /// 원문에서 **지울 쪽**(opening이면 뒤, closing이면 앞)에 공백이 있었는가.
         /// 있었다면 번역기가 넣은 것이 아니므로 건드리지 않는다.
         public let hadAdjacentSpace: Bool
+        /// 표의 칸 구분자 `|`인가. 이것이 옮겨지면 칸 수가 바뀐다(`Unit.keepsStructure`).
+        public let isCellSeparator: Bool
+
+        public init(text: String, role: Role, hadAdjacentSpace: Bool, isCellSeparator: Bool = false) {
+            self.text = text
+            self.role = role
+            self.hadAdjacentSpace = hadAdjacentSpace
+            self.isCellSeparator = isCellSeparator
+        }
     }
+
+    /// 자리표 `index`가 번역기에 넘어가는 모양.
+    static func token(_ index: Int) -> String { "\(open)\(index)\(close)" }
 
     /// 번역기에 넘기는 단위 하나. 보통 한 줄의 본문 또는 표의 한 칸이다.
     public struct Unit: Equatable {
@@ -65,6 +77,69 @@ public struct MarkdownTranslationPlan: Equatable {
         public let text: String
         /// 자리표 번호 순서대로의 보호 구간.
         public let protected: [ProtectedSpan]
+        /// 표의 행일 때만: 같은 행을 **칸마다** 나눈 계획. 행 번역이 칸 구조를 지키지
+        /// 못했을 때(`keepsStructure`가 거짓) 그 행만 이것으로 다시 번역한다.
+        public let cellFallback: MarkdownTranslationPlan?
+
+        public init(text: String, protected: [ProtectedSpan],
+                    cellFallback: MarkdownTranslationPlan? = nil) {
+            self.text = text
+            self.protected = protected
+            self.cellFallback = cellFallback
+        }
+
+        /// 번역문이 표의 칸 구조를 지키는가. 칸 구분자가 없는 단위는 늘 참이다.
+        ///
+        /// 왜 있는가(실측): 행을 통째로 넘기면 문맥이 살아 번역이 나아지지만, 번역기가
+        /// 자리표를 **옮기거나 복제한다.** 저장소 문서 다섯을 번역했더니 표 두 개의 열
+        /// 수가 바뀌었다 — 닫는 `**`가 마지막 `|` 뒤로 가 칸이 하나 늘었고, 다른 행에서는
+        /// 구분자 하나가 두 번 나와 `|`가 다섯 개가 됐다. 이전 주석은 "칸의 개수와 자리는
+        /// 보존된다"고 적었는데 그렇지 않았다.
+        ///
+        /// 검사하는 것: 자리표가 **각각 정확히 한 번** 나온다(빠진 것은 `restored`가 행
+        /// 끝, 즉 마지막 `|` 뒤에 붙이고, 복제는 모두 바뀐다), 구분자가 **순서대로** 나온다,
+        /// 인라인 자리표가 원문과 **같은 칸**에 있다, 원문에서 구분자 앞뒤에 글이 없었으면
+        /// 번역문에도 없다(있으면 칸이 생긴다).
+        public func keepsStructure(_ translated: String) -> Bool {
+            let separators = protected.indices.filter { protected[$0].isCellSeparator }
+            guard !separators.isEmpty else { return true }
+
+            var positions: [String.Index] = []
+            for index in protected.indices {
+                let token = MarkdownTranslationPlan.token(index)
+                guard let found = translated.range(of: token),
+                      translated.range(of: token, range: found.upperBound..<translated.endIndex) == nil
+                else { return false }
+                positions.append(found.lowerBound)
+            }
+
+            let separatorPositions = separators.map { positions[$0] }
+            for (a, b) in zip(separatorPositions, separatorPositions.dropFirst()) where a >= b {
+                return false
+            }
+            for index in protected.indices where !protected[index].isCellSeparator {
+                let sourceCell = separators.filter { $0 < index }.count
+                let translatedCell = separatorPositions.filter { $0 < positions[index] }.count
+                guard sourceCell == translatedCell else { return false }
+            }
+
+            func isBlank(_ text: Substring) -> Bool {
+                text.allSatisfy { $0 == " " || $0 == "\t" }
+            }
+            let firstToken = MarkdownTranslationPlan.token(separators[0])
+            let lastToken = MarkdownTranslationPlan.token(separators[separators.count - 1])
+            if let sourceFirst = text.range(of: firstToken), isBlank(text[..<sourceFirst.lowerBound]),
+               let translatedFirst = translated.range(of: firstToken),
+               !isBlank(translated[..<translatedFirst.lowerBound]) {
+                return false
+            }
+            if let sourceLast = text.range(of: lastToken), isBlank(text[sourceLast.upperBound...]),
+               let translatedLast = translated.range(of: lastToken),
+               !isBlank(translated[translatedLast.upperBound...]) {
+                return false
+            }
+            return true
+        }
 
         /// 번역문의 자리표를 원문 조각으로 되돌린다.
         ///
@@ -183,7 +258,11 @@ public struct MarkdownTranslationPlan: Equatable {
             appendTableRow(line.range, to: &builder, text: text, syntax: syntax)
 
         case .heading, .quote, .listItem, .paragraph:
-            let content = line.contentRange
+            // 내용 앞뒤의 공백은 번역기에 넘기지 않는다(실측). 목록 항목의 이어지는 줄
+            // `   링크는 파란 밑줄.`은 문단 줄이라 내용이 줄 전체인데, 앞 공백까지 넘기면
+            // 번역기가 버리고 그 줄이 **목록 밖으로 떨어진다** — 저장소 문서 다섯 중 셋이
+            // 그렇게 블록 구조가 바뀌었다. 뒤 공백 둘(하드 줄바꿈)도 같은 이유로 지킨다.
+            let content = trimmingSpaces(line.contentRange, in: text)
             let hasContent = content.location != NSNotFound && content.length > 0
             let contentStart = hasContent ? content.location : NSMaxRange(line.range)
             if contentStart > line.range.location {
@@ -200,6 +279,20 @@ public struct MarkdownTranslationPlan: Equatable {
         }
     }
 
+    /// 범위 앞뒤의 공백·탭을 깎는다. 다 깎이면 길이 0인 범위를 돌려준다.
+    static func trimmingSpaces(_ range: NSRange, in text: NSString) -> NSRange {
+        guard range.location != NSNotFound, range.length > 0 else { return range }
+        func isBlank(_ index: Int) -> Bool {
+            let c = text.character(at: index)
+            return c == 32 || c == 9
+        }
+        var start = range.location
+        var end = NSMaxRange(range)
+        while start < end, isBlank(start) { start += 1 }
+        while end > start, isBlank(end - 1) { end -= 1 }
+        return NSRange(location: start, length: end - start)
+    }
+
     /// 표의 한 행. **행 전체를 한 단위로** 넘기고 `|`만 자리표로 지킨다.
     ///
     /// 왜 바꿨는가(실측): 전에는 칸마다 독립된 단위였다. 번역기에 `검색` 한 낱말만
@@ -207,15 +300,32 @@ public struct MarkdownTranslationPlan: Equatable {
     /// 낱말 하나만 보면 그렇게 읽는다 — 정보가 없는 것이 문제였다.
     ///
     /// 행을 통째로 넘기면 같은 행의 다른 칸이 문맥이 된다. 칸 경계는 `|`를 자리표로
-    /// 바꿔 지키므로, 번역기가 글을 옮겨도 칸의 개수와 자리는 보존된다. 번역기가
-    /// 자리표를 잃으면 `restored(from:)`이 끝에 붙여 내용을 잃지 않는다.
+    /// 바꿔 지키지만, **번역기가 자리표를 옮기면 칸 수가 바뀐다**(실측, `Unit.keepsStructure`).
+    /// 그래서 칸마다 나눈 옛 방식의 계획을 함께 들고 있다가, 행 번역이 구조를 지키지
+    /// 못한 행만 그것으로 다시 번역한다. 문맥은 잃어도 표는 깨지지 않는다.
     private static func appendTableRow(_ range: NSRange, to builder: inout Builder,
                                        text: NSString, syntax: MarkdownSyntax) {
         let row = LineToken(lineNumber: 0, range: range, kind: .tableRow,
                             markerRanges: [], contentRange: range)
         // `MarkdownTable`이 이미 `\|`와 인라인 코드 안의 막대를 가려 준다.
-        let separators = MarkdownTable.parseRow(row, in: text).separators
-        builder.unit(range, syntax: syntax, protecting: separators)
+        let parsed = MarkdownTable.parseRow(row, in: text)
+
+        var cells = Builder(text: text)
+        var cursor = range.location
+        for cell in parsed.cells where cell.length > 0 {
+            if cell.location > cursor {
+                cells.literal(NSRange(location: cursor, length: cell.location - cursor))
+            }
+            cells.unit(cell, syntax: syntax)
+            cursor = NSMaxRange(cell)
+        }
+        if cursor < NSMaxRange(range) {
+            cells.literal(NSRange(location: cursor, length: NSMaxRange(range) - cursor))
+        }
+        let fallback = MarkdownTranslationPlan(segments: cells.finish())
+
+        builder.unit(range, syntax: syntax, protecting: parsed.separators,
+                     cellFallback: fallback)
     }
 
     // MARK: Assemble
@@ -225,6 +335,12 @@ public struct MarkdownTranslationPlan: Equatable {
     }
 
     public func assembled(with translations: [String]) throws -> String {
+        try assembled(with: translations, replacing: [:])
+    }
+
+    /// - Parameter replacing: 단위 번호 → **이미 복원된** 글. 칸 구조를 지키지 못한
+    ///   표 행을 칸 단위로 다시 번역한 결과가 여기로 온다(`Unit.cellFallback`).
+    public func assembled(with translations: [String], replacing: [Int: String]) throws -> String {
         let expected = units.count
         guard translations.count == expected else {
             throw AssemblyError.countMismatch(expected: expected, got: translations.count)
@@ -236,7 +352,7 @@ public struct MarkdownTranslationPlan: Equatable {
             case let .literal(value):
                 out += value
             case let .unit(unit):
-                out += unit.restored(from: translations[index])
+                out += replacing[index] ?? unit.restored(from: translations[index])
                 index += 1
             }
         }
@@ -258,7 +374,8 @@ public struct MarkdownTranslationPlan: Equatable {
         /// - Parameter protecting: 인라인 마크업 **말고도** 지켜야 하는 구간. 표의 `|`가
         ///   여기로 온다 — 행을 한 단위로 넘기면서 칸 경계는 지켜야 하기 때문이다.
         mutating func unit(_ range: NSRange, syntax: MarkdownSyntax,
-                           protecting extra: [NSRange] = []) {
+                           protecting extra: [NSRange] = [],
+                           cellFallback: MarkdownTranslationPlan? = nil) {
             guard range.length > 0 else { return }
             var body = ""
             var protected: [ProtectedSpan] = []
@@ -271,7 +388,7 @@ public struct MarkdownTranslationPlan: Equatable {
                 return scalar == 32 || scalar == 9 || scalar == 10 || scalar == 13
             }
 
-            func protect(_ protectedRange: NSRange, role: ProtectedSpan.Role) {
+            func protect(_ protectedRange: NSRange, role: ProtectedSpan.Role, separator: Bool) {
                 guard protectedRange.length > 0 else { return }
                 body += "\(MarkdownTranslationPlan.open)\(protected.count)\(MarkdownTranslationPlan.close)"
                 // 지울 쪽의 공백만 본다 — 여는 구간은 뒤, 닫는 구간은 앞.
@@ -283,7 +400,8 @@ public struct MarkdownTranslationPlan: Equatable {
                 protected.append(ProtectedSpan(
                     text: text.substring(with: protectedRange),
                     role: role,
-                    hadAdjacentSpace: adjacent
+                    hadAdjacentSpace: adjacent,
+                    isCellSeparator: separator
                 ))
             }
 
@@ -291,13 +409,13 @@ public struct MarkdownTranslationPlan: Equatable {
             // 바깥에서 들어온 구간(표의 `|`)을 따로 돌면 순서가 섞여 자리표 번호와
             // 실제 위치가 어긋난다.
             enum Step {
-                case guard_(NSRange, ProtectedSpan.Role)
+                case guard_(NSRange, ProtectedSpan.Role, separator: Bool = false)
                 /// 번역기에 그대로 넘어가는 조각(강조의 내용 등).
                 case through(NSRange)
 
                 var location: Int {
                     switch self {
-                    case let .guard_(range, _): return range.location
+                    case let .guard_(range, _, _): return range.location
                     case let .through(range): return range.location
                     }
                 }
@@ -338,7 +456,7 @@ public struct MarkdownTranslationPlan: Equatable {
                 // 인라인 토큰과 겹치면 넘긴다 — 코드 구간 안의 `|`는 칸을 나누지 않는다.
                 let overlaps = tokenRanges.contains { NSIntersectionRange($0, candidate).length > 0 }
                 guard !overlaps else { continue }
-                steps.append(.guard_(candidate, .standalone))
+                steps.append(.guard_(candidate, .standalone, separator: true))
             }
 
             steps.sort { $0.location < $1.location }
@@ -346,13 +464,13 @@ public struct MarkdownTranslationPlan: Equatable {
             var cursor = range.location
             for step in steps {
                 switch step {
-                case let .guard_(guarded, role):
+                case let .guard_(guarded, role, separator):
                     guard guarded.location >= cursor else { continue }
                     if guarded.location > cursor {
                         body += text.substring(with: NSRange(location: cursor,
                                                              length: guarded.location - cursor))
                     }
-                    protect(guarded, role: role)
+                    protect(guarded, role: role, separator: separator)
                     cursor = NSMaxRange(guarded)
                 case let .through(passed):
                     guard passed.location >= cursor else { continue }
@@ -375,7 +493,7 @@ public struct MarkdownTranslationPlan: Equatable {
                 addLiteral(text.substring(with: range))
                 return
             }
-            segments.append(.unit(Unit(text: body, protected: protected)))
+            segments.append(.unit(Unit(text: body, protected: protected, cellFallback: cellFallback)))
         }
 
         private mutating func addLiteral(_ value: String) {

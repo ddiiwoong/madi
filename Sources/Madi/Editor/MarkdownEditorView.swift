@@ -105,6 +105,7 @@ public final class MarkdownEditorView: NSView {
             guard newValue != storage.string else { return }
             let selected = textView.selectedRange()
             storage.replaceCharacters(in: NSRange(location: 0, length: storage.length), with: newValue)
+            invalidateBlocks()
             restyleAll()
             let clamped = min(selected.location, storage.length)
             textView.setSelectedRange(NSRange(location: clamped, length: 0))
@@ -174,6 +175,114 @@ public final class MarkdownEditorView: NSView {
         guard NSMaxRange(range) <= storage.length else { return }
         textView.setSelectedRange(NSRange(location: range.location, length: 0))
         textView.scrollRangeToVisible(range)
+    }
+
+    // MARK: Block coordinates (나란히 보기)
+
+    /// 스크롤이 일어나는 클립 뷰. 나란히 보기가 이것의 경계 변경을 듣는다.
+    public var clipView: NSClipView { scrollView.contentView }
+
+    /// 글이 바뀔 때마다 늘어난다. 블록 나누기와 짝짓기를 다시 해야 하는지 이것으로 안다.
+    public private(set) var blockRevision = 0
+    private var blockCache: (revision: Int, blocks: [Block], starts: [Int])?
+
+    private func invalidateBlocks() {
+        blockRevision &+= 1
+        blockCache = nil
+    }
+
+    /// 이 편집기 글의 블록. `BlockParser`로 나눈 것이고 글이 바뀔 때까지 다시 나누지 않는다.
+    public var blocks: [Block] { blockGeometry().blocks }
+
+    /// 블록 나누기와 함께 **레이아웃을 끝까지** 돌린다.
+    ///
+    /// 왜(실측): TextKit 1은 레이아웃을 뒤에서 이어 가고, 그동안 텍스트 뷰의 높이는 아직
+    /// 자라는 중이다. 막 연 창에서 높이를 읽으면 같은 문서가 잴 때마다 다른 높이로 나와
+    /// 스크롤 맞추기가 어긋났다. 이미 끝났으면 `ensureLayout`은 아무 일도 하지 않는다.
+    private func blockGeometry() -> (blocks: [Block], starts: [Int]) {
+        layout.ensureLayout(for: container)
+        if let cache = blockCache, cache.revision == blockRevision {
+            return (cache.blocks, cache.starts)
+        }
+        let blocks = BlockParser().parseBlocks(storage.string)
+        var starts: [Int] = []
+        starts.reserveCapacity(blocks.count)
+        var offset = 0
+        for block in blocks {
+            starts.append(offset)
+            offset += (block.sourceSlice as NSString).length
+        }
+        blockCache = (blockRevision, blocks, starts)
+        return (blocks, starts)
+    }
+
+    /// 블록 `index`의 위쪽 끝(텍스트 뷰 좌표). 첫 블록은 0, 끝(`index == count`)은 글 높이다 —
+    /// 위아래 여백을 첫 블록과 마지막 블록에 넣어야 문서 처음과 끝이 서로 맞는다.
+    private func blockTop(_ index: Int, starts: [Int]) -> CGFloat {
+        if index <= 0 { return 0 }
+        if index >= starts.count { return textView.frame.height }
+        let character = starts[index]
+        guard character < storage.length else { return textView.frame.height }
+        let glyph = layout.glyphIndexForCharacter(at: character)
+        let line = layout.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+        return line.minY + textView.textContainerOrigin.y
+    }
+
+    /// 지금 보고 있는 자리를 블록 좌표로. `3.4`는 네 번째 블록의 40% 지점이다.
+    ///
+    /// 기준 줄은 **스크롤한 만큼 화면 아래로 내려간다** — 맨 위에서는 화면 위쪽 끝, 맨
+    /// 아래에서는 화면 아래쪽 끝이다. 화면 위쪽 끝만 쓰면 한쪽이 바닥에 닿아도 다른 쪽은
+    /// 바닥에 닿지 못한다(두 글의 높이가 다르므로). 이렇게 하면 처음은 처음끼리, 끝은
+    /// 끝끼리 맞고 그 사이는 끊김 없이 이어진다.
+    public func scrollReferencePosition() -> Double {
+        let geometry = blockGeometry()
+        let count = geometry.starts.count
+        guard count > 0 else { return 0 }
+        let documentHeight = textView.frame.height
+        let visible = clipView.bounds.height
+        let maxOrigin = max(0, documentHeight - visible)
+        guard maxOrigin > 0, documentHeight > 0 else { return 0 }
+        let origin = min(max(clipView.bounds.origin.y, 0), maxOrigin)
+        let reference = origin * documentHeight / maxOrigin
+
+        // reference 이하에서 시작하는 마지막 블록을 이분 탐색으로 찾는다 — 블록마다
+        // 레이아웃을 묻지 않는다(큰 문서에서 블록이 수천 개다).
+        var lo = 0, hi = count - 1
+        while lo < hi {
+            let mid = (lo + hi + 1) / 2
+            if blockTop(mid, starts: geometry.starts) <= reference { lo = mid } else { hi = mid - 1 }
+        }
+        let top = blockTop(lo, starts: geometry.starts)
+        let bottom = blockTop(lo + 1, starts: geometry.starts)
+        let fraction = bottom > top ? Double((reference - top) / (bottom - top)) : 0
+        return Double(lo) + min(max(fraction, 0), 1)
+    }
+
+    /// 블록 좌표로 스크롤한다. 실제로 놓인 원점(클립 뷰의 y)을 돌려준다.
+    @discardableResult
+    public func scroll(toReferencePosition position: Double) -> CGFloat {
+        let origin = originForReferencePosition(position)
+        clipView.scroll(to: NSPoint(x: clipView.bounds.origin.x, y: origin))
+        scrollView.reflectScrolledClipView(clipView)
+        return clipView.bounds.origin.y
+    }
+
+    /// `scroll(toReferencePosition:)`이 놓을 원점. 옮기지 않고 재기만 한다.
+    public func originForReferencePosition(_ position: Double) -> CGFloat {
+        let geometry = blockGeometry()
+        let count = geometry.starts.count
+        let documentHeight = textView.frame.height
+        let visible = clipView.bounds.height
+        let maxOrigin = max(0, documentHeight - visible)
+        guard count > 0, maxOrigin > 0, documentHeight > 0 else { return 0 }
+        let clamped = min(max(position.isFinite ? position : 0, 0), Double(count))
+        let index = min(Int(clamped), count - 1)
+        let fraction = CGFloat(clamped - Double(index))
+        let top = blockTop(index, starts: geometry.starts)
+        let bottom = blockTop(index + 1, starts: geometry.starts)
+        let reference = top + fraction * (bottom - top)
+        // `scrollReferencePosition`의 역: reference = origin × 높이 / maxOrigin.
+        return min(max(reference * maxOrigin / documentHeight, 0), maxOrigin)
     }
 
     // MARK: Styling
@@ -303,6 +412,7 @@ public final class MarkdownEditorView: NSView {
 extension MarkdownEditorView: NSTextViewDelegate {
 
     public func textDidChange(_ notification: Notification) {
+        invalidateBlocks()
         let edited = textView.selectedRange()
         // Widen by one character each way so a marker completed by this
         // keystroke (`**bold**`) is inside the restyled window.

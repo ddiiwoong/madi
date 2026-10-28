@@ -276,7 +276,40 @@ enum AppleTranslator {
             progress?(state)
         }
 
-        return (try plan.assembled(with: perUnit), direction)
+        // 칸 구조를 지키지 못한 표 행은 그 행만 칸마다 다시 번역한다(`keepsStructure`).
+        // 문맥을 잃는 대신 표가 깨지지 않는다.
+        let replacing = try await structureRepairs(plan: plan, translations: perUnit) { text in
+            try Task.checkCancellation()
+            do {
+                return try await session.translate(text).targetText
+            } catch {
+                if error is CancellationError || Task.isCancelled { throw CancellationError() }
+                throw map(error, direction: direction)
+            }
+        }
+
+        return (try plan.assembled(with: perUnit, replacing: replacing), direction)
+    }
+
+    /// 칸 구조를 지키지 못한 표 행을 칸마다 다시 번역한 결과(단위 번호 → 복원된 행).
+    /// 번역기를 받아 쓰므로 Apple 번역 없이도 시험할 수 있다.
+    static func structureRepairs(
+        plan: MarkdownTranslationPlan,
+        translations: [String],
+        translate: (String) async throws -> String
+    ) async throws -> [Int: String] {
+        var replacing: [Int: String] = [:]
+        for (index, unit) in plan.units.enumerated() where index < translations.count {
+            guard let fallback = unit.cellFallback, !unit.keepsStructure(translations[index]) else {
+                continue
+            }
+            var cells: [String] = []
+            for cell in fallback.units {
+                cells.append(try await translate(cell.text))
+            }
+            replacing[index] = try fallback.assembled(with: cells)
+        }
+        return replacing
     }
 
     static func map(_ error: Error, direction: TranslationDirection) -> Error {

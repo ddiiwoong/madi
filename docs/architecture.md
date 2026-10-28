@@ -113,7 +113,7 @@ target-action을 AppKit과 같은 방식으로 쏩니다.
 ## 손대기 전에
 
 ```sh
-make test        # 테스트 365개 — 가장 빠른 신호
+make test        # 테스트 455개 — 가장 빠른 신호
 make core-only   # Core가 아직 Foundation만 쓰는지
 make build       # 앱 빌드
 make universal   # arm64 + x86_64, lipo로 검사까지
