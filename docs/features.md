@@ -77,6 +77,8 @@
 
 ### 구문 강조
 
+![코드 블록 세 개. swift 블록에서는 /// 주석이 흐리고 struct·let·var가 자주색, Note·Codable·String이 청록색, "마디"가 빨간색, 42가 파란색이다. python 블록은 def·return이 자주색, # 주석이 흐리고 f-문자열이 빨갛다. yaml 블록은 false가 자주색이다. 각 블록 위에 언어 이름이 흐린 라벨로 보인다](images/highlight.png)
+
 코드블록의 정보 문자열(```` ```swift ````)을 읽어 칠합니다. 11개 언어:
 
 `swift` · `javascript`/`typescript`(`js` `ts` `jsx` `tsx` …) · `python` · `shell`(`sh`

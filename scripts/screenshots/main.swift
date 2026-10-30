@@ -11,10 +11,10 @@ _ = NSApplication.shared
 NSApp.setActivationPolicy(.prohibited)
 let source = CommandLine.arguments[1]
 let outDir = CommandLine.arguments[2]
-let text = try! String(contentsOfFile: source, encoding: .utf8)
 
 @MainActor
-func render(_ name: String, width: CGFloat, codeView: Bool, caretOn needle: String?) {
+func render(_ name: String, source: String, width: CGFloat, codeView: Bool, caretOn needle: String?) {
+    let text = try! String(contentsOfFile: source, encoding: .utf8)
     let window = NSWindow(contentRect: NSRect(x: -20000, y: 0, width: width, height: 600),
                           styleMask: [.titled], backing: .buffered, defer: false)
     window.appearance = NSAppearance(named: .aqua)
@@ -50,5 +50,9 @@ func render(_ name: String, width: CGFloat, codeView: Bool, caretOn needle: Stri
     print(name, "\(Int(bounds.width))x\(Int(bounds.height))pt")
 }
 
-render("live-preview.png", width: 720, codeView: false, caretOn: "보는 화면에서")
-render("source-view.png", width: 720, codeView: true, caretOn: nil)
+render("live-preview.png", source: source, width: 720, codeView: false, caretOn: "보는 화면에서")
+render("source-view.png", source: source, width: 720, codeView: true, caretOn: nil)
+// 구문 강조는 따로 — 세 언어를 한 장에. 같은 폴더의 `highlight.md`를 그린다.
+let highlight = URL(fileURLWithPath: source).deletingLastPathComponent()
+    .appendingPathComponent("highlight.md").path
+render("highlight.png", source: highlight, width: 560, codeView: false, caretOn: nil)
