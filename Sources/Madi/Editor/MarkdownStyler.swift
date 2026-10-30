@@ -362,12 +362,16 @@ public final class MarkdownStyler {
             // 1. 열 너비 — 각 열에서 가장 넓은 칸을 따른다.
             //    너비는 **먼저 전부 재고** 나중에 간격을 준다. 재면서 주면 앞 칸에
             //    준 간격이 뒤 칸의 측정에 섞여 들어간다.
+            //    재는 것은 칸의 글이 아니라 **막대와 막대 사이 전체**다(`slot`). 칸 둘레의
+            //    공백은 행마다 다르다 — 구분 행은 흔히 `|:---|`로 공백 없이 쓰고 본문 행은
+            //    `| 기능 |`로 쓴다. 글만 재서 맞추면 공백만큼(고정폭 두 칸, 약 17pt) 막대가
+            //    어긋났다(실측: 구분 행의 막대가 70.7 / 122.7 / 165.9, 다른 행은 88.1 / 157.3 / 217.9).
             var measured: [Int: [Int: CGFloat]] = [:]   // [줄번호: [열: 너비]]
             var widths = [CGFloat](repeating: 0, count: table.columnCount)
             for row in table.rows {
                 var perColumn: [Int: CGFloat] = [:]
                 for (column, cell) in row.cells.enumerated() where column < widths.count {
-                    let value = visibleWidth(of: cell, in: storage)
+                    let value = visibleWidth(of: slot(of: cell, in: row), in: storage)
                     perColumn[column] = value
                     widths[column] = max(widths[column], value)
                 }
@@ -413,6 +417,15 @@ public final class MarkdownStyler {
     /// 칸 바로 앞의 막대. 없으면(맨 앞 막대가 없는 표) nil.
     private func separator(before cell: NSRange, in row: MarkdownTable.Row) -> NSRange? {
         row.separators.last { NSMaxRange($0) <= cell.location }
+    }
+
+    /// 칸이 차지하는 자리 — 앞 막대 바로 뒤부터 뒤 막대 바로 앞까지, 칸 둘레의 공백을 넣어서.
+    /// 막대가 없는 쪽은 줄의 처음이나 끝까지다.
+    private func slot(of cell: NSRange, in row: MarkdownTable.Row) -> NSRange {
+        let start = separator(before: cell, in: row).map(NSMaxRange) ?? row.range.location
+        let end = row.separators.first { $0.location >= NSMaxRange(cell) }?.location
+            ?? NSMaxRange(row.range)
+        return NSRange(location: start, length: max(0, end - start))
     }
 
     /// 화면에 **보이는** 너비.

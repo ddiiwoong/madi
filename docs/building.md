@@ -16,11 +16,12 @@
 
 ```sh
 make build       # 빌드. 로그는 .build/build.log
-make test        # 테스트 508개. 로그는 .build/test.log
+make test        # 테스트 512개. 로그는 .build/test.log
 make run         # 빌드 후 실행
 make core-only   # Core가 Foundation만으로 서는지 (아래 참고)
 make universal   # Release, arm64 + x86_64, lipo로 검사까지
 make public-check  # 공개 전 점검 — 추적 파일과 모든 커밋 이력 (아래 참고)
+make screenshots   # README 그림을 실제 편집기로 다시 그림 (docs/images/)
 make clean       # .build와 생성된 .xcodeproj 삭제
 make open-log    # 마지막 빌드 로그 꼬리
 ```

@@ -127,6 +127,18 @@ HISTORY ?= 1
 public-check:
 	@HISTORY=$(HISTORY) bash scripts/public-check.sh
 
+# README·기능 안내의 그림을 실제 편집기로 다시 그린다(docs/images/*.png). 공개용 샘플 문서
+# `docs/images/sample.md`만 그린다 — 앱 창을 찍으면 최근 문서·파일 목록이 함께 찍힌다.
+# 화면을 바꾸는 변경 뒤에 돌려 그림이 거짓이 되지 않게 한다.
+.PHONY: screenshots
+screenshots:
+	@mkdir -p $(BUILD)/screenshots
+	@swiftc -O -swift-version 6 -module-name Madi -o $(BUILD)/screenshots/render \
+		Sources/Madi/Core/*.swift Sources/Madi/Editor/*.swift \
+		Sources/Madi/App/AppLog.swift Sources/Madi/App/AppEnvironment.swift \
+		scripts/screenshots/main.swift
+	@$(BUILD)/screenshots/render docs/images/sample.md docs/images
+
 clean:
 	rm -rf $(BUILD) $(PROJECT)
 
