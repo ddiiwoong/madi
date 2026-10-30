@@ -39,18 +39,53 @@ public class DecoratedTextView: NSTextView {
 
     public override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
-        drawCodeBlocks(in: rect)
-        drawImages(in: rect)
+        guard let visible = visibleCharacterRange(in: rect) else { return }
+        drawCodeBlocks(in: rect, visible: visible)
+        drawImages(in: rect, visible: visible)
     }
 
-    private func drawCodeBlocks(in rect: NSRect) {
+    /// 그릴 사각형에 걸친 글자 범위. 블록과 그림은 **이 범위에 닿는 것만** 묻는다.
+    ///
+    /// 왜(실측, 22만 자 문서): 전에는 그릴 때마다 문서의 코드 블록 **전부**에
+    /// `boundingRect`를 물었다. 문서 끝의 블록을 물으면 TextKit이 거기까지 레이아웃을
+    /// 끝내야 하므로, 첫 화면 하나를 그리는 데 문서 전체를 놓았다 — 그것도 한 번에
+    /// 놓는 것(`ensureLayout`, 0.41초)보다 열 배 느리게 조각조각(4.7초). 글 앞쪽에서
+    /// 한 글자를 칠 때마다 그 뒤의 레이아웃이 무효가 되므로 **타이핑 한 번에 4.5초**가
+    /// 들었다. 이 질의는 사각형까지만 레이아웃한다.
+    ///
+    /// 위아래로 블록 여백만큼 넓혀 묻는다 — 배경은 글자보다 여백만큼 크므로, 글자가
+    /// 사각형 밖에 있어도 배경의 가장자리는 안에 들어올 수 있다.
+    private func visibleCharacterRange(in rect: NSRect) -> NSRange? {
+        guard let layoutManager, let textContainer else { return nil }
+        let origin = textContainerOrigin
+        let margin = max(codeBlockPadding.top, codeBlockPadding.bottom) + 1
+        let query = NSRect(x: rect.minX - origin.x, y: rect.minY - origin.y - margin,
+                           width: rect.width, height: rect.height + margin * 2)
+        let glyphs = layoutManager.glyphRange(forBoundingRect: query, in: textContainer)
+        return layoutManager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
+    }
+
+    /// `ranges`(위치 순) 가운데 `visible`에 닿는 것. 블록이 수백 개라 이분 탐색으로
+    /// 첫 후보를 찾는다.
+    static func ranges(_ ranges: [NSRange], touching visible: NSRange) -> ArraySlice<NSRange> {
+        var lo = 0, hi = ranges.count
+        while lo < hi {
+            let mid = (lo + hi) / 2
+            if NSMaxRange(ranges[mid]) < visible.location { lo = mid + 1 } else { hi = mid }
+        }
+        var end = lo
+        while end < ranges.count, ranges[end].location <= NSMaxRange(visible) { end += 1 }
+        return ranges[lo ..< end]
+    }
+
+    private func drawCodeBlocks(in rect: NSRect, visible: NSRange) {
         guard !codeBlockRanges.isEmpty,
               let layoutManager, let textContainer else { return }
 
         let origin = textContainerOrigin
         codeBlockColor.setFill()
 
-        for range in codeBlockRanges {
+        for range in Self.ranges(codeBlockRanges, touching: visible) {
             guard range.length > 0, NSMaxRange(range) <= (textStorage?.length ?? 0) else { continue }
             let glyphRange = layoutManager.glyphRange(forCharacterRange: range,
                                                       actualCharacterRange: nil)
@@ -84,12 +119,14 @@ public class DecoratedTextView: NSTextView {
     /// (U+FFFC를 넣은 쪽은 80pt가 됐다), 글자를 끼워 넣으면 원문이 달라진다.
     /// 그래서 스타일러가 `minimumLineHeight`로 자리를 비우고(문서 불변, 실측 80pt
     /// 확보) 여기서 그 자리에 그린다.
-    private func drawImages(in rect: NSRect) {
+    private func drawImages(in rect: NSRect, visible: NSRange) {
         guard !imagePlacements.isEmpty,
               let layoutManager, let textContainer else { return }
         let origin = textContainerOrigin
 
-        for placement in imagePlacements {
+        for placement in imagePlacements
+        where NSIntersectionRange(placement.lineRange, visible).length > 0
+            || NSLocationInRange(placement.lineRange.location, visible) {
             guard placement.size.width > 0, placement.size.height > 0,
                   NSMaxRange(placement.lineRange) <= (textStorage?.length ?? 0) else { continue }
             let glyphRange = layoutManager.glyphRange(forCharacterRange: placement.lineRange,

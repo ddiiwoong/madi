@@ -54,6 +54,18 @@ public final class MarkdownEditorView: NSView {
 
     private func configure() {
         layout.delegate = self
+        storage.delegate = self
+        // 고친 자리 근처만 다시 놓는다.
+        //
+        // 왜(실측, 22만 자 문서, 문서 처음에서 한 글자): 이어 놓기(기본값)에서는 한 글자가
+        // 그 **뒤의 레이아웃 전부**를 무효로 만들었다(첫 미배치 글자 227,846 → 71). 텍스트
+        // 뷰의 높이가 그 자리까지로 줄어 보이는 화면 전체를 다시 그렸고(16.9ms), 뒤 레이아웃이
+        // 문서 끝까지 다시 돌았다. 끊어 놓기에서는 고친 줄만 다시 그린다(0.6ms).
+        //
+        // 대가: 아직 놓지 않은 구간의 높이는 어림이라 굴리는 동안 스크롤 막대가 조금씩 변할
+        // 수 있다. 블록 좌표(나란히 보기)는 `ensureLayout`으로 끝까지 놓은 뒤에 재므로
+        // 영향이 없다.
+        layout.allowsNonContiguousLayout = true
         styler.theme = theme
         styler.imageStore = imageStore
         // 원격 그림은 나중에 도착한다. 도착하면 자리를 잡아야 하므로 다시 칠한다.
@@ -105,7 +117,6 @@ public final class MarkdownEditorView: NSView {
             guard newValue != storage.string else { return }
             let selected = textView.selectedRange()
             storage.replaceCharacters(in: NSRange(location: 0, length: storage.length), with: newValue)
-            invalidateBlocks()
             restyleAll()
             let clamped = min(selected.location, storage.length)
             textView.setSelectedRange(NSRange(location: clamped, length: 0))
@@ -113,7 +124,52 @@ public final class MarkdownEditorView: NSView {
     }
 
     public var outline: [OutlineEntry] {
-        Outline.entries(in: storage.string as NSString)
+        Outline.entries(lines: currentLines(), in: storage.string as NSString)
+    }
+
+    // MARK: Batching
+
+    private var batchDepth = 0
+    private var restyleAfterBatch = false
+
+    /// 안에서 일어나는 전체 다시 칠하기를 **끝에서 한 번으로** 모은다.
+    ///
+    /// 왜(실측, 22만 자 문서): 문서를 열 때 글 넣기 · 문서 위치 · 설정 싣기가 각자 문서
+    /// 전체를 칠해 0.3초짜리 패스가 세 번 돌았다. 셋은 서로의 결과를 쓰지 않는다 — 마지막
+    /// 패스만 화면에 남는다.
+    public func batchUpdates(_ body: () -> Void) {
+        batchDepth += 1
+        body()
+        batchDepth -= 1
+        if batchDepth == 0, restyleAfterBatch {
+            restyleAfterBatch = false
+            restyleAll()
+        }
+    }
+
+    /// 전체 다시 칠하기가 몇 번 돌았는지. 테스트가 모으기를 확인하는 데 쓴다.
+    private(set) var fullRestyleCount = 0
+
+    // MARK: Lines
+
+    /// 글의 줄 판정. **글이 바뀔 때까지 다시 훑지 않는다.**
+    ///
+    /// 왜(실측, 22만 자 문서): 줄 스캔 한 번이 12~30ms인데 글자 하나를 칠 때마다 세 번
+    /// 돌았다 — 스타일 패스, 표 넓히기, 목차. 캐럿 줄은 그때마다 문서 처음부터 줄을 셌다.
+    /// 이제 한 번 훑고 나머지는 이것을 나눠 쓴다.
+    ///
+    /// 열쇠는 `blockRevision`이고, 그것은 **저장소가** 글자가 바뀔 때마다 올린다
+    /// (`textStorage(_:didProcessEditing:...)`). 텍스트 뷰의 `textDidChange`에서 올리면
+    /// 저장소가 바뀐 뒤 그 알림이 오기 전까지 낡은 표를 읽는 구간이 생긴다 — 그 사이에
+    /// 불리는 선택 변경 콜백이 낡은 표로 캐럿 줄을 찾으면 범위가 문서를 넘을 수 있다.
+    /// 저장소에서 올리면 그런 구간이 없다.
+    private var lineCache: (revision: Int, lines: [LineToken])?
+
+    func currentLines() -> [LineToken] {
+        if let cache = lineCache, cache.revision == blockRevision { return cache.lines }
+        let lines = MarkdownSyntax().scanLines(in: storage.string as NSString)
+        lineCache = (blockRevision, lines)
+        return lines
     }
 
     /// 코드 보기 (⌘E) — toggles between the formatted document and the raw
@@ -287,19 +343,26 @@ public final class MarkdownEditorView: NSView {
 
     // MARK: Styling
 
-    private func caretLine() -> Int? {
+    /// 캐럿이 있는 줄(1부터). 줄 표에서 이분 탐색으로 찾는다 — 전에는 문서 처음부터 줄을
+    /// 셌고, 캐럿을 한 칸 옮길 때마다 그 앞의 줄을 전부 다시 셌다.
+    ///
+    /// 끝에 줄바꿈이 없는 문서에서 캐럿이 맨 끝에 있으면 **마지막 줄**이다. 전에 세던
+    /// 방식은 여기서 없는 줄(마지막 + 1)을 돌려줘, 그 줄의 마커가 캐럿이 있는데도 숨었다.
+    func caretLine() -> Int? {
         let selection = textView.selectedRange()
         guard selection.location <= storage.length else { return nil }
-        let text = storage.string as NSString
-        var line = 1
-        var index = 0
-        while index < selection.location, index < text.length {
-            let lineRange = text.lineRange(for: NSRange(location: index, length: 0))
-            if NSMaxRange(lineRange) > selection.location { break }
-            index = NSMaxRange(lineRange)
-            line += 1
+        return Self.lineNumber(at: selection.location, in: currentLines())
+    }
+
+    /// `location`이 든 줄의 번호. 시작이 `location` 이하인 마지막 줄이다.
+    static func lineNumber(at location: Int, in lines: [LineToken]) -> Int {
+        guard !lines.isEmpty else { return 1 }
+        var lo = 0, hi = lines.count - 1
+        while lo < hi {
+            let mid = (lo + hi + 1) / 2
+            if lines[mid].range.location <= location { lo = mid } else { hi = mid - 1 }
         }
-        return line
+        return lines[lo].lineNumber
     }
 
     /// 설정을 싣는다. 설정 화면의 각 항목이 여기서 실제 코드 경로로 이어진다.
@@ -331,11 +394,37 @@ public final class MarkdownEditorView: NSView {
     ///
     /// 다시 칠해야 하는 이유: 그림 폭 맞춤과 표 열 맞추기가 **컨테이너 폭을 읽는다.**
     /// 여백만 바꾸고 칠하지 않으면 넓은 창에서 줄인 그림이 좁아진 글 폭을 넘는다.
+    ///
+    /// 창을 **끌어서** 바꾸는 동안에는 칠하지 않고 놓을 때 한 번 칠한다. 22만 자 문서에서
+    /// 한 번 칠하는 데 0.16초라 끄는 동안 매 단계 칠하면 창이 초당 여섯 번밖에 못 움직였다
+    /// (실측). 그동안 그림은 끌기 전의 폭으로 그려진다 — 놓으면 맞춰진다.
     public override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         let before = textView.textContainerInset
         updateTextInsets(viewWidth: newSize.width)
-        if textView.textContainerInset != before { restyleAll() }
+        guard textView.textContainerInset != before else { return }
+        if isLiveResizing {
+            restyleAfterLiveResize = true
+        } else {
+            restyleAll()
+        }
+    }
+
+    private var isLiveResizing = false
+    private var restyleAfterLiveResize = false
+
+    public override func viewWillStartLiveResize() {
+        super.viewWillStartLiveResize()
+        isLiveResizing = true
+    }
+
+    public override func viewDidEndLiveResize() {
+        super.viewDidEndLiveResize()
+        isLiveResizing = false
+        if restyleAfterLiveResize {
+            restyleAfterLiveResize = false
+            restyleAll()
+        }
     }
 
     /// 스타일러가 센 코드 블록 범위를 그리는 쪽에 넘긴다. 배경은 글자의 성질이
@@ -359,10 +448,15 @@ public final class MarkdownEditorView: NSView {
 
     private func restyleAll() {
         guard !isStyling else { return }
+        if batchDepth > 0 {
+            restyleAfterBatch = true
+            return
+        }
         isStyling = true
+        fullRestyleCount += 1
         lastCaretLine = caretLine()
         styler.contentWidth = max(120, Double(container.size.width) - 24)
-        styler.style(storage, caretLine: lastCaretLine, search: searchState)
+        styler.style(storage, caretLine: lastCaretLine, search: searchState, lines: currentLines())
         syncCodeBlockBackgrounds()
         isStyling = false
     }
@@ -370,7 +464,8 @@ public final class MarkdownEditorView: NSView {
     private func restyle(dirty range: NSRange) {
         guard !isStyling else { return }
         isStyling = true
-        styler.style(storage, caretLine: caretLine(), search: searchState, dirtyRange: range)
+        styler.style(storage, caretLine: caretLine(), search: searchState, dirtyRange: range,
+                     lines: currentLines())
         syncCodeBlockBackgrounds()
         isStyling = false
     }
@@ -379,31 +474,38 @@ public final class MarkdownEditorView: NSView {
     private func restyleCaretTransition(from old: Int?, to new: Int?) {
         guard old != new else { return }
         let text = storage.string as NSString
+        let lines = currentLines()
         var ranges: [NSRange] = []
         for line in [old, new].compactMap({ $0 }) {
-            if let range = rangeOfLine(line, in: text) { ranges.append(range) }
+            if let range = Self.rangeOfLine(line, in: lines, text: text) { ranges.append(range) }
         }
         guard !ranges.isEmpty else { return }
         isStyling = true
         for range in ranges {
-            styler.style(storage, caretLine: new, search: searchState, dirtyRange: range)
+            styler.style(storage, caretLine: new, search: searchState, dirtyRange: range,
+                         lines: lines)
             syncCodeBlockBackgrounds()
         }
         isStyling = false
     }
 
-    private func rangeOfLine(_ line: Int, in text: NSString) -> NSRange? {
-        guard line > 0 else { return nil }
-        var current = 1
-        var index = 0
-        while index <= text.length {
-            let lineRange = text.lineRange(for: NSRange(location: min(index, text.length), length: 0))
-            if current == line { return lineRange }
-            if NSMaxRange(lineRange) <= index { return nil }
-            index = NSMaxRange(lineRange)
-            current += 1
-        }
-        return nil
+    /// 줄 번호의 범위(줄바꿈 포함). 없는 줄이면 nil.
+    static func rangeOfLine(_ line: Int, in lines: [LineToken], text: NSString) -> NSRange? {
+        guard line > 0, line <= lines.count, lines[line - 1].lineNumber == line else { return nil }
+        return text.lineRange(for: NSRange(location: lines[line - 1].range.location, length: 0))
+    }
+}
+
+// MARK: - Text storage delegate
+
+extension MarkdownEditorView: @preconcurrency NSTextStorageDelegate {
+
+    /// 글자가 바뀌면 줄 표와 블록 표를 낡은 것으로 표시한다. 저장소가 바뀌는 **그 자리에서**
+    /// 불리므로 어느 알림보다 먼저다. 스타일러가 속성만 바꾸는 편집은 건드리지 않는다.
+    public func textStorage(_ textStorage: NSTextStorage,
+                            didProcessEditing editedMask: NSTextStorageEditActions,
+                            range editedRange: NSRange, changeInLength delta: Int) {
+        if editedMask.contains(.editedCharacters) { invalidateBlocks() }
     }
 }
 
@@ -412,7 +514,6 @@ public final class MarkdownEditorView: NSView {
 extension MarkdownEditorView: NSTextViewDelegate {
 
     public func textDidChange(_ notification: Notification) {
-        invalidateBlocks()
         let edited = textView.selectedRange()
         // Widen by one character each way so a marker completed by this
         // keystroke (`**bold**`) is inside the restyled window.

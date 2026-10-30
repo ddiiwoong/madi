@@ -90,9 +90,15 @@ public struct MarkdownSyntax: Sendable {
             let contentOnly = text.rangeOfLine(excludingTerminatorIn: lineRange)
             lineNumber += 1
 
-            let line = text.substring(with: contentOnly)
-            let token = scanLine(line, at: contentOnly, lineNumber: lineNumber,
+            let token: LineToken
+            if let fast = Self.fastToken(in: text, range: contentOnly, lineNumber: lineNumber,
+                                         inFence: inFence, fenceLanguage: fenceLanguage) {
+                token = fast
+            } else {
+                let line = text.substring(with: contentOnly)
+                token = scanLine(line, at: contentOnly, lineNumber: lineNumber,
                                  inFence: &inFence, fenceLanguage: &fenceLanguage)
+            }
             tokens.append(token)
 
             if NSMaxRange(lineRange) <= cursor { break }
@@ -131,6 +137,7 @@ public struct MarkdownSyntax: Sendable {
             // 밑줄 후보: `=` 또는 `-`만 있는 줄. `***`·`___`는 setext가 아니다.
             guard token.kind == .paragraph || token.kind == .thematicBreak,
                   token.range.length > 0,
+                  mayBeSetextUnderline(text, token.range),
                   let level = setextLevel(of: text.substring(with: token.range)) else {
                 index += 1
                 continue
@@ -157,6 +164,104 @@ public struct MarkdownSyntax: Sendable {
             index += 1
         }
         return out
+    }
+
+    /// 밑줄일 **수 있는** 줄인가. 첫 글자가 `=`나 `-`가 아니면 `setextLevel`이 nil을 낼 것이
+    /// 확실하므로 문자열을 만들지 않고 건너뛴다. 확실하지 않으면 true(정식 판정에 넘긴다).
+    ///
+    /// 왜(실측, 22만 자 문서): 거의 모든 줄이 문단이라 이 판정이 줄마다 돌았고, 줄을 Swift
+    /// 문자열로 만들어 다듬는 데 줄 스캔 시간의 40%가 들었다.
+    static func mayBeSetextUnderline(_ text: NSString, _ range: NSRange) -> Bool {
+        switch lead(in: text, range: range) {
+        case let .unit(unit): return unit == 0x3D || unit == 0x2D   // = -
+        case .blank: return false       // 공백뿐인 줄은 다듬으면 비어 nil이다
+        case .unknown: return true
+        }
+    }
+
+    // MARK: 빠른 길
+
+    /// 줄의 첫 글자 — 앞의 공백을 건너뛰고.
+    enum LineLead: Equatable {
+        /// 비었거나 스페이스·탭뿐이다.
+        case blank
+        /// 공백이 아닌 첫 UTF-16 단위.
+        case unit(UInt16)
+        /// 빠른 판정을 할 수 없다(서로게이트, 스페이스·탭 아닌 공백뿐인 줄). 정식 길로 간다.
+        case unknown
+    }
+
+    /// 건너뛰는 공백은 정규식의 `\s`(ICU: `[\t\n\f\r\p{Z}]`)를 **모두 포함하는** 집합이다.
+    /// 빠른 길은 "이 첫 글자로는 이 패턴이 맞을 수 없다"를 말할 때만 쓰이므로, `\s`보다
+    /// 적게 건너뛰면 맞을 줄을 놓치고 더 많이 건너뛰면 정식 판정에 넘길 뿐이다.
+    static func lead(in text: NSString, range: NSRange) -> LineLead {
+        var onlySpaceOrTab = true
+        var index = range.location
+        let end = NSMaxRange(range)
+        while index < end {
+            let unit = text.character(at: index)
+            index += 1
+            if unit == 0x20 || unit == 0x09 { continue }
+            if unit < 0x80 {
+                if unit >= 0x0A, unit <= 0x0D { onlySpaceOrTab = false; continue }
+                return .unit(unit)
+            }
+            if UTF16.isLeadSurrogate(unit) || UTF16.isTrailSurrogate(unit) { return .unknown }
+            if let scalar = Unicode.Scalar(unit), CharacterSet.whitespacesAndNewlines.contains(scalar) {
+                onlySpaceOrTab = false
+                continue
+            }
+            return .unit(unit)
+        }
+        return onlySpaceOrTab ? .blank : .unknown
+    }
+
+    /// 줄 패턴 가운데 하나라도 이 글자로 시작할 수 있는가.
+    ///
+    /// 각 패턴이 앞 공백 뒤에 요구하는 첫 글자: 펜스 `` ` `` `~`, 수평선 `*` `-` `_`,
+    /// 제목 `#`, 인용 `>`, 목록 `-` `+` `*` 숫자(`\d`는 유니코드 숫자 전부), 링크 정의 `[`,
+    /// 표 구분줄 `|` `:` `-`.
+    static func patternsMayMatch(lead unit: UInt16) -> Bool {
+        switch unit {
+        case 0x60, 0x7E, 0x2A, 0x2D, 0x5F, 0x23, 0x3E, 0x2B, 0x5B, 0x7C, 0x3A, 0x30 ... 0x39:
+            return true
+        default:
+            guard unit >= 0x80, let scalar = Unicode.Scalar(unit) else { return false }
+            return CharacterSet.decimalDigits.contains(scalar)
+        }
+    }
+
+    /// 정규식이 하나도 맞을 수 없는 줄은 **문자열을 만들지 않고** 판정한다. 확실하지 않으면
+    /// nil — 그때는 `scanLine`이 판정한다. 결과는 `scanLine`과 같아야 한다(그 판정 순서를
+    /// 그대로 따른다: 펜스 → 코드 본문 → 빈 줄 → … → 표 행 → 문단).
+    ///
+    /// 왜(실측, 22만 자 문서): 줄 스캔이 26ms였고 타이핑마다 몇 번씩 돌았다. 대부분의 줄은
+    /// 한글로 시작하는 문단인데, 줄마다 Swift 문자열을 만들고 정규식을 일곱 개까지 돌렸다.
+    static func fastToken(in text: NSString, range: NSRange, lineNumber: Int,
+                          inFence: Bool, fenceLanguage: String?) -> LineToken? {
+        switch lead(in: text, range: range) {
+        case .unknown:
+            return nil
+        case .blank:
+            // 공백뿐인 줄에는 펜스가 맞을 수 없다. 펜스 안이면 코드 본문, 밖이면 빈 줄.
+            return LineToken(lineNumber: lineNumber, range: range,
+                             kind: inFence ? .codeBody : .blank,
+                             markerRanges: [], contentRange: range,
+                             language: inFence ? fenceLanguage : nil)
+        case let .unit(unit):
+            if inFence {
+                if unit == 0x60 || unit == 0x7E { return nil }      // 닫는 펜스일 수 있다
+                return LineToken(lineNumber: lineNumber, range: range, kind: .codeBody,
+                                 markerRanges: [], contentRange: range, language: fenceLanguage)
+            }
+            if patternsMayMatch(lead: unit) { return nil }
+            // 남은 갈림길은 표 행(`|`가 있다)과 문단이다. `|`가 있으면 정식 판정에 넘긴다.
+            if text.range(of: "|", options: .literal, range: range).location != NSNotFound {
+                return nil
+            }
+            return LineToken(lineNumber: lineNumber, range: range, kind: .paragraph,
+                             markerRanges: [], contentRange: range)
+        }
     }
 
     /// `===`면 1, `---`면 2, 아니면 nil. 들여쓰기는 세 칸까지 허용한다(CommonMark).
@@ -190,8 +295,10 @@ public struct MarkdownSyntax: Sendable {
         return (label: label, url: url)
     }
 
-    private func scanLine(_ line: String, at range: NSRange, lineNumber: Int,
-                          inFence: inout Bool, fenceLanguage: inout String?) -> LineToken {
+    /// 정식 판정 — 정규식으로 한 줄을 가른다. 빠른 길(`fastToken`)이 답할 때는 이것과 같은
+    /// 답이어야 하고, 테스트가 둘을 줄마다 견준다(그래서 `private`이 아니다).
+    func scanLine(_ line: String, at range: NSRange, lineNumber: Int,
+                  inFence: inout Bool, fenceLanguage: inout String?) -> LineToken {
         func token(_ kind: BlockKind, markers: [NSRange] = [], content: NSRange? = nil,
                    language: String? = nil) -> LineToken {
             LineToken(lineNumber: lineNumber, range: range, kind: kind,

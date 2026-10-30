@@ -208,13 +208,17 @@ final class DocumentWindowController: NSWindowController {
         let parsed = FrontMatter.parse(markdown)
         frontMatter = parsed
         frontMatterCard.update(with: parsed)
-        editor.markdown = parsed?.body ?? markdown
+        // 셋이 각자 문서 전체를 칠한다. 묶어서 끝에서 한 번만 칠한다(22만 자에서 패스 하나가
+        // 0.17초다). 위치와 설정이 글보다 먼저 정해져 있어야 그 한 번이 맞게 칠한다.
+        editor.batchUpdates {
+            editor.markdown = parsed?.body ?? markdown
+            editor.documentURL = markdownDocument?.fileURL
+            editor.apply(preferences.current)
+        }
         refreshOutline()
         browserPanel.show(folderOf: markdownDocument?.fileURL)
         recentPanel.reload()
         window?.title = markdownDocument?.displayName ?? "제목 없음"
-        editor.documentURL = markdownDocument?.fileURL
-        editor.apply(preferences.current)
         // 원문이 디스크에서 다시 읽혔을 때(다른 앱이 고침, 되돌리기)도 띠를 맞춘다 — 이 길은
         // 편집기 위임을 지나지 않는다.
         if let session = sideBySide, session.source === self { session.sourceTextDidChange() }

@@ -75,16 +75,19 @@ public final class MarkdownStyler {
     ///     inside a fenced code block depends on every line before it, so a
     ///     window-only scan would mis-classify code as prose. Scanning is cheap;
     ///     writing attributes and invalidating layout is what costs.
+    ///   - lines: 이 글의 줄 판정(`MarkdownSyntax.scanLines`). 부르는 쪽이 이미 갖고 있으면
+    ///     넘긴다 — **지금 글의 것이어야 한다.** nil이면 여기서 훑는다.
     public func style(_ storage: NSTextStorage, caretLine: Int?, search: SearchState,
-                      dirtyRange: NSRange? = nil) {
+                      dirtyRange: NSRange? = nil, lines scanned: [LineToken]? = nil) {
         let text = storage.string as NSString
         let full = NSRange(location: 0, length: text.length)
         var writeRange = dirtyRange.map { text.lineRange(for: NSIntersectionRange($0, full)) } ?? full
+        let lines = scanned ?? syntax.scanLines(in: text)
 
         // 편집이 표에 닿으면 **표 전체**를 다시 칠한다. 한 칸을 넓히면 그 열의 너비가
         // 바뀌므로 다른 행의 글자 간격이 낡는다. 그 줄만 칠하면 표가 어긋난 채 남는다.
         if alignsTables, writeRange.length != full.length {
-            writeRange = extendedOverTables(writeRange, in: text, limit: full)
+            writeRange = extendedOverTables(writeRange, in: text, limit: full, lines: lines)
         }
 
         storage.beginEditing()
@@ -105,7 +108,7 @@ public final class MarkdownStyler {
             // range, hiding included; this makes that reliance explicit so a
             // later switch to `addAttributes` cannot leave markers invisible.
             storage.removeAttribute(.mdHiddenMarker, range: writeRange)
-            for line in syntax.scanLines(in: text) {
+            for line in lines {
                 guard NSIntersectionRange(line.range, writeRange).length > 0 else { continue }
                 for marker in line.markerRanges where marker.length > 0 {
                     storage.addAttribute(.foregroundColor, value: theme.dim, range: marker)
@@ -127,7 +130,6 @@ public final class MarkdownStyler {
             .paragraphStyle: paragraphStyle(for: .paragraph),
         ], range: writeRange)
 
-        let lines = syntax.scanLines(in: text)
         codeBlockRanges = codeBlocks(in: lines)
         definitions = LinkDefinitions(scanning: text, lines: lines)
         // `> [!NOTE]`로 시작하는 인용 덩이는 색이 있는 안내 상자다. 줄 하나만 보고는
@@ -203,8 +205,8 @@ public final class MarkdownStyler {
     /// 표 하나가 통째로 들어와야 열 너비를 다시 잴 수 있다. 줄 스캔은 늘 전체를 하므로
     /// 여기서 드는 비용은 넓힌 만큼의 **쓰기**뿐이고, 표는 보통 몇 줄이다.
     private func extendedOverTables(_ range: NSRange, in text: NSString,
-                                    limit: NSRange) -> NSRange {
-        let tables = MarkdownTable.blocks(in: text, lines: syntax.scanLines(in: text))
+                                    limit: NSRange, lines: [LineToken]) -> NSRange {
+        let tables = MarkdownTable.blocks(in: text, lines: lines)
         guard !tables.isEmpty else { return range }
 
         var start = range.location
@@ -237,10 +239,18 @@ public final class MarkdownStyler {
         guard let imageStore else { return }
         var placements: [ImagePlacement] = []
 
+        // 자리 목록은 **문서 전체**로 다시 만든다. 쓰기(숨김·줄 높이)만 `writeRange`로 좁힌다.
+        //
+        // 전에는 목록도 `writeRange` 안의 그림으로만 만들어, 부분 칠하기(타이핑 한 번)마다
+        // 다른 줄의 그림이 목록에서 빠졌다 — 줄 높이는 그림 크기로 남은 채 빈 자리만
+        // 그려졌다. 목록을 지난 패스에서 이어 받을 수는 없다: 글이 밀리면 옛 자리는 낡는다.
+        // 줄 전체가 그림인 줄만 `![`로 시작하므로 그 줄만 인라인 스캔한다 — 문서 전체를
+        // 훑어도 싸다.
         for line in lines {
             guard line.kind == .paragraph, line.contentRange.length > 0,
                   line.lineNumber != caretLine,
-                  NSIntersectionRange(line.range, writeRange).length > 0 else { continue }
+                  startsWithImageMarker(line.contentRange, in: text) else { continue }
+            let writes = NSIntersectionRange(line.range, writeRange).length > 0
 
             // 줄 전체가 그림 하나여야 한다.
             let tokens = syntax.scanInline(in: text, range: line.contentRange,
@@ -269,6 +279,9 @@ public final class MarkdownStyler {
             let size = CGSize(width: display.width, height: display.height)
             guard size.height > 0 else { continue }
 
+            placements.append(ImagePlacement(lineRange: line.range, size: size, image: image))
+            guard writes else { continue }
+
             // 글자를 모두 숨긴다 — 마커만이 아니라 `alt`와 경로까지. 그림이 보이는
             // 자리에 원문이 함께 보일 이유가 없다.
             hide(token.range, in: storage)
@@ -279,10 +292,18 @@ public final class MarkdownStyler {
             style.minimumLineHeight = size.height + 4
             style.maximumLineHeight = size.height + 4
             storage.addAttribute(.paragraphStyle, value: style, range: line.range)
-
-            placements.append(ImagePlacement(lineRange: line.range, size: size, image: image))
         }
         imagePlacements = placements
+    }
+
+    /// 앞의 스페이스·탭 뒤가 `![`인가. 줄 전체가 그림이려면 다듬은 내용이 `![`로 시작해야 한다.
+    private func startsWithImageMarker(_ range: NSRange, in text: NSString) -> Bool {
+        var index = range.location
+        let end = NSMaxRange(range)
+        while index < end, text.character(at: index) == 0x20 || text.character(at: index) == 0x09 {
+            index += 1
+        }
+        return index + 1 < end && text.character(at: index) == 0x21 && text.character(at: index + 1) == 0x5B
     }
 
     /// 앞뒤 공백을 뺀 범위.
