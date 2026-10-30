@@ -3,3 +3,5 @@ node_modules/
 *.log
 .build/
 Madi.xcodeproj/
+# 공개 전 점검의 금지 낱말(소속·실명 등). 추적하면 그 낱말이 공개된다.
+.public-check-words

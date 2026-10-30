@@ -117,6 +117,16 @@ core-only:
 	fi
 	@echo "core-only: Core $$(ls Sources/Madi/Core/*.swift | wc -l | tr -d ' ')개 파일이 Foundation만으로 섭니다"
 
+# 공개 전 점검 — 공개하면 나가는 것(추적 파일 + **모든 커밋 이력**)에 홈 경로·토큰·사설 IP·
+# 금지 낱말·산출물이 있는지 본다. 금지 낱말(소속·실명 등)은 추적하지 않는 `.public-check-words`에
+# 적는다 — 이 저장소에 적으면 그 낱말이 공개된다. 지금 파일만 보려면 `HISTORY=0`.
+# 문제를 하나씩 넣어 잡히는지 확인했다(토큰·키·개인 키·사설 IP·홈 경로·.DS_Store·금지 낱말
+# 파일/환경 변수/커밋 메시지·지운 뒤 이력에만 남은 토큰, 그리고 아무것도 없는 기준선).
+HISTORY ?= 1
+.PHONY: public-check
+public-check:
+	@HISTORY=$(HISTORY) bash scripts/public-check.sh
+
 clean:
 	rm -rf $(BUILD) $(PROJECT)
 

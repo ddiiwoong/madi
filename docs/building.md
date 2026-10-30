@@ -16,13 +16,24 @@
 
 ```sh
 make build       # 빌드. 로그는 .build/build.log
-make test        # 테스트 455개. 로그는 .build/test.log
+make test        # 테스트 502개. 로그는 .build/test.log
 make run         # 빌드 후 실행
 make core-only   # Core가 Foundation만으로 서는지 (아래 참고)
 make universal   # Release, arm64 + x86_64, lipo로 검사까지
+make public-check  # 공개 전 점검 — 추적 파일과 모든 커밋 이력 (아래 참고)
 make clean       # .build와 생성된 .xcodeproj 삭제
 make open-log    # 마지막 빌드 로그 꼬리
 ```
+
+### `make public-check`가 보는 것
+
+공개하면 지금 파일만이 아니라 **모든 커밋 이력**이 나갑니다. 그래서 둘 다 훑어 홈
+디렉터리 경로, 토큰·키 모양, 사설 IP, 추적되면 안 되는 산출물을 찾고, 하나라도 있으면
+실패합니다. 지금 파일만 보려면 `make public-check HISTORY=0`.
+
+소속·실명·내부 호스트명처럼 **모양이 없는** 것은 직접 적어야 찾습니다. 저장소 맨 위에
+`.public-check-words`를 만들어 한 줄에 하나씩 적으십시오. 이 파일은 `.gitignore`에 있습니다 —
+저장소에 적으면 그 낱말이 공개되기 때문입니다.
 
 바꾼 뒤 최소한 `make test`와 `make core-only`는 돌려 주십시오. 둘 다 빠릅니다.
 

@@ -10,7 +10,7 @@ macOS 네이티브 마크다운 에디터. **보고 있는 화면에서 바로 �
 
 ```sh
 make build    # xcodegen → xcodebuild
-make test     # 테스트 455개
+make test     # 테스트 502개
 make run      # 빌드 후 실행
 ```
 
