@@ -457,6 +457,12 @@ final class DocumentWindowController: NSWindowController {
             report("번역할 글이 없습니다.")
             return
         }
+        // 문서 전체를 새 문서로 옮길 때는 front matter의 `title`·`description`도 함께 옮긴다.
+        // 번역을 시작한 때의 블록을 붙잡아 둔다 — 줄 번호가 그 블록의 것이다. 제자리 번역과
+        // 다시 번역(번역본 창의 front matter를 그대로 둔다)에서는 옮기지 않는다.
+        let sourceFrontMatter = frontMatter
+        let frontValues = (inPlace || destination == .refresh)
+            ? [] : (sourceFrontMatter?.translatableValues ?? [])
 
         let sheet = TranslationProgressSheet()
         sheet.onCancel = { [weak self] in self?.translationTask?.cancel() }
@@ -501,15 +507,19 @@ final class DocumentWindowController: NSWindowController {
                 self.splitController.dismiss(sheet)
             }
             do {
-                let result = try await AppleTranslator.translate(preflight, progress: onProgress)
+                let result = try await AppleTranslator.translate(
+                    preflight, extras: frontValues.map(\.text), progress: onProgress)
+                let composed = Self.composed(result.text, frontMatter: sourceFrontMatter,
+                                             values: frontValues, translations: result.extras)
                 switch destination {
                 case .automatic where inPlace:
                     self.replaceSelection(selection, with: result.text)
                     self.report("번역했습니다 (\(result.direction.label))")
                 case .automatic:
-                    self.openTranslatedCopy(result.text, direction: result.direction)
+                    self.openTranslatedCopy(composed: composed, direction: result.direction)
                 case .sideBySide:
-                    self.openSideBySide(result.text, direction: result.direction, sourceBody: source)
+                    self.openSideBySide(composed: composed, direction: result.direction,
+                                        sourceBody: source)
                 case .refresh:
                     self.finishRetranslation(result.text, direction: result.direction,
                                              sourceBody: source)
@@ -574,16 +584,27 @@ final class DocumentWindowController: NSWindowController {
         textView.setSelectedRange(NSRange(location: range.location, length: (text as NSString).length))
     }
 
-    private func openTranslatedCopy(_ text: String, direction: TranslationDirection) {
+    /// 번역한 본문 앞에 front matter를 붙인다. 블록은 원본 그대로이고 **번역한 값의 줄만**
+    /// 바뀐다 — `slug`·`date`·`layout` 같은 값을 번역하면 사이트가 깨진다
+    /// (`FrontMatter.translatableKeys`).
+    static func composed(_ body: String, frontMatter: FrontMatter?,
+                         values: [FrontMatter.TranslatableValue], translations: [String]) -> String {
+        guard let frontMatter else { return body }
+        var byLine: [Int: String] = [:]
+        for (value, translated) in zip(values, translations)
+        where !translated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            byLine[value.line] = translated
+        }
+        return frontMatter.joined(withBody: body, translatedValues: byLine)
+    }
+
+    private func openTranslatedCopy(composed: String, direction: TranslationDirection) {
         let controller = NSDocumentController.shared
         do {
             guard let document = try controller.openUntitledDocumentAndDisplay(true) as? MarkdownDocument else {
                 report("번역 결과를 새 문서로 열지 못했습니다.")
                 return
             }
-            // front matter는 원본 블록을 그대로 앞에 둔다 — 메타데이터를 번역하면
-            // slug·date·layout 같은 값이 망가진다.
-            let composed = frontMatter.map { $0.joined(withBody: text) } ?? text
             document.markdown = composed
             document.updateChangeCount(.changeDone)
             // 이름을 제안한다 — 저장하지 않은 '무제'로 두면 사용자가 다른 이름으로
@@ -619,7 +640,7 @@ final class DocumentWindowController: NSWindowController {
     ///
     /// 탭으로 열리면 안 된다 — 창이 `tabbingMode = .preferred`라 그냥 열면 이 창의 **탭**이
     /// 되어 나란히 놓을 수가 없다. 그래서 창을 보이기 전에 탭을 끄고, 자리를 정한 뒤에 보인다.
-    private func openSideBySide(_ text: String, direction: TranslationDirection, sourceBody: String) {
+    private func openSideBySide(composed: String, direction: TranslationDirection, sourceBody: String) {
         let controller = NSDocumentController.shared
         let document: MarkdownDocument
         do {
@@ -635,8 +656,7 @@ final class DocumentWindowController: NSWindowController {
             return
         }
         controller.addDocument(document)
-        // front matter는 원본 블록을 그대로 앞에 둔다(`openTranslatedCopy`와 같은 이유).
-        document.markdown = frontMatter.map { $0.joined(withBody: text) } ?? text
+        document.markdown = composed
         if let suggested = direction.translatedFileName(for: markdownDocument?.fileURL) {
             document.displayName = suggested
         }
@@ -701,7 +721,10 @@ final class DocumentWindowController: NSWindowController {
                                      sourceBody: String) {
         guard let session = sideBySide, let translation = session.translation else {
             // 번역하는 사이에 번역본 창이 닫혔다. 결과를 버리지 않고 새 문서로 연다.
-            openTranslatedCopy(text, direction: direction)
+            // 다시 번역은 front matter를 옮기지 않았으므로 원본 블록을 그대로 붙인다.
+            openTranslatedCopy(composed: Self.composed(text, frontMatter: frontMatter,
+                                                       values: [], translations: []),
+                               direction: direction)
             return
         }
         translation.replaceBody(with: text)

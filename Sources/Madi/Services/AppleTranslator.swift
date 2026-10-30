@@ -68,7 +68,8 @@ enum AppleTranslator {
             case .unsupported:
                 """
                 시스템 설정 ▸ 일반 ▸ 언어 및 지역 ▸ 번역 언어에서 이 Mac이 어떤 언어를 \
-                번역할 수 있는지 볼 수 있습니다. 마디는 지금 한국어와 영어 사이만 다룹니다.
+                번역할 수 있는지 볼 수 있습니다. 다른 언어로 옮기려면 도구 ▸ 번역 언어 \
+                선택…(⌥⌘⇧T)에서 고르십시오.
                 """
             case .nothingToTranslate:
                 """
@@ -78,8 +79,8 @@ enum AppleTranslator {
                 """
             case .sameLanguage:
                 """
-                도구 ▸ Apple 번역에서 다른 언어를 고르십시오. 같은 언어로는 옮길 것이 \
-                없습니다.
+                도구 ▸ 번역 언어 선택…(⌥⌘⇧T)에서 다른 언어를 고르십시오. 같은 언어로는 \
+                옮길 것이 없습니다.
                 """
             case .other:
                 nil
@@ -220,15 +221,21 @@ enum AppleTranslator {
         markdown: String,
         progress: (@Sendable (Progress) -> Void)? = nil
     ) async throws -> (text: String, direction: TranslationDirection) {
-        try await translate(await preflight(markdown: markdown), progress: progress)
+        let result = try await translate(await preflight(markdown: markdown), progress: progress)
+        return (result.text, result.direction)
     }
 
     /// 이미 잰 결과로 번역한다. 가용성 판정이 **한 곳**(`preflight`)에만 있어서
     /// 미리 재는 쪽과 실제로 번역하는 쪽의 판단이 갈릴 수 없다.
+    ///
+    /// `extras`는 본문 밖에서 함께 옮길 짧은 글이다(front matter의 `title`·`description`).
+    /// 마크업이 없는 평문이라 계획을 거치지 않고 같은 세션으로 하나씩 옮긴다 — 같은 방향,
+    /// 같은 진행 막대. 결과의 `extras`는 같은 순서다.
     static func translate(
         _ preflight: Preflight,
+        extras: [String] = [],
         progress: (@Sendable (Progress) -> Void)? = nil
-    ) async throws -> (text: String, direction: TranslationDirection) {
+    ) async throws -> (text: String, direction: TranslationDirection, extras: [String]) {
         let plan = preflight.plan
         let units = plan.units
         let direction = preflight.direction
@@ -247,11 +254,15 @@ enum AppleTranslator {
         )
 
         // 단위를 조각으로 펼친다. 조각 하나가 번역기 호출 하나이고 진행 보고 한 번이다.
+        // 덧붙인 글(`extras`)은 단위 번호 뒤에 이어 번호를 매긴다.
         var jobs: [(unit: Int, chunk: String)] = []
         for (index, unit) in units.enumerated() {
             for chunk in TranslationChunker.split(unit.text) {
                 jobs.append((index, chunk))
             }
+        }
+        for (index, extra) in extras.enumerated() {
+            jobs.append((units.count + index, extra))
         }
 
         let totalCharacters = jobs.reduce(0) { $0 + $1.chunk.count }
@@ -259,7 +270,7 @@ enum AppleTranslator {
                              completedCharacters: 0, totalCharacters: totalCharacters)
         progress?(state)
 
-        var perUnit = [String](repeating: "", count: units.count)
+        var perUnit = [String](repeating: "", count: units.count + extras.count)
 
         // 차례로 한다. Sogon이 같은 실행 안에서 네 방식을 견줘 봤을 때 병렬이 일관되게
         // 빠르지 않았고(노이즈와 가를 수 없었다), 단순한 쪽이 취소와 진행 보고가 쉽다.
@@ -275,6 +286,8 @@ enum AppleTranslator {
             state.completedCharacters += job.chunk.count
             progress?(state)
         }
+        let translatedExtras = Array(perUnit[units.count...])
+        perUnit.removeLast(extras.count)
 
         // 칸 구조를 지키지 못한 표 행은 그 행만 칸마다 다시 번역한다(`keepsStructure`).
         // 문맥을 잃는 대신 표가 깨지지 않는다.
@@ -288,7 +301,7 @@ enum AppleTranslator {
             }
         }
 
-        return (try plan.assembled(with: perUnit, replacing: replacing), direction)
+        return (try plan.assembled(with: perUnit, replacing: replacing), direction, translatedExtras)
     }
 
     /// 칸 구조를 지키지 못한 표 행을 칸마다 다시 번역한 결과(단위 번호 → 복원된 행).

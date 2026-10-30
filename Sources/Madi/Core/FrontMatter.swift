@@ -173,4 +173,120 @@ public struct FrontMatter: Equatable, Sendable {
     public func joined(withBody newBody: String) -> String {
         raw + (hadBlankSeparator ? "\n" : "") + newBody
     }
+
+    // MARK: 번역
+
+    /// 사람이 읽는 글이라 번역할 값의 키. `slug`·`date`·`layout`·`tags` 같은 값은 기계가
+    /// 읽으므로 번역하면 사이트가 깨진다 — 그래서 고르는 쪽(허용 목록)으로 둔다.
+    public static let translatableKeys: Set<String> = ["title", "description"]
+
+    /// 번역할 값 하나. `line`은 `raw`를 `\n`으로 나눈 줄 번호다.
+    public struct TranslatableValue: Equatable, Sendable {
+        public let line: Int
+        public let key: String
+        /// 따옴표를 벗긴 값 — 번역기에 넘길 글.
+        public let text: String
+        let quote: Quote
+    }
+
+    enum Quote: Equatable, Sendable { case plain, single, double }
+
+    /// 번역할 값들. **한 줄에 다 있는 값만** 고른다.
+    ///
+    /// 블록 스칼라(`|`·`>`), 다음 줄로 이어지는 값, 흐름 표기(`[`·`{`), 앵커·태그
+    /// (`&`·`*`·`!`), 이스케이프가 든 따옴표 값, 주석이 붙은 값은 건너뛴다 — 그 줄에서
+    /// 글자만 바꾸는 방식으로는 원래 뜻을 지킨다고 장담할 수 없다. 건너뛴 값은 원문 그대로
+    /// 남는다(지금까지와 같다).
+    public var translatableValues: [TranslatableValue] {
+        let lines = raw.components(separatedBy: "\n")
+        var out: [TranslatableValue] = []
+        // 첫 줄과 닫는 줄(`---`/`...`) 사이만 본다. `raw`는 줄바꿈으로 끝나 마지막 조각이 빈다.
+        guard lines.count >= 3 else { return out }
+        let closing = lines.count - 2
+        for index in 1 ..< closing {
+            let line = lines[index]
+            guard let colon = line.firstIndex(of: ":"), line.first?.isWhitespace == false else { continue }
+            let key = String(line[..<colon])
+            guard Self.translatableKeys.contains(key) else { continue }
+            // 다음 줄이 들여쓴 이어짐이면 여러 줄 값이다.
+            if index + 1 < closing, Self.isIndentedContinuation(lines[index + 1]) { continue }
+            let value = String(line[line.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
+            guard let parsed = Self.singleLineValue(value) else { continue }
+            out.append(TranslatableValue(line: index, key: key, text: parsed.text, quote: parsed.quote))
+        }
+        return out
+    }
+
+    /// 한 줄 값의 글과 따옴표 꼴. 이 방식으로 다룰 수 없는 값이면 nil.
+    static func singleLineValue(_ value: String) -> (text: String, quote: Quote)? {
+        guard !value.isEmpty else { return nil }
+        if value.count >= 2, value.hasPrefix("\""), value.hasSuffix("\"") {
+            let inner = String(value.dropFirst().dropLast())
+            guard !inner.contains("\\"), !inner.contains("\"") else { return nil }
+            return inner.trimmingCharacters(in: .whitespaces).isEmpty ? nil : (inner, .double)
+        }
+        if value.count >= 2, value.hasPrefix("'"), value.hasSuffix("'") {
+            let inner = String(value.dropFirst().dropLast())
+            guard !inner.contains("'") else { return nil }
+            return inner.trimmingCharacters(in: .whitespaces).isEmpty ? nil : (inner, .single)
+        }
+        guard let first = value.first, !"|>[{&*!'\"%@`#".contains(first),
+              !value.contains(" #") else { return nil }
+        return (value, .plain)
+    }
+
+    /// 번역한 값을 넣은 문서. 고른 줄에서 **값 부분만** 바꾸고 나머지 줄은 바이트 그대로 둔다.
+    /// `translations`는 `TranslatableValue.line` → 번역문이다.
+    public func joined(withBody newBody: String, translatedValues translations: [Int: String]) -> String {
+        guard !translations.isEmpty else { return joined(withBody: newBody) }
+        var lines = raw.components(separatedBy: "\n")
+        for value in translatableValues {
+            guard let translated = translations[value.line], value.line < lines.count else { continue }
+            let line = lines[value.line]
+            guard let colon = line.firstIndex(of: ":") else { continue }
+            // 콜론 뒤의 공백은 그대로 둔다 — `title:  값`의 두 칸도 사용자가 쓴 것이다.
+            let afterColon = line[line.index(after: colon)...]
+            let spacing = afterColon.prefix(while: { $0 == " " || $0 == "\t" })
+            lines[value.line] = String(line[...colon]) + spacing
+                + Self.encoded(translated, like: value.quote)
+        }
+        let block = lines.joined(separator: "\n")
+        return block + (hadBlankSeparator ? "\n" : "") + newBody
+    }
+
+    /// 번역문을 원래 따옴표 꼴로 적는다. 따옴표 없던 값이라도 번역문이 YAML에서 다른 뜻이
+    /// 되면(`: `가 들어감, `#`·`-`로 시작, `yes`·`null`·숫자처럼 읽힘) 큰따옴표로 감싼다.
+    static func encoded(_ translated: String, like quote: Quote) -> String {
+        // 한 줄 값이다. 번역기가 줄을 나눠 내놓아도 한 줄로 붙인다.
+        let text = translated.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        func doubleQuoted() -> String {
+            "\"" + text.replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "\"", with: "\\\"") + "\""
+        }
+        switch quote {
+        case .double:
+            return doubleQuoted()
+        case .single:
+            return "'" + text.replacingOccurrences(of: "'", with: "''") + "'"
+        case .plain:
+            return isPlainSafe(text) ? text : doubleQuoted()
+        }
+    }
+
+    /// 따옴표 없이 적어도 YAML이 같은 문자열로 읽는가. 확실하지 않으면 false.
+    static func isPlainSafe(_ text: String) -> Bool {
+        guard let first = text.first, let last = text.last,
+              !first.isWhitespace, !last.isWhitespace, last != ":",
+              !"-?:,[]{}#&*!|>'\"%@`".contains(first),
+              !text.contains(": "), !text.contains(" #") else { return false }
+        let lowered = text.lowercased()
+        let reserved: Set<String> = ["yes", "no", "true", "false", "on", "off", "y", "n",
+                                     "null", "~", ".nan", ".inf", "-.inf"]
+        if reserved.contains(lowered) { return false }
+        if Double(text) != nil || Int(text) != nil { return false }
+        return true
+    }
 }
