@@ -16,6 +16,7 @@ import Foundation
 /// - `documentWidth` → 텍스트 컨테이너 가로 여백(그림 폭 맞춤과 표 열 맞추기가 따라온다)
 /// - `loadsRemoteImages` → `InlineImageStore`의 원격 받기
 /// - `printMargin` · `printOrientation` · `printPaper` → `NSPrintInfo`(프린트와 PDF 둘 다)
+/// - `bodyFontFamily` · `codeFontFamily` → `MarkdownTheme`의 본문·제목·코드 글꼴
 public struct EditorPreferences: Equatable, Sendable {
 
     /// 화면 모양. 마디의 색은 거의 다 의미색이라 시스템을 저절로 따르는데, 그래서
@@ -157,6 +158,13 @@ public struct EditorPreferences: Equatable, Sendable {
     /// 것을 기억한다 — 한 문서를 여러 번 번역하는 동안 매번 다시 고르게 하면 안 된다.
     /// 원문이 한국어가 **아닐** 때는 대상이 늘 한국어이므로 이 값이 쓰이지 않는다.
     public var translationTarget: String
+    /// 본문 글꼴의 패밀리 이름(`NSFontManager`의 이름, 예: `Helvetica Neue`). `nil`이면 시스템
+    /// 글꼴이다. 이 Mac에 없는 이름이면 그리는 쪽이 시스템 글꼴로 떨어진다 — 설정을 다른
+    /// Mac으로 옮겨도 화면이 깨지지 않는다.
+    public var bodyFontFamily: String?
+    /// 코드 글꼴의 패밀리 이름. `nil`이면 시스템 고정폭이다. **고정폭만** 받는다 — 그리는
+    /// 쪽이 고정폭이 아닌 이름을 시스템 고정폭으로 바꾼다(코드의 들여쓰기와 열이 맞아야 한다).
+    public var codeFontFamily: String?
 
     /// 글자 크기의 허용 범위. 너무 작으면 한글이 뭉개지고, 너무 크면 표 열 맞추기가
     /// 한 줄에 들어가지 않는다.
@@ -187,7 +195,9 @@ public struct EditorPreferences: Equatable, Sendable {
                 printMargin: PrintMargin = .normal,
                 printOrientation: PrintOrientation = .portrait,
                 printPaper: PrintPaper = .system,
-                translationTarget: String = "en") {
+                translationTarget: String = "en",
+                bodyFontFamily: String? = nil,
+                codeFontFamily: String? = nil) {
         self.bodyPointSize = Self.clamp(bodyPointSize)
         self.highlightCode = highlightCode
         self.alignTables = alignTables
@@ -203,6 +213,15 @@ public struct EditorPreferences: Equatable, Sendable {
         // 빈 값이나 공백이 저장소에 들어와도 읽을 수 있는 상태를 지킨다.
         let trimmed = translationTarget.trimmingCharacters(in: .whitespaces)
         self.translationTarget = trimmed.isEmpty ? "en" : trimmed
+        self.bodyFontFamily = Self.family(bodyFontFamily)
+        self.codeFontFamily = Self.family(codeFontFamily)
+    }
+
+    /// 빈 이름과 공백뿐인 이름은 '시스템'(`nil`)이다 — 저장소에 손으로 쓴 빈 값이 이름 없는
+    /// 글꼴을 찾게 하지 않는다.
+    static func family(_ name: String?) -> String? {
+        guard let trimmed = name?.trimmingCharacters(in: .whitespaces), !trimmed.isEmpty else { return nil }
+        return trimmed
     }
 
     /// 범위를 벗어난 값을 가둔다. 저장소에 손으로 쓴 값이나 옛 버전의 값이 들어와도
@@ -235,11 +254,13 @@ public final class PreferenceStore {
         static let printOrientation = "print.orientation"
         static let printPaper = "print.paper"
         static let translationTarget = "translation.target"
+        static let bodyFontFamily = "editor.bodyFontFamily"
+        static let codeFontFamily = "editor.codeFontFamily"
 
         static let all = [bodyPointSize, highlightCode, alignTables, syntheticSlant,
                           openInCodeView, appearance, lineSpacing, documentWidth,
                           loadsRemoteImages, printMargin, printOrientation, printPaper,
-                          translationTarget]
+                          translationTarget, bodyFontFamily, codeFontFamily]
     }
 
     private let defaults: UserDefaults
@@ -281,7 +302,9 @@ public final class PreferenceStore {
             printOrientation: value(Key.printOrientation, standard.printOrientation),
             printPaper: value(Key.printPaper, standard.printPaper),
             translationTarget: defaults.string(forKey: Key.translationTarget)
-                ?? standard.translationTarget
+                ?? standard.translationTarget,
+            bodyFontFamily: defaults.string(forKey: Key.bodyFontFamily),
+            codeFontFamily: defaults.string(forKey: Key.codeFontFamily)
         )
     }
 
@@ -300,6 +323,11 @@ public final class PreferenceStore {
         defaults.set(preferences.printOrientation.rawValue, forKey: Key.printOrientation)
         defaults.set(preferences.printPaper.rawValue, forKey: Key.printPaper)
         defaults.set(preferences.translationTarget, forKey: Key.translationTarget)
+        // 시스템 글꼴(`nil`)은 키를 지워 둔다 — 빈 문자열을 남기면 그 키가 '정한 값'처럼 보인다.
+        for (key, family) in [(Key.bodyFontFamily, preferences.bodyFontFamily),
+                              (Key.codeFontFamily, preferences.codeFontFamily)] {
+            if let family { defaults.set(family, forKey: key) } else { defaults.removeObject(forKey: key) }
+        }
     }
 
     /// 전부 기본값으로. 키를 지워 두면 다음에 기본값이 다시 읽힌다.

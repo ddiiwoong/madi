@@ -6,16 +6,56 @@ import AppKit
 public struct MarkdownTheme {
 
     public var bodyPointSize: CGFloat = 15
-    public var bodyFont: NSFont { .systemFont(ofSize: bodyPointSize) }
-    public var monoFont: NSFont { .monospacedSystemFont(ofSize: bodyPointSize - 1, weight: .regular) }
+    /// 본문·코드 글꼴 패밀리. `nil`이면 시스템 글꼴이다(`EditorPreferences`와 같은 뜻).
+    public var bodyFontFamily: String?
+    public var codeFontFamily: String?
+
+    public var bodyFont: NSFont {
+        Self.font(family: bodyFontFamily, size: bodyPointSize) ?? .systemFont(ofSize: bodyPointSize)
+    }
+    public var monoFont: NSFont {
+        let size = bodyPointSize - 1
+        // 고정폭이 아니면 쓰지 않는다 — 코드의 들여쓰기와 열이 어긋난다. 고르개가 이미
+        // 거르지만, 저장소에 손으로 쓴 이름도 여기서 막힌다.
+        if let font = Self.font(family: codeFontFamily, size: size), font.isFixedPitch { return font }
+        return .monospacedSystemFont(ofSize: size, weight: .regular)
+    }
 
     public static let headingScale: [CGFloat] = [1.85, 1.45, 1.22, 1.08, 1.0, 1.0]
 
     public func headingFont(level: Int) -> NSFont {
         let clamped = max(1, min(6, level))
         let size = bodyPointSize * Self.headingScale[clamped - 1]
+        // 패밀리에 굵은꼴이 없으면 보통 굵기가 돌아온다 — 크기로만 제목이 갈린다.
+        if let bold = Self.font(family: bodyFontFamily, size: size, bold: true) { return bold }
         return .systemFont(ofSize: size, weight: clamped <= 2 ? .bold : .semibold)
     }
+
+    /// 본문 크기의 굵은 본문 글꼴(알림 상자의 표식 등).
+    public var semiboldBodyFont: NSFont {
+        Self.font(family: bodyFontFamily, size: bodyPointSize, bold: true)
+            ?? .systemFont(ofSize: bodyPointSize, weight: .semibold)
+    }
+
+    /// 패밀리의 글꼴. 이름이 없거나 이 Mac에 없으면 nil — 부르는 쪽이 시스템 글꼴로 떨어진다.
+    ///
+    /// 찾은 것을 기억한다. 스타일 패스가 줄마다 글꼴을 묻고(22만 자 문서에서 수천 번),
+    /// `NSFontManager`의 패밀리 조회는 시스템 글꼴처럼 AppKit이 기억해 주지 않는다.
+    /// 없는 이름도 기억한다(`NSNull`) — 없는 글꼴을 줄마다 다시 찾지 않게.
+    static func font(family: String?, size: CGFloat, bold: Bool = false) -> NSFont? {
+        guard let family else { return nil }
+        let key = "\(family)|\(size)|\(bold)"
+        if let cached = resolved[key] { return cached as? NSFont }
+        // weight 5는 `NSFontManager`의 보통 굵기다(0~15, 5 = Regular).
+        var font = NSFontManager.shared.font(withFamily: family, traits: [], weight: 5, size: size)
+        if bold, let regular = font {
+            font = NSFontManager.shared.convert(regular, toHaveTrait: .boldFontMask)
+        }
+        resolved[key] = font ?? NSNull()
+        return font
+    }
+
+    private static var resolved: [String: Any] = [:]
 
     public var text: NSColor { .labelColor }
     /// 마커(`#`, `**`, 목록 글머리, 인용 막대) 색. 본문보다 물러나야 하지만 **보여야**

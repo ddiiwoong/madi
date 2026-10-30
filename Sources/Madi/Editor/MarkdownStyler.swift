@@ -470,7 +470,7 @@ public final class MarkdownStyler {
                                         ? text.substring(with: line.contentRange) : "") != nil {
                     storage.addAttributes([
                         .foregroundColor: theme.alertColor(for: alert),
-                        .font: NSFont.systemFont(ofSize: theme.bodyPointSize, weight: .semibold),
+                        .font: theme.semiboldBodyFont,
                     ], range: line.contentRange)
                 }
             } else {

@@ -25,6 +25,8 @@ final class SettingsPanel: NSWindowController {
     private let appearancePicker = NSPopUpButton()
     private let lineSpacingPicker = NSPopUpButton()
     private let widthPicker = NSPopUpButton()
+    private let bodyFontPicker = NSPopUpButton()
+    private let codeFontPicker = NSPopUpButton()
     private let highlightCheck = NSButton(checkboxWithTitle: "코드 블록 구문 강조", target: nil, action: nil)
     private let alignCheck = NSButton(checkboxWithTitle: "표 열 맞추기", target: nil, action: nil)
     private let slantCheck = NSButton(checkboxWithTitle: "한글·CJK 기울임 강제 적용", target: nil, action: nil)
@@ -42,7 +44,23 @@ final class SettingsPanel: NSWindowController {
     private let orientationPicker = NSPopUpButton()
     private let marginPicker = NSPopUpButton()
 
-    private static let panelSize = NSSize(width: 460, height: 420)
+    private static let panelSize = NSSize(width: 460, height: 500)
+
+    /// 글꼴 고르개의 '시스템' 항목에 다는 값. 패밀리 이름이 빈 문자열일 수는 없으므로
+    /// 겹치지 않는다.
+    static let systemFontTag = ""
+
+    /// 이 Mac의 글꼴 패밀리. 코드 쪽은 **고정폭만** — 고정폭이 아니면 코드의 들여쓰기와
+    /// 줄 맞춤이 어긋난다. (표 열 맞추기는 그 줄의 실제 글꼴로 폭을 재므로 이 제한의 이유가
+    /// 아니다 — `MarkdownStyler.visibleWidth`.) 이름 순.
+    static func installedFamilies(fixedPitchOnly: Bool) -> [String] {
+        let manager = NSFontManager.shared
+        let families = manager.availableFontFamilies.filter { !$0.hasPrefix(".") }
+        guard fixedPitchOnly else { return families.sorted { $0.localizedStandardCompare($1) == .orderedAscending } }
+        return families.filter { family in
+            manager.font(withFamily: family, traits: [], weight: 5, size: 13)?.isFixedPitch == true
+        }.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
 
     init(store: PreferenceStore) {
         self.store = store
@@ -158,6 +176,43 @@ final class SettingsPanel: NSWindowController {
         picker.action = #selector(changed)
     }
 
+    /// 글꼴 고르개를 채운다. 맨 위가 시스템 글꼴이고 그 아래가 패밀리 이름이다. 각 이름은
+    /// 그 글꼴로 그린다 — 고르기 전에 모양을 볼 수 있어야 한다.
+    private func fillFonts(_ picker: NSPopUpButton, system: String, families: [String]) {
+        picker.removeAllItems()
+        picker.addItem(withTitle: system)
+        picker.lastItem?.representedObject = Self.systemFontTag
+        picker.menu?.addItem(.separator())
+        for family in families {
+            picker.addItem(withTitle: family)
+            guard let item = picker.lastItem else { continue }
+            item.representedObject = family
+            if let font = MarkdownTheme.font(family: family, size: 13) {
+                item.attributedTitle = NSAttributedString(string: family, attributes: [.font: font])
+            }
+        }
+        picker.target = self
+        picker.action = #selector(changed)
+    }
+
+    /// 고른 패밀리. 시스템이면 nil.
+    private func fontSelection(_ picker: NSPopUpButton) -> String? {
+        EditorPreferences.family(picker.selectedItem?.representedObject as? String)
+    }
+
+    /// 저장된 패밀리를 고른다. 목록에 없으면(이 Mac에 없는 글꼴) 그 이름으로 항목을 하나
+    /// 더해 고른다 — 시스템을 고른 것처럼 보이면 저장된 값과 화면이 다르게 말한다.
+    private func selectFont(_ family: String?, in picker: NSPopUpButton) {
+        let wanted = family ?? Self.systemFontTag
+        if let index = picker.itemArray.firstIndex(where: { ($0.representedObject as? String) == wanted }) {
+            picker.selectItem(at: index)
+            return
+        }
+        picker.addItem(withTitle: "\(wanted) (이 Mac에 없음)")
+        picker.lastItem?.representedObject = wanted
+        picker.select(picker.lastItem)
+    }
+
     private func selection<T: RawRepresentable>(_ picker: NSPopUpButton, _ fallback: T) -> T
     where T.RawValue == String {
         guard let raw = picker.selectedItem?.representedObject as? String,
@@ -187,6 +242,10 @@ final class SettingsPanel: NSWindowController {
         fill(appearancePicker, EditorPreferences.Appearance.allCases) { $0.label }
         fill(lineSpacingPicker, EditorPreferences.LineSpacing.allCases) { $0.label }
         fill(widthPicker, EditorPreferences.DocumentWidth.allCases) { $0.label }
+        fillFonts(bodyFontPicker, system: "시스템 글꼴",
+                  families: Self.installedFamilies(fixedPitchOnly: false))
+        fillFonts(codeFontPicker, system: "시스템 고정폭",
+                  families: Self.installedFamilies(fixedPitchOnly: true))
 
         for check in [highlightCheck, alignCheck, slantCheck, codeViewCheck] {
             check.target = self
@@ -202,6 +261,10 @@ final class SettingsPanel: NSWindowController {
             row("화면 모양", appearancePicker),
             row("줄 간격", lineSpacingPicker),
             row("글 넓이", widthPicker),
+            row("본문 글꼴", bodyFontPicker),
+            row("코드 글꼴", codeFontPicker),
+            // 코드 목록에 글꼴이 적은 이유를 화면에 적는다 — 말하지 않으면 빠진 것으로 보인다.
+            note("코드 글꼴은 고정폭만 고를 수 있습니다. 글자 폭이 다르면 코드의 들여쓰기와 줄 맞춤이 어긋납니다."),
             NSTextField(labelWithString: "본문 글자 크기"),
             sizeRow,
             highlightCheck, alignCheck, slantCheck, codeViewCheck,
@@ -291,6 +354,8 @@ final class SettingsPanel: NSWindowController {
         select(preferences.appearance, in: appearancePicker)
         select(preferences.lineSpacing, in: lineSpacingPicker)
         select(preferences.documentWidth, in: widthPicker)
+        selectFont(preferences.bodyFontFamily, in: bodyFontPicker)
+        selectFont(preferences.codeFontFamily, in: codeFontPicker)
         select(preferences.printPaper, in: paperPicker)
         select(preferences.printOrientation, in: orientationPicker)
         select(preferences.printMargin, in: marginPicker)
@@ -322,7 +387,10 @@ final class SettingsPanel: NSWindowController {
             loadsRemoteImages: remoteImageCheck.state == .on,
             printMargin: selection(marginPicker, preferences.printMargin),
             printOrientation: selection(orientationPicker, preferences.printOrientation),
-            printPaper: selection(paperPicker, preferences.printPaper)
+            printPaper: selection(paperPicker, preferences.printPaper),
+            translationTarget: preferences.translationTarget,
+            bodyFontFamily: fontSelection(bodyFontPicker),
+            codeFontFamily: fontSelection(codeFontPicker)
         )
         updateSizeLabel()
         store.save(preferences)

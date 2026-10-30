@@ -211,6 +211,77 @@ final class SettingsPanelWiringTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(frame.height, 400)
     }
 
+    // MARK: 글꼴
+
+    private func fontPicker(system title: String) -> NSPopUpButton? {
+        allViews.compactMap { $0 as? NSPopUpButton }.first { $0.itemArray.first?.title == title }
+    }
+
+    /// 두 고르개가 있고, 맨 위가 시스템이며, 이 Mac의 글꼴이 실려 있다.
+    func testFontPickersListInstalledFamilies() {
+        guard let body = fontPicker(system: "시스템 글꼴"),
+              let code = fontPicker(system: "시스템 고정폭") else { return XCTFail("글꼴 고르개가 없다") }
+        let bodyFamilies = body.itemArray.compactMap { $0.representedObject as? String }.filter { !$0.isEmpty }
+        let codeFamilies = code.itemArray.compactMap { $0.representedObject as? String }.filter { !$0.isEmpty }
+        XCTAssertTrue(bodyFamilies.contains("Helvetica"), "macOS에 늘 있는 글꼴이 빠졌다")
+        XCTAssertTrue(codeFamilies.contains("Menlo"), "macOS에 늘 있는 고정폭이 빠졌다")
+        XCTAssertGreaterThan(bodyFamilies.count, codeFamilies.count)
+    }
+
+    /// 코드 고르개에는 고정폭만 있다 — 하나라도 아니면 코드의 들여쓰기가 어긋난다.
+    func testCodeFontPickerOffersOnlyFixedPitch() {
+        guard let code = fontPicker(system: "시스템 고정폭") else { return XCTFail("코드 글꼴 고르개가 없다") }
+        let families = code.itemArray.compactMap { $0.representedObject as? String }.filter { !$0.isEmpty }
+        XCTAssertFalse(families.contains("Helvetica"))
+        for family in families {
+            XCTAssertEqual(NSFontManager.shared.font(withFamily: family, traits: [], weight: 5, size: 13)?
+                .isFixedPitch, true, family)
+        }
+    }
+
+    func testChoosingFontsReachesTheStoreAndSystemClearsIt() {
+        guard let body = fontPicker(system: "시스템 글꼴"),
+              let code = fontPicker(system: "시스템 고정폭") else { return XCTFail("글꼴 고르개가 없다") }
+        XCTAssertNotNil(body.action)
+        XCTAssertNotNil(code.action)
+        select("Helvetica", in: body)
+        select("Menlo", in: code)
+        fire(body)
+        XCTAssertEqual(store.current.bodyFontFamily, "Helvetica")
+        XCTAssertEqual(store.current.codeFontFamily, "Menlo")
+
+        body.selectItem(at: 0)
+        fire(body)
+        XCTAssertNil(store.current.bodyFontFamily, "시스템을 고르면 지운다")
+        XCTAssertNil(defaults.object(forKey: "editor.bodyFontFamily"), "빈 값을 남기지 않는다")
+    }
+
+    /// 이 Mac에 없는 글꼴이 저장돼 있으면 시스템을 고른 것처럼 보이지 않는다.
+    func testMissingStoredFontIsShownByName() {
+        var saved = EditorPreferences.standard
+        saved.bodyFontFamily = "Nonexistent Font Family 123"
+        store.save(saved)
+        panel = SettingsPanel(store: store)
+        let selected = fontPicker(system: "시스템 글꼴")?.selectedItem
+        XCTAssertEqual(selected?.representedObject as? String, "Nonexistent Font Family 123")
+        XCTAssertTrue(selected?.title.contains("이 Mac에 없음") == true, selected?.title ?? "")
+    }
+
+    /// 다른 설정을 바꿔도 번역 대상 언어를 잃지 않는다.
+    ///
+    /// 전에는 `changed()`가 설정을 새로 지으면서 이 값을 넘기지 않아, 체크박스 하나만 눌러도
+    /// 고른 번역 언어가 영어로 돌아갔다(번역 언어 선택 시트가 기억해 둔 값이다).
+    func testChangingAnotherSettingKeepsTheTranslationTarget() {
+        var saved = EditorPreferences.standard
+        saved.translationTarget = "ja"
+        store.save(saved)
+        panel = SettingsPanel(store: store)
+        guard let check = checkbox("표 열 맞추기") else { return XCTFail("체크박스가 없다") }
+        check.state = .off
+        fire(check)
+        XCTAssertEqual(store.current.translationTarget, "ja")
+    }
+
     /// 판 번호가 비어 있으면 안 된다 — 문제를 신고할 때 쓰는 값이다.
     func testVersionDisplayIsNotEmpty() {
         XCTAssertFalse(AppVersion.display.trimmingCharacters(in: .whitespaces).isEmpty)

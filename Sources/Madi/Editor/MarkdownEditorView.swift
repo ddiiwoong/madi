@@ -370,6 +370,8 @@ public final class MarkdownEditorView: NSView {
         theme.bodyPointSize = preferences.bodyPointSize      // didSet이 스타일러에 넘긴다
         theme.lineSpacingScale = preferences.lineSpacing.scale
         theme.documentWidthMultiple = preferences.documentWidth.multipleOfBodySize
+        theme.bodyFontFamily = preferences.bodyFontFamily
+        theme.codeFontFamily = preferences.codeFontFamily
         styler.highlightsCode = preferences.highlightCode
         styler.alignsTables = preferences.alignTables
         styler.appliesSyntheticSlant = preferences.syntheticSlant
