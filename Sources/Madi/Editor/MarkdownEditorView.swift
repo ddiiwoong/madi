@@ -163,13 +163,31 @@ public final class MarkdownEditorView: NSView {
     /// 저장소가 바뀐 뒤 그 알림이 오기 전까지 낡은 표를 읽는 구간이 생긴다 — 그 사이에
     /// 불리는 선택 변경 콜백이 낡은 표로 캐럿 줄을 찾으면 범위가 문서를 넘을 수 있다.
     /// 저장소에서 올리면 그런 구간이 없다.
-    private var lineCache: (revision: Int, lines: [LineToken])?
+    ///
+    /// 글자 편집 하나가 오면 **고친 자리부터만** 다시 훑는다(`MarkdownSyntax.rescan`) — 옛
+    /// 결과가 바로 앞 글의 것일 때. 아니면(처음, 여러 편집이 겹침) 다음에 읽을 때 전체를 훑는다.
+    private var scanCache: (revision: Int, scan: MarkdownSyntax.LineScan)?
 
     func currentLines() -> [LineToken] {
-        if let cache = lineCache, cache.revision == blockRevision { return cache.lines }
-        let lines = MarkdownSyntax().scanLines(in: storage.string as NSString)
-        lineCache = (blockRevision, lines)
-        return lines
+        if let cache = scanCache, cache.revision == blockRevision { return cache.scan.lines }
+        fullScanCount += 1
+        let scan = MarkdownSyntax().scan(storage.string as NSString)
+        scanCache = (blockRevision, scan)
+        return scan.lines
+    }
+
+    /// 문서 전체를 훑은 횟수. 테스트가 "편집은 전체를 훑지 않는다"를 확인하는 데 쓴다.
+    private(set) var fullScanCount = 0
+
+    /// 글자 편집 하나를 받는다. 저장소 대리자가 그 자리에서 부른다.
+    private func textDidEdit(range editedRange: NSRange, changeInLength delta: Int) {
+        let previous = scanCache.flatMap { $0.revision == blockRevision ? $0.scan : nil }
+        invalidateBlocks()
+        guard let previous,
+              let next = MarkdownSyntax().rescan(storage.string as NSString, after: previous,
+                                                 editedRange: editedRange, changeInLength: delta)
+        else { return }
+        scanCache = (blockRevision, next)
     }
 
     /// 코드 보기 (⌘E) — toggles between the formatted document and the raw
@@ -507,7 +525,9 @@ extension MarkdownEditorView: @preconcurrency NSTextStorageDelegate {
     public func textStorage(_ textStorage: NSTextStorage,
                             didProcessEditing editedMask: NSTextStorageEditActions,
                             range editedRange: NSRange, changeInLength delta: Int) {
-        if editedMask.contains(.editedCharacters) { invalidateBlocks() }
+        if editedMask.contains(.editedCharacters) {
+            textDidEdit(range: editedRange, changeInLength: delta)
+        }
     }
 }
 

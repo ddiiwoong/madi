@@ -77,14 +77,128 @@ public struct MarkdownSyntax: Sendable {
     // MARK: Blocks
 
     public func scanLines(in text: NSString) -> [LineToken] {
-        var tokens: [LineToken] = []
-        var inFence = false
-        var fenceLanguage: String?
-        var lineNumber = 0
-        var cursor = 0
+        scan(text).lines
+    }
+
+    /// 줄을 읽기 **전의** 펜스 상태. 한 줄의 판정은 그 줄의 글과 이 상태만으로 정해진다.
+    public struct FenceState: Equatable, Sendable {
+        public var inFence = false
+        public var language: String?
+    }
+
+    /// 한 번 훑은 결과. 다음 편집에서 **고친 자리부터** 다시 훑는 데 쓴다(`rescan`).
+    public struct LineScan: Sendable {
+        /// setext 제목까지 판정한 줄들 — 바깥이 쓰는 것.
+        public let lines: [LineToken]
+        /// setext를 적용하기 전의 줄들. setext는 **위쪽** 문단을 바꾸므로, 다시 훑을 때는 적용
+        /// 전의 판정이 있어야 한다.
+        let raw: [LineToken]
+        /// `states[i]`는 `raw[i]`를 읽기 전의 상태다.
+        let states: [FenceState]
+        /// 훑은 글의 길이(UTF-16).
+        let length: Int
+    }
+
+    /// 문서 전체를 훑는다.
+    public func scan(_ text: NSString) -> LineScan {
+        var raw: [LineToken] = []
+        var states: [FenceState] = []
+        _ = scanRaw(text, from: 0, state: FenceState(), into: &raw, states: &states, resync: nil)
+        return LineScan(lines: Self.applySetextHeadings(raw, in: text), raw: raw, states: states,
+                        length: text.length)
+    }
+
+    /// 한 번의 편집 뒤에 **고친 자리부터** 다시 훑는다. 결과는 `scan(text)`와 같다.
+    ///
+    /// 왜(실측, 22만 자 문서): 전체를 훑는 데 12~16ms가 들고 글자 하나를 칠 때마다 돌았다.
+    /// 한 줄의 판정은 그 줄의 글과 그 앞의 펜스 상태만으로 정해지므로, 고친 줄의 한 줄 위부터
+    /// 다시 훑다가 **고친 구간을 지난 줄의 시작이 옛 판정의 어느 줄 시작과 같고 상태도 같으면**
+    /// 거기서 멈추고 나머지는 위치만 민다. 한 줄 위부터인 이유: `\r` 뒤에 `\n`을 넣으면 두
+    /// 줄바꿈이 하나로 합쳐져 앞 줄의 끝이 바뀐다.
+    ///
+    /// setext 제목은 다시 훑은 뒤 **전체에** 다시 적용한다 — 밑줄 하나가 위쪽 문단 전체를
+    /// 제목으로 바꾸므로 고친 자리의 위로도 번진다. 문지기 덕에 싸다.
+    ///
+    /// - Parameters:
+    ///   - editedRange: 편집 **뒤** 글에서 바뀐 범위(`NSTextStorage`의 `editedRange`).
+    ///   - delta: 길이 변화(`changeInLength`).
+    /// - Returns: 앞뒤가 맞지 않으면(길이가 다름, 범위가 글 밖) nil — 부르는 쪽이 `scan`으로
+    ///   전체를 훑는다. 여기서 몰래 전체를 훑지 않는 이유: 그러면 결과는 맞아도 **편집기가 늘
+    ///   전체를 훑는 결함**이 보이지 않는다(배선이 틀린 값을 넘겨도 테스트가 통과한다).
+    public func rescan(_ text: NSString, after previous: LineScan,
+                       editedRange: NSRange, changeInLength delta: Int) -> LineScan? {
+        let length = text.length
+        guard length == previous.length + delta,
+              editedRange.location >= 0, NSMaxRange(editedRange) <= length,
+              editedRange.length - delta >= 0,
+              !previous.raw.isEmpty else { return nil }
+
+        let editStart = editedRange.location
+        let newEditEnd = NSMaxRange(editedRange)
+        // 고친 자리가 든 옛 줄, 그 한 줄 위부터.
+        let edited = Self.lastIndex(in: previous.raw, startingAtOrBefore: editStart)
+        let start = max(0, edited - 1)
+
+        var raw = Array(previous.raw[..<start])
+        var states = Array(previous.states[..<start])
+        let from = previous.raw[start].range.location
+
+        var resumeAt: Int?
+        let stopped = scanRaw(text, from: from, state: previous.states[start],
+                              into: &raw, states: &states) { lineStart, state in
+            // 고친 구간을 **넘어선** 줄의 시작만 맞춰 본다. 같은 자리이면 그 줄의 판정이 앞
+            // 글자(문서 끝의 빈 줄은 마지막 글자가 `\n`인지)에 기댈 수 있다.
+            guard lineStart > newEditEnd else { return false }
+            let old = lineStart - delta
+            let index = Self.lastIndex(in: previous.raw, startingAtOrBefore: old)
+            guard previous.raw[index].range.location == old,
+                  previous.states[index] == state else { return false }
+            resumeAt = index
+            return true
+        }
+        if stopped, let resume = resumeAt {
+            let offset = raw.count - resume
+            for index in resume ..< previous.raw.count {
+                raw.append(Self.shifted(previous.raw[index], by: delta, lineNumber: index + offset + 1))
+            }
+            states.append(contentsOf: previous.states[resume...])
+        }
+        return LineScan(lines: Self.applySetextHeadings(raw, in: text), raw: raw, states: states,
+                        length: length)
+    }
+
+    /// 시작이 `location` 이하인 마지막 줄의 번호(배열 안 위치). 줄이 비어 있지 않아야 한다.
+    static func lastIndex(in tokens: [LineToken], startingAtOrBefore location: Int) -> Int {
+        var lo = 0, hi = tokens.count - 1
+        while lo < hi {
+            let mid = (lo + hi + 1) / 2
+            if tokens[mid].range.location <= location { lo = mid } else { hi = mid - 1 }
+        }
+        return lo
+    }
+
+    /// 위치를 민 줄. 판정은 글과 상태만으로 정해지므로 위치만 다르다.
+    static func shifted(_ token: LineToken, by delta: Int, lineNumber: Int) -> LineToken {
+        func move(_ range: NSRange) -> NSRange { NSRange(location: range.location + delta, length: range.length) }
+        return LineToken(lineNumber: lineNumber, range: move(token.range), kind: token.kind,
+                         markerRanges: delta == 0 ? token.markerRanges : token.markerRanges.map(move),
+                         contentRange: move(token.contentRange), language: token.language)
+    }
+
+    /// `from`(줄의 시작)부터 줄을 판정해 덧붙인다. `resync`가 줄의 시작과 그 앞 상태를 보고
+    /// true를 돌려주면 그 줄을 읽지 않고 멈추고 true를 돌려준다. 끝까지 읽으면 false.
+    private func scanRaw(_ text: NSString, from start: Int, state initial: FenceState,
+                         into tokens: inout [LineToken], states: inout [FenceState],
+                         resync: ((Int, FenceState) -> Bool)?) -> Bool {
+        var inFence = initial.inFence
+        var fenceLanguage = initial.language
+        var lineNumber = tokens.count
+        var cursor = start
         let length = text.length
 
         while cursor <= length {
+            let state = FenceState(inFence: inFence, language: fenceLanguage)
+            if cursor > start, let resync, resync(cursor, state) { return true }
             let lineRange = text.lineRange(for: NSRange(location: min(cursor, length), length: 0))
             // `lineRange` includes the terminator; style only the content.
             let contentOnly = text.rangeOfLine(excludingTerminatorIn: lineRange)
@@ -100,21 +214,25 @@ public struct MarkdownSyntax: Sendable {
                                  inFence: &inFence, fenceLanguage: &fenceLanguage)
             }
             tokens.append(token)
+            states.append(state)
 
             if NSMaxRange(lineRange) <= cursor { break }
             cursor = NSMaxRange(lineRange)
             if cursor == length {
                 // A trailing newline means one more (empty) line exists.
                 if length > 0, text.character(at: length - 1) == 10 {
+                    let trailing = FenceState(inFence: inFence, language: fenceLanguage)
+                    if let resync, resync(length, trailing) { return true }
                     lineNumber += 1
                     let empty = NSRange(location: length, length: 0)
                     tokens.append(LineToken(lineNumber: lineNumber, range: empty, kind: .blank,
                                             markerRanges: [], contentRange: empty))
+                    states.append(trailing)
                 }
                 break
             }
         }
-        return Self.applySetextHeadings(tokens, in: text)
+        return false
     }
 
     /// setext 제목을 뒤에서 판정한다 — `제목` 다음 줄이 `===`면 제목 1, `---`면 제목 2.
