@@ -234,6 +234,7 @@ enum AppleTranslator {
     static func translate(
         _ preflight: Preflight,
         extras: [String] = [],
+        cache: TranslationCache = .shared,
         progress: (@Sendable (Progress) -> Void)? = nil
     ) async throws -> (text: String, direction: TranslationDirection, extras: [String]) {
         let plan = preflight.plan
@@ -253,8 +254,37 @@ enum AppleTranslator {
             target: Locale.Language(identifier: direction.targetIdentifier)
         )
 
-        // 단위를 조각으로 펼친다. 조각 하나가 번역기 호출 하나이고 진행 보고 한 번이다.
-        // 덧붙인 글(`extras`)은 단위 번호 뒤에 이어 번호를 매긴다.
+        let jobs = jobs(for: units, extras: extras)
+
+        /// 번역기 호출 하나 — 번역기의 실패를 마디의 실패로 바꾼다. 캐시는 아래 `cached`가
+        /// 먼저 본다.
+        let translateOne: (String) async throws -> String = { text in
+            try Task.checkCancellation()
+            do {
+                return try await session.translate(text).targetText
+            } catch {
+                if error is CancellationError || Task.isCancelled { throw CancellationError() }
+                throw map(error, direction: direction)
+            }
+        }
+        let cached = cachedTranslator(cache, direction: direction, translate: translateOne)
+
+        var perUnit = try await translateJobs(jobs, slots: units.count + extras.count,
+                                              translate: cached, progress: progress)
+        let translatedExtras = Array(perUnit[units.count...])
+        perUnit.removeLast(extras.count)
+
+        // 칸 구조를 지키지 못한 표 행은 그 행만 칸마다 다시 번역한다(`keepsStructure`).
+        // 문맥을 잃는 대신 표가 깨지지 않는다.
+        let replacing = try await structureRepairs(plan: plan, translations: perUnit, translate: cached)
+
+        return (try plan.assembled(with: perUnit, replacing: replacing), direction, translatedExtras)
+    }
+
+    /// 단위를 조각으로 펼친다. 조각 하나가 번역기 호출 하나이고 진행 보고 한 번이다.
+    /// 덧붙인 글(`extras`)은 단위 번호 뒤에 이어 번호를 매긴다.
+    static func jobs(for units: [MarkdownTranslationPlan.Unit],
+                     extras: [String]) -> [(unit: Int, chunk: String)] {
         var jobs: [(unit: Int, chunk: String)] = []
         for (index, unit) in units.enumerated() {
             for chunk in TranslationChunker.split(unit.text) {
@@ -264,44 +294,50 @@ enum AppleTranslator {
         for (index, extra) in extras.enumerated() {
             jobs.append((units.count + index, extra))
         }
+        return jobs
+    }
 
+    /// 캐시를 먼저 보고, 없을 때만 번역기를 부르고 그 결과를 넣는 번역기.
+    static func cachedTranslator(
+        _ cache: TranslationCache,
+        direction: TranslationDirection,
+        translate: @escaping (String) async throws -> String
+    ) -> (String) async throws -> String {
+        let source = direction.sourceIdentifier
+        let target = direction.targetIdentifier
+        return { text in
+            if let hit = cache.translation(of: text, from: source, to: target) { return hit }
+            let translated = try await translate(text)
+            cache.store(translated, of: text, from: source, to: target)
+            return translated
+        }
+    }
+
+    /// 조각을 차례로 번역해 칸(`slots`)마다 이어 붙인다. 번역기를 받아 쓰므로 Apple 번역
+    /// 없이도 시험할 수 있다.
+    ///
+    /// 차례로 한다. Sogon이 같은 실행 안에서 네 방식을 견줘 봤을 때 병렬이 일관되게
+    /// 빠르지 않았고(노이즈와 가를 수 없었다), 단순한 쪽이 취소와 진행 보고가 쉽다.
+    static func translateJobs(
+        _ jobs: [(unit: Int, chunk: String)],
+        slots: Int,
+        translate: (String) async throws -> String,
+        progress: (@Sendable (Progress) -> Void)?
+    ) async throws -> [String] {
         let totalCharacters = jobs.reduce(0) { $0 + $1.chunk.count }
         var state = Progress(completedSegments: 0, totalSegments: jobs.count,
                              completedCharacters: 0, totalCharacters: totalCharacters)
         progress?(state)
 
-        var perUnit = [String](repeating: "", count: units.count + extras.count)
-
-        // 차례로 한다. Sogon이 같은 실행 안에서 네 방식을 견줘 봤을 때 병렬이 일관되게
-        // 빠르지 않았고(노이즈와 가를 수 없었다), 단순한 쪽이 취소와 진행 보고가 쉽다.
+        var perSlot = [String](repeating: "", count: slots)
         for job in jobs {
             try Task.checkCancellation()
-            do {
-                perUnit[job.unit] += try await session.translate(job.chunk).targetText
-            } catch {
-                if error is CancellationError || Task.isCancelled { throw CancellationError() }
-                throw map(error, direction: direction)
-            }
+            perSlot[job.unit] += try await translate(job.chunk)
             state.completedSegments += 1
             state.completedCharacters += job.chunk.count
             progress?(state)
         }
-        let translatedExtras = Array(perUnit[units.count...])
-        perUnit.removeLast(extras.count)
-
-        // 칸 구조를 지키지 못한 표 행은 그 행만 칸마다 다시 번역한다(`keepsStructure`).
-        // 문맥을 잃는 대신 표가 깨지지 않는다.
-        let replacing = try await structureRepairs(plan: plan, translations: perUnit) { text in
-            try Task.checkCancellation()
-            do {
-                return try await session.translate(text).targetText
-            } catch {
-                if error is CancellationError || Task.isCancelled { throw CancellationError() }
-                throw map(error, direction: direction)
-            }
-        }
-
-        return (try plan.assembled(with: perUnit, replacing: replacing), direction, translatedExtras)
+        return perSlot
     }
 
     /// 칸 구조를 지키지 못한 표 행을 칸마다 다시 번역한 결과(단위 번호 → 복원된 행).
