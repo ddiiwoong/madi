@@ -1,0 +1,2 @@
+/* Finder·Dock·메뉴 막대에 보이는 앱 이름. 번들 이름(Madi)과 같은 이름의 로마자 표기다. */
+"CFBundleDisplayName" = "Madi";

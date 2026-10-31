@@ -8,7 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillFinishLaunching(_ notification: Notification) {
         // 앱에 든 글꼴은 **창을 만들기 전에** 등록한다 — 먼저 만든 창은 시스템 글꼴로 그린다.
         for failure in BundledFonts.register() {
-            AppLog.warning("앱에 든 글꼴을 등록하지 못했습니다 — 시스템 글꼴로 그립니다",
+            AppLog.warning(String(localized: "앱에 든 글꼴을 등록하지 못했습니다 — 시스템 글꼴로 그립니다"),
                            detail: "\(failure.file): \(failure.reason)")
         }
         NSApp.mainMenu = AppMenu.mainMenu()

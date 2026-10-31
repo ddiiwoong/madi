@@ -14,7 +14,7 @@ final class FileBrowserPanelView: NSView {
 
     private let outlineView = NSOutlineView()
     private let scrollView = NSScrollView()
-    private let pathButton = NSButton(title: "폴더 선택…", target: nil, action: nil)
+    private let pathButton = NSButton(title: String(localized: "폴더 선택…"), target: nil, action: nil)
     private var rootURL: URL?
     private var children: [URL: [URL]] = [:]
 
@@ -89,7 +89,7 @@ final class FileBrowserPanelView: NSView {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
-        panel.prompt = "선택"
+        panel.prompt = String(localized: "선택")
         guard panel.runModal() == .OK, let url = panel.url else { return }
         setRoot(url)
     }

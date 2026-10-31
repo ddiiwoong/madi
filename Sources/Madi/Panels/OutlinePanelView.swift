@@ -13,7 +13,7 @@ final class OutlinePanelView: NSView {
 
     private let tableView = NSTableView()
     private let scrollView = NSScrollView()
-    private let emptyLabel = NSTextField(labelWithString: "제목이 없습니다")
+    private let emptyLabel = NSTextField(labelWithString: String(localized: "제목이 없습니다"))
     private var entries: [OutlineEntry] = []
 
     override init(frame frameRect: NSRect) {

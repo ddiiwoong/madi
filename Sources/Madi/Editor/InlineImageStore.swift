@@ -74,7 +74,7 @@ final class InlineImageStore {
         guard attributes != nil, let image = NSImage(contentsOf: url), image.size.width > 0 else {
             if !reported.contains(url.path) {
                 reported.insert(url.path)
-                AppLog.warning("그림을 읽지 못했습니다", detail: url.path)
+                AppLog.warning(String(localized: "그림을 읽지 못했습니다"), detail: url.path)
             }
             return nil
         }
@@ -95,7 +95,7 @@ final class InlineImageStore {
         guard !remoteFailed.contains(key), !inFlight.contains(key) else { return nil }
         guard url.scheme?.lowercased() == "https" else {
             remoteFailed.insert(key)
-            AppLog.warning("https가 아닌 원격 그림은 받지 않습니다", detail: key)
+            AppLog.warning(String(localized: "https가 아닌 원격 그림은 받지 않습니다"), detail: key)
             return nil
         }
 
@@ -109,13 +109,13 @@ final class InlineImageStore {
                       data.count <= Self.maxRemoteBytes,
                       let image = NSImage(data: data), image.size.width > 0 else {
                     self.remoteFailed.insert(key)
-                    AppLog.warning("원격 그림을 받지 못했습니다",
+                    AppLog.warning(String(localized: "원격 그림을 받지 못했습니다"),
                                    detail: "\(key) — \(error?.localizedDescription ?? "HTTP \(code)")")
                     return
                 }
                 if self.remoteCache.count >= self.capacity { self.remoteCache.removeAll() }
                 self.remoteCache[key] = image
-                AppLog.info("원격 그림을 받았습니다", detail: "\(key) — \(data.count)바이트")
+                AppLog.info(String(localized: "원격 그림을 받았습니다"), detail: String(localized: "\(key) — \(data.count)바이트"))
                 self.onRemoteImageLoaded?()
             }
         }

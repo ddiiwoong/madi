@@ -96,7 +96,7 @@ final class FrontMatterCardView: NSView {
             return
         }
         isHidden = false
-        summary.stringValue = "문서 메타데이터 · \(frontMatter.fields.count)개 항목"
+        summary.stringValue = String(localized: "문서 메타데이터 · \(frontMatter.fields.count)개 항목")
 
         for field in frontMatter.fields {
             grid.addView(row(for: field), in: .top)

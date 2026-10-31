@@ -8,10 +8,10 @@ import AppKit
 @MainActor
 final class TranslationProgressSheet: NSViewController {
 
-    private let titleLabel = NSTextField(labelWithString: "번역 중…")
+    private let titleLabel = NSTextField(labelWithString: String(localized: "번역 중…"))
     private let detailLabel = NSTextField(labelWithString: "")
     private let bar = NSProgressIndicator()
-    private let cancelButton = NSButton(title: "취소", target: nil, action: nil)
+    private let cancelButton = NSButton(title: String(localized: "취소"), target: nil, action: nil)
     private let startedAt = Date()
 
     /// 취소를 눌렀을 때 호출된다. 시트를 닫는 것은 호출자의 몫이다.
@@ -61,17 +61,17 @@ final class TranslationProgressSheet: NSViewController {
     }
 
     func update(direction: TranslationDirection?, fraction: Double, completed: Int, total: Int) {
-        if let direction { titleLabel.stringValue = "번역 중… (\(direction.label))" }
+        if let direction { titleLabel.stringValue = String(localized: "번역 중… (\(direction.label))") }
         bar.doubleValue = fraction
         let elapsed = Int(Date().timeIntervalSince(startedAt))
-        let time = elapsed < 60 ? "\(elapsed)초" : "\(elapsed / 60)분 \(elapsed % 60)초"
-        detailLabel.stringValue = "\(completed)/\(total) 조각 · \(Int(fraction * 100))% · \(time) 경과"
+        let time = elapsed < 60 ? String(localized: "\(elapsed)초") : String(localized: "\(elapsed / 60)분 \(elapsed % 60)초")
+        detailLabel.stringValue = String(localized: "\(completed)/\(total) 조각 · \(Int(fraction * 100))% · \(time) 경과")
     }
 
     /// 취소를 누른 뒤에는 버튼을 막는다 — 두 번 눌러 같은 작업을 두 번 취소하지 않게.
     @objc private func cancelPressed() {
         cancelButton.isEnabled = false
-        titleLabel.stringValue = "취소 중…"
+        titleLabel.stringValue = String(localized: "취소 중…")
         onCancel?()
     }
 }

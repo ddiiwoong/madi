@@ -35,8 +35,8 @@ final class BlockEditorWindowController: NSWindowController {
             contentRect: NSRect(x: 0, y: 0, width: 760, height: 640),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false)
-        window.title = "블록 편집기 — \(title)"
-        window.subtitle = "설계 단계 1 · 표는 아직 글입니다"
+        window.title = String(localized: "블록 편집기 — \(title)")
+        window.subtitle = String(localized: "설계 단계 1 · 표는 아직 글입니다")
         window.setFrameAutosaveName("MdBlockEditorWindow")
         super.init(window: window)
 
@@ -87,7 +87,7 @@ final class BlockEditorWindowController: NSWindowController {
             .sorted { $0.key < $1.key }
             .map { "\($0.key) \($0.value)" }
             .joined(separator: " · ")
-        footer.stringValue = "블록 \(container.blockCount)개 · 뷰 \(container.liveViewCount)개"
+        footer.stringValue = String(localized: "블록 \(container.blockCount)개 · 뷰 \(container.liveViewCount)개")
             + (kinds.isEmpty ? "" : " · \(kinds)")
     }
 }

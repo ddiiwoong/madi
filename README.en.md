@@ -32,8 +32,9 @@ How to build, test and contribute: [docs/building.md](docs/building.md) (Korean)
 > (`CODE_SIGN_IDENTITY=-`), so it runs only on the Mac that built it. Running it on another Mac
 > needs Developer ID signing and notarization.
 
-> **The app's interface is Korean only.** There is no localization yet; the documents under
-> `docs/` are Korean too.
+> **The interface is in English and Korean.** Madi follows the system language; you can also
+> pick one in Settings ▸ General ▸ Language (it applies the next time you open Madi). The
+> documents under `docs/` are Korean only.
 
 ## Why another one
 
@@ -85,7 +86,8 @@ Stated plainly. The background and plans are in [TODO.md](TODO.md) (Korean).
   written up in the [block editor design](docs/block-editor-design.md).
 - **No Mermaid diagrams and no KaTeX math.** The native route is expensive, and whether to use
   a hidden web view is waiting on a decision.
-- **The interface is Korean only.** There is no localization yet.
+- **The interface comes in English and Korean only.** On a system whose language list has
+  neither, Madi opens in Korean; choose English in Settings ▸ General ▸ Language.
 - **Images in the middle of a line stay as source.** Only an image that has a line to itself
   is shown.
 - **Remote images are not fetched by default.** Opening a document should not send requests

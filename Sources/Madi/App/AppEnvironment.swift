@@ -37,11 +37,11 @@ enum FileAssociation {
     /// 사람이 읽을 상태 한 줄. Mark이 하는 방식을 따랐다 — 상태를 문장으로 말하고
     /// 버튼 하나로 바꾼다.
     static var statusLine: String {
-        if isMadiDefault { return "Markdown 파일은 현재 마디에서 열립니다." }
+        if isMadiDefault { return String(localized: "Markdown 파일은 현재 마디에서 열립니다.") }
         if let name = currentHandlerName {
-            return "Markdown 파일은 현재 ‘\(name)’에서 열립니다."
+            return String(localized: "Markdown 파일은 현재 ‘\(name)’에서 열립니다.")
         }
-        return "Markdown 파일을 여는 기본 앱이 정해져 있지 않습니다."
+        return String(localized: "Markdown 파일을 여는 기본 앱이 정해져 있지 않습니다.")
     }
 
     /// 마디를 기본 앱으로 등록한다.
@@ -51,7 +51,7 @@ enum FileAssociation {
     static func makeMadiDefault(completion: @escaping @MainActor (Error?) -> Void) {
         guard let type = markdownType else {
             completion(NSError(domain: "Madi", code: 1, userInfo: [
-                NSLocalizedDescriptionKey: "이 기계에서 Markdown 파일 타입을 찾지 못했습니다.",
+                NSLocalizedDescriptionKey: String(localized: "이 기계에서 Markdown 파일 타입을 찾지 못했습니다."),
             ]))
             return
         }

@@ -43,7 +43,7 @@ public enum BundledFonts {
         var failures: [(file: String, reason: String)] = []
         for file in fontFiles {
             guard let url = url(of: file, in: directory) else {
-                failures.append((file, "파일이 없습니다"))
+                failures.append((file, String(localized: "파일이 없습니다")))
                 continue
             }
             var error: Unmanaged<CFError>?
@@ -53,7 +53,7 @@ public enum BundledFonts {
             if let cfError, CFErrorGetCode(cfError) == CTFontManagerError.alreadyRegistered.rawValue {
                 continue
             }
-            failures.append((file, cfError.map { CFErrorCopyDescription($0) as String } ?? "알 수 없는 오류"))
+            failures.append((file, cfError.map { CFErrorCopyDescription($0) as String } ?? String(localized: "알 수 없는 오류")))
         }
         // 등록 전에 이 이름을 찾아 '없음'으로 기억해 둔 것이 있으면 버린다.
         MarkdownTheme.forgetResolvedFonts()

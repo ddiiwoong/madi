@@ -80,9 +80,9 @@ final class DocumentWindowController: NSWindowController {
         recentPanel.delegate = self
 
         for (identifier, label, view) in [
-            ("outline", "목차", outlinePanel as NSView),
-            ("browser", "폴더", browserPanel as NSView),
-            ("recent", "최근", recentPanel as NSView),
+            ("outline", String(localized: "목차"), outlinePanel as NSView),
+            ("browser", String(localized: "폴더"), browserPanel as NSView),
+            ("recent", String(localized: "최근"), recentPanel as NSView),
         ] {
             let tab = NSTabViewItem(identifier: identifier)
             tab.label = label
@@ -171,7 +171,7 @@ final class DocumentWindowController: NSWindowController {
         matchLabel.textColor = .secondaryLabelColor
         matchLabel.alignment = .right
 
-        searchField.placeholderString = "문서 내 검색"
+        searchField.placeholderString = String(localized: "문서 내 검색")
         searchField.sendsWholeSearchString = false
         searchField.sendsSearchStringImmediately = false
         searchField.delegate = self
@@ -218,12 +218,12 @@ final class DocumentWindowController: NSWindowController {
         refreshOutline()
         browserPanel.show(folderOf: markdownDocument?.fileURL)
         recentPanel.reload()
-        window?.title = markdownDocument?.displayName ?? "제목 없음"
+        window?.title = markdownDocument?.displayName ?? String(localized: "제목 없음")
         // 원문이 디스크에서 다시 읽혔을 때(다른 앱이 고침, 되돌리기)도 띠를 맞춘다 — 이 길은
         // 편집기 위임을 지나지 않는다.
         if let session = sideBySide, session.source === self { session.sourceTextDidChange() }
-        AppLog.info("문서를 열었습니다: \(markdownDocument?.displayName ?? "제목 없음")",
-                    detail: "\(markdown.count)자")
+        AppLog.info(String(localized: "문서를 열었습니다: \(markdownDocument?.displayName ?? String(localized: "제목 없음"))"),
+                    detail: String(localized: "\(markdown.count)자"))
     }
 
     func documentContentDidChange() {
@@ -299,7 +299,7 @@ final class DocumentWindowController: NSWindowController {
     /// 지금 보기를 모든 표면에 싣는다.
     private func syncCodeViewState() {
         let isOn = editor.isCodeView
-        window?.subtitle = isOn ? "원본 보기" : ""
+        window?.subtitle = isOn ? String(localized: "원본 보기") : ""
         codeViewButton?.state = isOn ? .on : .off
         codeViewButton?.toolTip = Self.codeViewTip(isOn: isOn)
         if let main = NSApp.mainMenu { Self.markCodeView(in: main, isOn: isOn) }
@@ -328,7 +328,7 @@ final class DocumentWindowController: NSWindowController {
     /// 도움말은 **누르면 무엇이 되는지**를 말한다. 지금 상태를 말하면 사용자가
     /// 누를지 말지를 그 문장에서 알 수 없다.
     private static func codeViewTip(isOn: Bool) -> String {
-        isOn ? "마크다운 문법으로 보기 (⌘E)" : "마크다운 원본 보기 (⌘E)"
+        isOn ? String(localized: "마크다운 문법으로 보기 (⌘E)") : String(localized: "마크다운 원본 보기 (⌘E)")
     }
 
     @objc func showBurgerAction(_ sender: Any?) {
@@ -377,7 +377,7 @@ final class DocumentWindowController: NSWindowController {
 
     @objc func printDocumentAction(_ sender: Any?) {
         let operation = NSPrintOperation(view: editor.printableView, printInfo: printInfo(forPDF: nil))
-        operation.jobTitle = markdownDocument?.displayName ?? "문서"
+        operation.jobTitle = markdownDocument?.displayName ?? String(localized: "문서")
         operation.runModal(for: window!, delegate: nil, didRun: nil, contextInfo: nil)
     }
 
@@ -387,24 +387,24 @@ final class DocumentWindowController: NSWindowController {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.pdf]
         panel.nameFieldStringValue = (markdownDocument?.displayName as NSString?)?
-            .deletingPathExtension.appending(".pdf") ?? "문서.pdf"
+            .deletingPathExtension.appending(".pdf") ?? String(localized: "문서.pdf")
         panel.canCreateDirectories = true
-        panel.prompt = "내보내기"
+        panel.prompt = String(localized: "내보내기")
 
         panel.beginSheetModal(for: window!) { [weak self] response in
             guard let self, response == .OK, let url = panel.url else { return }
             let operation = NSPrintOperation(view: self.editor.printableView,
                                              printInfo: self.printInfo(forPDF: url))
-            operation.jobTitle = self.markdownDocument?.displayName ?? "문서"
+            operation.jobTitle = self.markdownDocument?.displayName ?? String(localized: "문서")
             operation.showsPrintPanel = false
             operation.showsProgressPanel = true
             if operation.run() {
-                AppLog.info("PDF로 내보냈습니다", detail: url.path)
+                AppLog.info(String(localized: "PDF로 내보냈습니다"), detail: url.path)
                 NSWorkspace.shared.activateFileViewerSelecting([url])
             } else {
-                AppLog.error("PDF 내보내기에 실패했습니다", detail: url.path)
+                AppLog.error(String(localized: "PDF 내보내기에 실패했습니다"), detail: url.path)
                 let alert = NSAlert()
-                alert.messageText = "PDF 내보내기에 실패했습니다"
+                alert.messageText = String(localized: "PDF 내보내기에 실패했습니다")
                 alert.informativeText = url.path
                 alert.runModal()
             }
@@ -440,11 +440,11 @@ final class DocumentWindowController: NSWindowController {
     private func translate(direction requested: TranslationDirection?,
                            destination: TranslationDestination = .automatic) {
         guard #available(macOS 26.0, *) else {
-            report("Apple 번역은 macOS 26 이상에서만 됩니다.")
+            report(String(localized: "Apple 번역은 macOS 26 이상에서만 됩니다."))
             return
         }
         guard translationTask == nil else {
-            report("번역이 이미 진행 중입니다.")
+            report(String(localized: "번역이 이미 진행 중입니다."))
             return
         }
 
@@ -454,7 +454,7 @@ final class DocumentWindowController: NSWindowController {
             ? (editor.markdown as NSString).substring(with: selection)
             : editor.markdown
         guard !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            report("번역할 글이 없습니다.")
+            report(String(localized: "번역할 글이 없습니다."))
             return
         }
         // 문서 전체를 새 문서로 옮길 때는 front matter의 `title`·`description`도 함께 옮긴다.
@@ -514,7 +514,7 @@ final class DocumentWindowController: NSWindowController {
                 switch destination {
                 case .automatic where inPlace:
                     self.replaceSelection(selection, with: result.text)
-                    self.report("번역했습니다 (\(result.direction.label))")
+                    self.report(String(localized: "번역했습니다 (\(result.direction.label))"))
                 case .automatic:
                     self.openTranslatedCopy(composed: composed, direction: result.direction)
                 case .sideBySide:
@@ -538,11 +538,11 @@ final class DocumentWindowController: NSWindowController {
     /// 채우면 빈 목록이 한순간 보인다(진행 시트에서 겪은 것과 같은 종류의 깜빡임이다).
     @objc func chooseTranslationLanguageAction(_ sender: Any?) {
         guard #available(macOS 26.0, *) else {
-            report("Apple 번역은 macOS 26 이상에서만 됩니다.")
+            report(String(localized: "Apple 번역은 macOS 26 이상에서만 됩니다."))
             return
         }
         guard translationTask == nil else {
-            report("번역이 이미 진행 중입니다.")
+            report(String(localized: "번역이 이미 진행 중입니다."))
             return
         }
         let detected = TranslationDirection.resolve(
@@ -552,7 +552,7 @@ final class DocumentWindowController: NSWindowController {
             let languages = await AppleTranslator.supportedLanguagesWithKorean()
             guard let self else { return }
             guard !languages.isEmpty else {
-                self.report("이 Mac에서 한국어와 번역할 수 있는 언어를 찾지 못했습니다.")
+                self.report(String(localized: "이 Mac에서 한국어와 번역할 수 있는 언어를 찾지 못했습니다."))
                 return
             }
             let sheet = TranslationLanguageSheet(
@@ -602,7 +602,7 @@ final class DocumentWindowController: NSWindowController {
         let controller = NSDocumentController.shared
         do {
             guard let document = try controller.openUntitledDocumentAndDisplay(true) as? MarkdownDocument else {
-                report("번역 결과를 새 문서로 열지 못했습니다.")
+                report(String(localized: "번역 결과를 새 문서로 열지 못했습니다."))
                 return
             }
             document.markdown = composed
@@ -615,7 +615,7 @@ final class DocumentWindowController: NSWindowController {
                 document.displayName = suggested
             }
             (document.windowControllers.first as? DocumentWindowController)?.load(markdown: composed)
-            report("번역본을 새 문서로 열었습니다 (\(direction.label))")
+            report(String(localized: "번역본을 새 문서로 열었습니다 (\(direction.label))"))
         } catch {
             NSApp.presentError(error)
         }
@@ -647,7 +647,7 @@ final class DocumentWindowController: NSWindowController {
             guard let made = try controller.makeUntitledDocument(
                 ofType: controller.defaultType ?? "net.daringfireball.markdown") as? MarkdownDocument
             else {
-                report("번역본 창을 열지 못했습니다.")
+                report(String(localized: "번역본 창을 열지 못했습니다."))
                 return
             }
             document = made
@@ -665,7 +665,7 @@ final class DocumentWindowController: NSWindowController {
         guard let other = document.windowControllers.first as? DocumentWindowController,
               let otherWindow = other.window else {
             document.showWindows()
-            report("번역본을 열었지만 나란히 놓지 못했습니다.")
+            report(String(localized: "번역본을 열었지만 나란히 놓지 못했습니다."))
             return
         }
         otherWindow.tabbingMode = .disallowed
@@ -691,8 +691,8 @@ final class DocumentWindowController: NSWindowController {
             // 두 창을 처음부터 같은 자리에 둔다 — 원문 창에서 보던 곳을 번역본도 보여 준다.
             session.link.follow(self.editor)
             self.report(tiled
-                        ? "번역본을 옆에 열었습니다 (\(direction.label))"
-                        : "번역본을 열었습니다 (\(direction.label)) — 전체 화면에서는 옆에 붙이지 않습니다")
+                        ? String(localized: "번역본을 옆에 열었습니다 (\(direction.label))")
+                        : String(localized: "번역본을 열었습니다 (\(direction.label)) — 전체 화면에서는 옆에 붙이지 않습니다"))
         }
     }
 
@@ -706,10 +706,10 @@ final class DocumentWindowController: NSWindowController {
         // 고친 번역본을 말없이 덮지 않는다.
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "번역본에서 고친 내용이 사라집니다"
-        alert.informativeText = "다시 번역하면 번역본 전체를 새 번역으로 바꿉니다. 바꾼 뒤에도 ⌘Z로 되돌릴 수 있습니다."
-        alert.addButton(withTitle: "다시 번역")
-        alert.addButton(withTitle: "취소")
+        alert.messageText = String(localized: "번역본에서 고친 내용이 사라집니다")
+        alert.informativeText = String(localized: "다시 번역하면 번역본 전체를 새 번역으로 바꿉니다. 바꾼 뒤에도 ⌘Z로 되돌릴 수 있습니다.")
+        alert.addButton(withTitle: String(localized: "다시 번역"))
+        alert.addButton(withTitle: String(localized: "취소"))
         alert.beginSheetModal(for: window) { [weak source, weak session] response in
             guard response == .alertFirstButtonReturn, let source, let session else { return }
             source.translate(direction: session.direction, destination: .refresh)
@@ -730,7 +730,7 @@ final class DocumentWindowController: NSWindowController {
         translation.replaceBody(with: text)
         session.didRetranslate(direction: direction, sourceBody: sourceBody,
                                translatedBody: translation.editor.markdown)
-        report("다시 번역했습니다 (\(direction.label))")
+        report(String(localized: "다시 번역했습니다 (\(direction.label))"))
     }
 
     /// 본문 전체를 바꾼다. 텍스트 뷰를 지나므로 ⌘Z로 되돌릴 수 있다.
@@ -763,14 +763,14 @@ final class DocumentWindowController: NSWindowController {
     }
 
     private static func sideBySideTip(isOn: Bool) -> String {
-        isOn ? "나란히 보기 끝내기 — 번역본 창을 닫습니다 (⌃⌘T)"
-             : "원문·번역 나란히 보기 (⌃⌘T)"
+        isOn ? String(localized: "나란히 보기 끝내기 — 번역본 창을 닫습니다 (⌃⌘T)")
+             : String(localized: "원문·번역 나란히 보기 (⌃⌘T)")
     }
 
     private func presentTranslationFailure(_ error: Error) {
         // 실패는 **두 곳에** 남는다. 경고창은 지금 알리기 위한 것이고, 기록은 나중에
         // 다시 볼 수 있게 하기 위한 것이다. 경고창만 띄우면 닫는 순간 사라진다.
-        AppLog.error("번역하지 못했습니다", detail: error.localizedDescription)
+        AppLog.error(String(localized: "번역하지 못했습니다"), detail: error.localizedDescription)
 
         let alert = NSAlert()
         // 무엇이 잘못됐는지와 **무엇을 해야 하는지**를 가른다. 경고창이 둘을 다른
@@ -779,7 +779,7 @@ final class DocumentWindowController: NSWindowController {
         // `AppleTranslator`가 macOS 26 전용이라 그 아래에서는 분해할 수 없다 —
         // 그때는 받은 오류 문구를 그대로 보인다(그 경로는 "macOS 26 이상에서만
         // 됩니다"를 먼저 띄우므로 여기까지 오지 않는다).
-        var cause = "번역하지 못했습니다"
+        var cause = String(localized: "번역하지 못했습니다")
         var recovery = error.localizedDescription
         var offersSettings = false
         var isInformational = false
@@ -798,8 +798,8 @@ final class DocumentWindowController: NSWindowController {
             alert.runModal()
             return
         }
-        alert.addButton(withTitle: "언어 설정 열기")
-        alert.addButton(withTitle: "닫기")
+        alert.addButton(withTitle: String(localized: "언어 설정 열기"))
+        alert.addButton(withTitle: String(localized: "닫기"))
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         // '언어 및 지역' 화면. 이 식별자는 이 Mac의
         // `/System/Library/ExtensionKit/Extensions/Localization.appex`와 같은 값이다.
@@ -808,8 +808,8 @@ final class DocumentWindowController: NSWindowController {
         if !NSWorkspace.shared.open(url) {
             // 열지 못하면 길을 글로 남긴다 — 버튼을 눌렀는데 아무 일도 없는 것이
             // 가장 나쁘다.
-            AppLog.warning("언어 설정을 열지 못했습니다",
-                           detail: "시스템 설정 ▸ 일반 ▸ 언어 및 지역 ▸ 번역 언어")
+            AppLog.warning(String(localized: "언어 설정을 열지 못했습니다"),
+                           detail: String(localized: "시스템 설정 ▸ 일반 ▸ 언어 및 지역 ▸ 번역 언어"))
         }
     }
 
@@ -833,10 +833,10 @@ final class DocumentWindowController: NSWindowController {
     @objc func exportWithImagesAction(_ sender: Any?) {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.init(filenameExtension: "md") ?? .plainText]
-        let base = (markdownDocument?.displayName as NSString?)?.deletingPathExtension ?? "문서"
-        panel.nameFieldStringValue = "\(base)-이미지포함.md"
+        let base = (markdownDocument?.displayName as NSString?)?.deletingPathExtension ?? String(localized: "문서")
+        panel.nameFieldStringValue = String(localized: "\(base)-이미지포함.md")
         panel.canCreateDirectories = true
-        panel.prompt = "내보내기"
+        panel.prompt = String(localized: "내보내기")
 
         let source = composedMarkdown()
         let documentURL = markdownDocument?.fileURL
@@ -850,10 +850,10 @@ final class DocumentWindowController: NSWindowController {
             do {
                 try outcome.markdown.write(to: url, atomically: true, encoding: .utf8)
             } catch {
-                AppLog.error("이미지 포함 내보내기에 실패했습니다",
+                AppLog.error(String(localized: "이미지 포함 내보내기에 실패했습니다"),
                              detail: "\(url.path) — \(error.localizedDescription)")
                 let alert = NSAlert()
-                alert.messageText = "이미지 포함 내보내기에 실패했습니다"
+                alert.messageText = String(localized: "이미지 포함 내보내기에 실패했습니다")
                 alert.informativeText = error.localizedDescription
                 alert.runModal()
                 return
@@ -862,14 +862,14 @@ final class DocumentWindowController: NSWindowController {
             // 건너뛴 것을 **하나하나** 기록에 남긴다. 숫자만 알려 주면 어느 그림이
             // 왜 빠졌는지 알 수 없어 사용자가 파일을 하나씩 열어 봐야 한다.
             for skip in outcome.skipped {
-                AppLog.warning("그림을 포함하지 못했습니다: \(skip.reason.message)",
+                AppLog.warning(String(localized: "그림을 포함하지 못했습니다: \(skip.reason.message)"),
                                detail: skip.path)
             }
-            AppLog.info("이미지 포함으로 내보냈습니다",
-                        detail: "그림 \(outcome.embedded)개 포함, \(outcome.skipped.count)개 건너뜀 · \(url.path)")
+            AppLog.info(String(localized: "이미지 포함으로 내보냈습니다"),
+                        detail: String(localized: "그림 \(outcome.embedded)개 포함, \(outcome.skipped.count)개 건너뜀 · \(url.path)"))
             self.report(outcome.skipped.isEmpty
-                        ? "그림 \(outcome.embedded)개를 포함해 내보냈습니다"
-                        : "그림 \(outcome.embedded)개 포함, \(outcome.skipped.count)개 건너뜀 (기록 참조)")
+                        ? String(localized: "그림 \(outcome.embedded)개를 포함해 내보냈습니다")
+                        : String(localized: "그림 \(outcome.embedded)개 포함, \(outcome.skipped.count)개 건너뜀 (기록 참조)"))
             NSWorkspace.shared.activateFileViewerSelecting([url])
         }
     }
@@ -908,7 +908,7 @@ final class DocumentWindowController: NSWindowController {
             body: editor.markdown,
             documentURL: markdownDocument?.fileURL,
             preferences: preferences.current,
-            title: markdownDocument?.displayName ?? "무제")
+            title: markdownDocument?.displayName ?? String(localized: "무제"))
         controller.onBodyChange = { [weak self] body in
             guard let self else { return }
             self.editor.markdown = body
@@ -922,8 +922,8 @@ final class DocumentWindowController: NSWindowController {
         blockEditorWindow = controller
         controller.showWindow(nil)
         controller.window?.makeKeyAndOrderFront(nil)
-        AppLog.shared.append(.info, "블록 편집기를 열었습니다",
-                             detail: "설계 단계 1 · 표는 아직 글입니다")
+        AppLog.shared.append(.info, String(localized: "블록 편집기를 열었습니다"),
+                             detail: String(localized: "설계 단계 1 · 표는 아직 글입니다"))
     }
 
     @objc func showActivityLog(_ sender: Any?) {        if logPanel == nil {
@@ -956,7 +956,7 @@ final class DocumentWindowController: NSWindowController {
         if DocumentSearch.normalize(query).isEmpty {
             matchLabel.stringValue = ""
         } else if count == 0 {
-            matchLabel.stringValue = "일치 없음"
+            matchLabel.stringValue = String(localized: "일치 없음")
         } else {
             matchLabel.stringValue = "\((editor.currentSearchMatch ?? 0) + 1) / \(count)"
         }
@@ -993,28 +993,28 @@ extension DocumentWindowController: NSToolbarDelegate {
             item.searchField = searchField
             item.resignsFirstResponderWithCancel = true
             item.preferredWidthForSearchField = 220
-            item.label = "검색"
-            item.toolTip = "문서 내 검색 (⌘F)"
+            item.label = String(localized: "검색")
+            item.toolTip = String(localized: "문서 내 검색 (⌘F)")
             return item
 
         case ItemID.matches:
             let item = NSToolbarItem(itemIdentifier: identifier)
             item.view = matchLabel
-            item.label = "일치"
+            item.label = String(localized: "일치")
             item.visibilityPriority = .low
             return item
 
         case ItemID.outline:
             return toggle(identifier, tab: .outline, symbol: "list.bullet.indent",
-                          label: "목차", tip: "목차 (⌘⇧O)", action: #selector(showOutlineAction(_:)))
+                          label: String(localized: "목차"), tip: String(localized: "목차 (⌘⇧O)"), action: #selector(showOutlineAction(_:)))
 
         case ItemID.recent:
             return toggle(identifier, tab: .recent, symbol: "clock.arrow.circlepath",
-                          label: "최근 문서", tip: "최근 문서 (⌘⇧R)", action: #selector(showRecentAction(_:)))
+                          label: String(localized: "최근 문서"), tip: String(localized: "최근 문서 (⌘⇧R)"), action: #selector(showRecentAction(_:)))
 
         case ItemID.browser:
             return toggle(identifier, tab: .browser, symbol: "sidebar.left",
-                          label: "파일 브라우저", tip: "파일 브라우저 (⌘⇧F)",
+                          label: String(localized: "파일 브라우저"), tip: String(localized: "파일 브라우저 (⌘⇧F)"),
                           action: #selector(showBrowserAction(_:)))
 
         case ItemID.codeView:
@@ -1023,13 +1023,13 @@ extension DocumentWindowController: NSToolbarDelegate {
             // 알 수 있었다.
             let item = NSToolbarItem(itemIdentifier: identifier)
             let control = button(symbol: "chevron.left.forwardslash.chevron.right",
-                                 label: "원본 보기", tip: Self.codeViewTip(isOn: false),
+                                 label: String(localized: "원본 보기"), tip: Self.codeViewTip(isOn: false),
                                  action: #selector(toggleCodeViewAction(_:)))
             control.setButtonType(.pushOnPushOff)
             control.state = editor.isCodeView ? .on : .off
             item.view = control
-            item.label = "원본 보기"
-            item.paletteLabel = "원본 보기"
+            item.label = String(localized: "원본 보기")
+            item.paletteLabel = String(localized: "원본 보기")
             item.toolTip = Self.codeViewTip(isOn: editor.isCodeView)
             codeViewButton = control
             return item
@@ -1039,24 +1039,24 @@ extension DocumentWindowController: NSToolbarDelegate {
             // 있다"이고, 원문 창과 번역본 창 양쪽에서 같이 눌려 있다.
             let item = NSToolbarItem(itemIdentifier: identifier)
             let control = button(symbol: "rectangle.split.2x1",
-                                 label: "나란히 보기", tip: Self.sideBySideTip(isOn: false),
+                                 label: String(localized: "나란히 보기"), tip: Self.sideBySideTip(isOn: false),
                                  action: #selector(toggleSideBySideAction(_:)))
             control.setButtonType(.pushOnPushOff)
             control.state = sideBySide != nil ? .on : .off
             item.view = control
-            item.label = "나란히 보기"
-            item.paletteLabel = "원문·번역 나란히 보기"
+            item.label = String(localized: "나란히 보기")
+            item.paletteLabel = String(localized: "원문·번역 나란히 보기")
             item.toolTip = Self.sideBySideTip(isOn: sideBySide != nil)
             sideBySideButton = control
             return item
 
         case ItemID.open:
-            return push(identifier, symbol: "folder", label: "문서 열기",
-                        tip: "문서 열기 (⌘O)", action: #selector(openDocumentAction(_:)))
+            return push(identifier, symbol: "folder", label: String(localized: "문서 열기"),
+                        tip: String(localized: "문서 열기 (⌘O)"), action: #selector(openDocumentAction(_:)))
 
         case ItemID.burger:
-            return push(identifier, symbol: "line.3.horizontal", label: "더 많은 작업",
-                        tip: "더 많은 작업", action: #selector(showBurgerAction(_:)))
+            return push(identifier, symbol: "line.3.horizontal", label: String(localized: "더 많은 작업"),
+                        tip: String(localized: "더 많은 작업"), action: #selector(showBurgerAction(_:)))
 
         default:
             return nil

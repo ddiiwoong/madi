@@ -16,11 +16,12 @@
 
 ```sh
 make build       # 빌드. 로그는 .build/build.log
-make test        # 테스트 520개. 로그는 .build/test.log
+make test        # 테스트 531개. 로그는 .build/test.log
 make run         # 빌드 후 실행
 make core-only   # Core가 Foundation만으로 서는지 (아래 참고)
 make universal   # Release, arm64 + x86_64, lipo로 검사까지
 make public-check  # 공개 전 점검 — 추적 파일과 모든 커밋 이력 (아래 참고)
+make l10n-check    # 영어 표가 소스의 화면 글자와 맞는지 (아래 참고)
 make screenshots   # README 그림을 실제 편집기로 다시 그림 (docs/images/)
 make clean       # .build와 생성된 .xcodeproj 삭제
 make open-log    # 마지막 빌드 로그 꼬리
@@ -37,6 +38,20 @@ make open-log    # 마지막 빌드 로그 꼬리
 저장소에 적으면 그 낱말이 공개되기 때문입니다.
 
 바꾼 뒤 최소한 `make test`와 `make core-only`는 돌려 주십시오. 둘 다 빠릅니다.
+
+### 화면 글자를 더하거나 고칠 때
+
+화면에 보이는 글자는 `String(localized: "한국어 문장")`으로 씁니다. 키가 곧 한국어 글자이고
+(한국어가 개발 언어), 영어는 `Sources/Madi/Resources/en.lproj/Localizable.strings`에 같은 키로
+적습니다. 보간은 그대로 씁니다 — `String(localized: "그림 \(n)개")`의 키는 `"그림 %lld개"`입니다.
+
+키를 손으로 맞추지 말고 `make l10n-check`를 돌리십시오. 컴파일러가 뽑은 키와 표를 맞춰
+**빠진 키**(영어 화면에 한국어가 나온다), **남은 키**(고치기 전 문장의 번역), **형식 지정자가
+어긋난 키**를 줄 번호와 함께 알려 줍니다. 같은 한국어 낱말이 영어로 갈리면
+`String(localized: "lineSpacing.tight", defaultValue: "좁게")`처럼 키를 따로 둡니다.
+
+영어 화면을 직접 보려면 설정 ▸ 일반 ▸ 화면 언어에서 English를 고르고 다시 여십시오.
+한 번만 보려면 `.build/DerivedData/Build/Products/Debug/Madi.app/Contents/MacOS/Madi -AppleLanguages '(en)'`.
 
 ### `make core-only`가 하는 일
 

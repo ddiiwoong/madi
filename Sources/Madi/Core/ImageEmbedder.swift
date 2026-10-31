@@ -22,12 +22,12 @@ public enum ImageEmbedder {
 
         public var message: String {
             switch self {
-            case .remote: return "원격 주소는 포함하지 않습니다"
-            case .alreadyEmbedded: return "이미 포함되어 있습니다"
-            case .unresolved: return "경로를 풀 수 없습니다"
-            case .unreadable: return "읽지 못했습니다"
-            case .unknownType: return "그림 종류를 알 수 없습니다"
-            case .tooLarge: return "너무 커서 건너뛰었습니다"
+            case .remote: return String(localized: "원격 주소는 포함하지 않습니다")
+            case .alreadyEmbedded: return String(localized: "이미 포함되어 있습니다")
+            case .unresolved: return String(localized: "경로를 풀 수 없습니다")
+            case .unreadable: return String(localized: "읽지 못했습니다")
+            case .unknownType: return String(localized: "그림 종류를 알 수 없습니다")
+            case .tooLarge: return String(localized: "너무 커서 건너뛰었습니다")
             }
         }
     }

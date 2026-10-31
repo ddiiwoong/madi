@@ -44,11 +44,11 @@ final class TranslationLanguageSheet: NSViewController {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func loadView() {
-        let heading = NSTextField(labelWithString: "번역 언어")
+        let heading = NSTextField(labelWithString: String(localized: "번역 언어"))
         heading.font = .systemFont(ofSize: 13, weight: .semibold)
 
-        directionPicker.addItem(withTitle: "한국어 → 다른 언어")
-        directionPicker.addItem(withTitle: "다른 언어 → 한국어")
+        directionPicker.addItem(withTitle: String(localized: "한국어 → 다른 언어"))
+        directionPicker.addItem(withTitle: String(localized: "다른 언어 → 한국어"))
         directionPicker.target = self
         directionPicker.action = #selector(flowChanged)
         // 글에서 짐작한 원문이 한국어가 아니면 '가져오기'가 하려던 일이다.
@@ -66,9 +66,9 @@ final class TranslationLanguageSheet: NSViewController {
         note.font = .systemFont(ofSize: 11)
         note.textColor = .secondaryLabelColor
 
-        let translate = NSButton(title: "번역", target: self, action: #selector(translate))
+        let translate = NSButton(title: String(localized: "번역"), target: self, action: #selector(translate))
         translate.keyEquivalent = "\r"
-        let cancel = NSButton(title: "취소", target: self, action: #selector(cancel))
+        let cancel = NSButton(title: String(localized: "취소"), target: self, action: #selector(cancel))
         cancel.keyEquivalent = "\u{1b}"
 
         let buttons = NSStackView(views: [cancel, translate])
@@ -99,7 +99,7 @@ final class TranslationLanguageSheet: NSViewController {
     /// 목록의 항목 글. 받아지지 않은 언어도 **남긴다** — 고를 수 있어야 그 언어의
     /// 안내(받는 길)를 볼 수 있고, 목록에서 아예 빠지면 왜 없는지 알 수 없다.
     private func title(for language: TranslationDirection.Language) -> String {
-        language.isInstalled ? language.name : "\(language.name) (받아야 함)"
+        language.isInstalled ? language.name : String(localized: "\(language.name) (받아야 함)")
     }
 
     private func select(code: String) {
@@ -133,11 +133,11 @@ final class TranslationLanguageSheet: NSViewController {
         }
         let ready = flow == .fromKorean ? language.outboundInstalled : language.inboundInstalled
         note.stringValue = ready
-            ? "\(direction.label) — 바로 번역할 수 있습니다."
-            : """
+            ? String(localized: "\(direction.label) — 바로 번역할 수 있습니다.")
+            : String(localized: """
               \(direction.label) — 이 언어는 아직 받아져 있지 않습니다. \
               번역을 누르면 받는 길을 알려 드립니다.
-              """
+              """)
     }
 
     @objc private func flowChanged() { updateNote() }

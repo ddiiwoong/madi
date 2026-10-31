@@ -4,6 +4,10 @@ options:
   deploymentTarget:
     macOS: "14.0"
   createIntermediateGroups: true
+  # 개발 언어는 한국어다 — 소스의 `String(localized:)` 키가 한국어 문장이고, 영어는
+  # `en.lproj`의 번역이다. 영어로 두면 한국어 사용자에게도 영어 표가 대신 읽힌다
+  # (번들은 고른 언어에 표가 없으면 개발 언어의 표로 내려간다 — 실측).
+  developmentLanguage: ko
 
 settings:
   base:

@@ -88,15 +88,24 @@ public struct TranslationDirection: Equatable, Hashable, Sendable {
 
     // MARK: 이름
 
-    /// 사람이 읽는 언어 이름.
+    /// 사람이 읽는 언어 이름 — **화면 글자와 같은 언어로** 쓴다.
     ///
-    /// **한국어 이름으로 고정한다.** `Locale.current`를 쓰면 영어 시스템에서 "Korean"이
-    /// 나오는데, 마디의 UI는 지금 한국어뿐이라 한 화면에 두 언어가 섞인다. 현지화를
-    /// 하는 날 이 함수가 `Locale.current`를 보도록 바꾸면 된다(그때 이름을 단정하는
-    /// 테스트도 함께 고쳐야 한다).
+    /// `Locale.current`를 보지 않는다. 시스템 언어와 마디의 화면 언어는 다를 수 있고
+    /// (앱별 언어를 고르면, 또는 마디에 없는 언어가 시스템 언어이면), 그러면 한 화면에
+    /// 두 언어가 섞인다. 대신 화면 글자를 꺼내는 **같은 표**에서 언어 코드를 읽는다 —
+    /// 영어 표는 `en`, 한국어(표 없음)는 기본값 `ko`. 그래서 메뉴가 영어면 이름도 영어다.
     static func name(of code: String) -> String {
-        let korean = Locale(identifier: "ko")
-        return korean.localizedString(forLanguageCode: code) ?? code
+        name(of: code, in: displayLanguage(in: .main))
+    }
+
+    static func name(of code: String, in displayLanguage: String) -> String {
+        Locale(identifier: displayLanguage).localizedString(forLanguageCode: code) ?? code
+    }
+
+    /// 화면 글자가 쓰는 언어의 코드. 번역자가 표에 그 표의 언어 코드를 적는다.
+    static func displayLanguage(in bundle: Bundle) -> String {
+        String(localized: "languageNameLocale", defaultValue: "ko", bundle: bundle,
+               comment: "언어 이름을 쓸 언어. 이 표의 언어 코드(en, ja…)를 적는다.")
     }
 
     // MARK: 자동 판정

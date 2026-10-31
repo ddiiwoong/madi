@@ -127,8 +127,8 @@ final class SourceChangedBandView: NSView {
 
     var onRetranslate: (() -> Void)?
 
-    private let label = NSTextField(labelWithString: "원문이 번역한 뒤에 바뀌었습니다.")
-    private let button = NSButton(title: "다시 번역", target: nil, action: nil)
+    private let label = NSTextField(labelWithString: String(localized: "원문이 번역한 뒤에 바뀌었습니다."))
+    private let button = NSButton(title: String(localized: "다시 번역"), target: nil, action: nil)
 
     init() {
         super.init(frame: .zero)

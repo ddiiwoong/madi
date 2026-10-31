@@ -27,17 +27,22 @@ final class SettingsPanel: NSWindowController {
     private let widthPicker = NSPopUpButton()
     private let bodyFontPicker = NSPopUpButton()
     private let codeFontPicker = NSPopUpButton()
-    private let highlightCheck = NSButton(checkboxWithTitle: "코드 블록 구문 강조", target: nil, action: nil)
-    private let alignCheck = NSButton(checkboxWithTitle: "표 열 맞추기", target: nil, action: nil)
-    private let slantCheck = NSButton(checkboxWithTitle: "한글·CJK 기울임 강제 적용", target: nil, action: nil)
-    private let codeViewCheck = NSButton(checkboxWithTitle: "새 창을 마크다운 원본 보기로 열기",
+    private let highlightCheck = NSButton(checkboxWithTitle: String(localized: "코드 블록 구문 강조"), target: nil, action: nil)
+    private let alignCheck = NSButton(checkboxWithTitle: String(localized: "표 열 맞추기"), target: nil, action: nil)
+    private let slantCheck = NSButton(checkboxWithTitle: String(localized: "한글·CJK 기울임 강제 적용"), target: nil, action: nil)
+    private let codeViewCheck = NSButton(checkboxWithTitle: String(localized: "새 창을 마크다운 원본 보기로 열기"),
                                          target: nil, action: nil)
 
     // 일반
-    private let remoteImageCheck = NSButton(checkboxWithTitle: "원격 이미지 불러오기",
+    private let remoteImageCheck = NSButton(checkboxWithTitle: String(localized: "원격 이미지 불러오기"),
                                             target: nil, action: nil)
     private let associationLabel = NSTextField(wrappingLabelWithString: "")
-    private let associationButton = NSButton(title: "마디 사용", target: nil, action: nil)
+    private let associationButton = NSButton(title: String(localized: "마디 사용"), target: nil, action: nil)
+    private let languagePicker = NSPopUpButton()
+    /// 화면 언어는 편집기 설정이 아니라 앱 도메인의 `AppleLanguages`다(`InterfaceLanguage`).
+    /// 테스트가 사용자의 실제 값을 건드리지 않도록 도메인을 주입받는다.
+    private let languageDefaults: UserDefaults
+    private let languageDomain: String?
 
     // PDF·프린트
     private let paperPicker = NSPopUpButton()
@@ -62,15 +67,19 @@ final class SettingsPanel: NSWindowController {
         }.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
-    init(store: PreferenceStore) {
+    init(store: PreferenceStore,
+         languageDefaults: UserDefaults = .standard,
+         languageDomain: String? = Bundle.main.bundleIdentifier) {
         self.store = store
         self.preferences = store.current
+        self.languageDefaults = languageDefaults
+        self.languageDomain = languageDomain
         let panel = NSPanel(
             contentRect: NSRect(origin: .zero, size: Self.panelSize),
             styleMask: [.titled, .closable, .utilityWindow],
             backing: .buffered, defer: false
         )
-        panel.title = "설정"
+        panel.title = String(localized: "설정")
         panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
@@ -97,12 +106,12 @@ final class SettingsPanel: NSWindowController {
         let controller = NSViewController()
         let tabs = NSTabView()
         tabs.translatesAutoresizingMaskIntoConstraints = false
-        tabs.addTabViewItem(tab("보기", view: makeViewTab()))
-        tabs.addTabViewItem(tab("일반", view: makeGeneralTab()))
-        tabs.addTabViewItem(tab("PDF·프린트", view: makePrintTab()))
-        tabs.addTabViewItem(tab("정보", view: makeAboutTab()))
+        tabs.addTabViewItem(tab(String(localized: "보기"), view: makeViewTab()))
+        tabs.addTabViewItem(tab(String(localized: "일반"), view: makeGeneralTab()))
+        tabs.addTabViewItem(tab(String(localized: "PDF·프린트"), view: makePrintTab()))
+        tabs.addTabViewItem(tab(String(localized: "정보"), view: makeAboutTab()))
 
-        let reset = NSButton(title: "기본값으로", target: self, action: #selector(resetAll))
+        let reset = NSButton(title: String(localized: "기본값으로"), target: self, action: #selector(resetAll))
         reset.bezelStyle = .rounded
         reset.translatesAutoresizingMaskIntoConstraints = false
 
@@ -188,7 +197,7 @@ final class SettingsPanel: NSWindowController {
             picker.addItem(withTitle: bundled)
             if let item = picker.lastItem {
                 item.representedObject = bundled
-                let title = "\(bundled) — 기본, 앱에 들어 있음"
+                let title = String(localized: "\(bundled) — 기본, 앱에 들어 있음")
                 if let font = MarkdownTheme.font(family: bundled, size: 13) {
                     item.attributedTitle = NSAttributedString(string: title, attributes: [.font: font])
                 } else {
@@ -224,7 +233,7 @@ final class SettingsPanel: NSWindowController {
             picker.selectItem(at: index)
             return
         }
-        picker.addItem(withTitle: "\(wanted) (이 Mac에 없음)")
+        picker.addItem(withTitle: String(localized: "\(wanted) (이 Mac에 없음)"))
         picker.lastItem?.representedObject = wanted
         picker.select(picker.lastItem)
     }
@@ -258,9 +267,9 @@ final class SettingsPanel: NSWindowController {
         fill(appearancePicker, EditorPreferences.Appearance.allCases) { $0.label }
         fill(lineSpacingPicker, EditorPreferences.LineSpacing.allCases) { $0.label }
         fill(widthPicker, EditorPreferences.DocumentWidth.allCases) { $0.label }
-        fillFonts(bodyFontPicker, system: "시스템 글꼴", bundled: EditorPreferences.bundledBodyFamily,
+        fillFonts(bodyFontPicker, system: String(localized: "시스템 글꼴"), bundled: EditorPreferences.bundledBodyFamily,
                   families: Self.installedFamilies(fixedPitchOnly: false))
-        fillFonts(codeFontPicker, system: "시스템 고정폭", bundled: EditorPreferences.bundledCodeFamily,
+        fillFonts(codeFontPicker, system: String(localized: "시스템 고정폭"), bundled: EditorPreferences.bundledCodeFamily,
                   families: Self.installedFamilies(fixedPitchOnly: true))
 
         for check in [highlightCheck, alignCheck, slantCheck, codeViewCheck] {
@@ -273,15 +282,15 @@ final class SettingsPanel: NSWindowController {
         sizeRow.spacing = 10
 
         let stack = column([
-            note("문서 내용을 바꾸지 않고 읽기 화면만 조정합니다."),
-            row("화면 모양", appearancePicker),
-            row("줄 간격", lineSpacingPicker),
-            row("글 넓이", widthPicker),
-            row("본문 글꼴", bodyFontPicker),
-            row("코드 글꼴", codeFontPicker),
+            note(String(localized: "문서 내용을 바꾸지 않고 읽기 화면만 조정합니다.")),
+            row(String(localized: "화면 모양"), appearancePicker),
+            row(String(localized: "줄 간격"), lineSpacingPicker),
+            row(String(localized: "글 넓이"), widthPicker),
+            row(String(localized: "본문 글꼴"), bodyFontPicker),
+            row(String(localized: "코드 글꼴"), codeFontPicker),
             // 코드 목록에 글꼴이 적은 이유를 화면에 적는다 — 말하지 않으면 빠진 것으로 보인다.
-            note("코드 글꼴은 고정폭만 고를 수 있습니다. 글자 폭이 다르면 코드의 들여쓰기와 줄 맞춤이 어긋납니다."),
-            NSTextField(labelWithString: "본문 글자 크기"),
+            note(String(localized: "코드 글꼴은 고정폭만 고를 수 있습니다. 글자 폭이 다르면 코드의 들여쓰기와 줄 맞춤이 어긋납니다.")),
+            NSTextField(labelWithString: String(localized: "본문 글자 크기")),
             sizeRow,
             highlightCheck, alignCheck, slantCheck, codeViewCheck,
         ])
@@ -301,20 +310,31 @@ final class SettingsPanel: NSWindowController {
         associationButton.action = #selector(claimAssociation)
         associationLabel.font = .systemFont(ofSize: 11)
         associationLabel.textColor = .secondaryLabelColor
+        languagePicker.removeAllItems()
+        for language in InterfaceLanguage.allCases {
+            languagePicker.addItem(withTitle: language.label)
+            languagePicker.lastItem?.representedObject = language.rawValue
+        }
+        languagePicker.target = self
+        languagePicker.action = #selector(languageChanged)
 
         return column([
-            NSTextField(labelWithString: "이미지"),
+            row(String(localized: "화면 언어"), languagePicker),
+            // 왜 바로 바뀌지 않는지 적는다 — 말하지 않으면 고른 것이 먹지 않은 것으로 보인다.
+            note(String(localized: "바꾼 언어는 마디를 다시 열면 적용됩니다.")),
+            spacer(),
+            NSTextField(labelWithString: String(localized: "이미지")),
             remoteImageCheck,
             // 왜 기본이 꺼짐인지 **화면에** 적는다. 문서에만 적으면 읽지 않고,
             // 그러면 사용자가 켜는 결정을 모르고 한다.
-            note("""
+            note(String(localized: """
             꺼져 있으면 문서에 적힌 웹 주소의 그림을 받아오지 않습니다. \
             문서를 열었을 뿐인데 바깥으로 요청이 나가면 그 주소를 가진 쪽이 \
             문서를 언제 열었는지 알 수 있고, 주소 자체가 추적용일 수 있습니다. \
             켜도 https 주소만 받고, 로컬 문서의 그림은 영향을 받지 않습니다.
-            """),
+            """)),
             spacer(),
-            NSTextField(labelWithString: "파일 연결"),
+            NSTextField(labelWithString: String(localized: "파일 연결")),
             associationLabel,
             associationButton,
         ])
@@ -326,31 +346,31 @@ final class SettingsPanel: NSWindowController {
         fill(marginPicker, EditorPreferences.PrintMargin.allCases) { $0.label }
 
         return column([
-            note("프린트와 PDF 내보내기가 같은 설정을 씁니다."),
-            row("용지", paperPicker),
-            row("방향", orientationPicker),
-            row("여백", marginPicker),
+            note(String(localized: "프린트와 PDF 내보내기가 같은 설정을 씁니다.")),
+            row(String(localized: "용지"), paperPicker),
+            row(String(localized: "방향"), orientationPicker),
+            row(String(localized: "여백"), marginPicker),
             spacer(),
-            note("‘시스템 기본’ 용지는 시스템 프린트 설정의 용지를 그대로 씁니다."),
+            note(String(localized: "‘시스템 기본’ 용지는 시스템 프린트 설정의 용지를 그대로 씁니다.")),
         ])
     }
 
     private func makeAboutTab() -> NSView {
-        let name = NSTextField(labelWithString: "마디 / Madi")
+        let name = NSTextField(labelWithString: String(localized: "마디 / Madi"))
         name.font = .systemFont(ofSize: 15, weight: .semibold)
-        let version = NSTextField(labelWithString: "현재 버전: \(AppVersion.display)")
+        let version = NSTextField(labelWithString: String(localized: "현재 버전: \(AppVersion.display)"))
         version.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
         version.textColor = .secondaryLabelColor
         version.isSelectable = true      // 문제를 신고할 때 복사할 수 있어야 한다
         // 앱에 든 글꼴의 라이선스(SIL OFL 1.1)는 전문을 사용자가 볼 수 있어야 한다(OFL 2조).
-        let licenses = NSButton(title: "글꼴 라이선스 보기", target: self, action: #selector(showFontLicenses))
+        let licenses = NSButton(title: String(localized: "글꼴 라이선스 보기"), target: self, action: #selector(showFontLicenses))
         licenses.bezelStyle = .rounded
         return column([
             name, version,
             spacer(),
-            note("자동 업데이트는 아직 없습니다. 판 번호는 문제를 신고할 때 쓰십시오."),
+            note(String(localized: "자동 업데이트는 아직 없습니다. 판 번호는 문제를 신고할 때 쓰십시오.")),
             spacer(),
-            note("본문 글꼴 Pretendard(© Kil Hyung-jin)와 코드 글꼴 IBM Plex Mono(© IBM Corp.)가 앱에 들어 있습니다. 둘 다 SIL Open Font License 1.1입니다."),
+            note(String(localized: "본문 글꼴 Pretendard(© Kil Hyung-jin)와 코드 글꼴 IBM Plex Mono(© IBM Corp.)가 앱에 들어 있습니다. 둘 다 SIL Open Font License 1.1입니다.")),
             licenses,
         ])
     }
@@ -358,7 +378,7 @@ final class SettingsPanel: NSWindowController {
     @objc private func showFontLicenses() {
         let urls = BundledFonts.licenseFiles.compactMap { BundledFonts.url(of: $0, in: nil) }
         guard !urls.isEmpty else {
-            AppLog.warning("글꼴 라이선스 파일을 찾지 못했습니다", detail: BundledFonts.licenseFiles.joined(separator: ", "))
+            AppLog.warning(String(localized: "글꼴 라이선스 파일을 찾지 못했습니다"), detail: BundledFonts.licenseFiles.joined(separator: ", "))
             return
         }
         NSWorkspace.shared.activateFileViewerSelecting(urls)
@@ -390,8 +410,21 @@ final class SettingsPanel: NSWindowController {
         select(preferences.printPaper, in: paperPicker)
         select(preferences.printOrientation, in: orientationPicker)
         select(preferences.printMargin, in: marginPicker)
+        select(currentLanguage, in: languagePicker)
         updateSizeLabel()
         refreshAssociation()
+    }
+
+    private var currentLanguage: InterfaceLanguage {
+        InterfaceLanguage.current(in: languageDomain.flatMap { languageDefaults.persistentDomain(forName: $0) })
+    }
+
+    /// 화면 언어는 **기본값으로** 단추가 되돌리지 않는다 — 그 단추는 보기·프린트 설정을
+    /// 되돌리는 것이고, 누른 사람이 다음 실행에 다른 언어를 보게 되면 놀란다.
+    @objc private func languageChanged() {
+        let language = selection(languagePicker, currentLanguage)
+        language.apply(to: languageDefaults)
+        AppLog.info(String(localized: "화면 언어를 바꿨습니다 — 마디를 다시 열면 적용됩니다"), detail: language.rawValue)
     }
 
     private func updateSizeLabel() {
@@ -432,13 +465,13 @@ final class SettingsPanel: NSWindowController {
         FileAssociation.makeMadiDefault { [weak self] error in
             guard let self else { return }
             if let error {
-                AppLog.error("기본 앱으로 등록하지 못했습니다", detail: error.localizedDescription)
+                AppLog.error(String(localized: "기본 앱으로 등록하지 못했습니다"), detail: error.localizedDescription)
                 let alert = NSAlert()
-                alert.messageText = "기본 앱으로 등록하지 못했습니다"
+                alert.messageText = String(localized: "기본 앱으로 등록하지 못했습니다")
                 alert.informativeText = error.localizedDescription
                 alert.runModal()
             } else {
-                AppLog.info("Markdown 파일의 기본 앱이 마디로 바뀌었습니다")
+                AppLog.info(String(localized: "Markdown 파일의 기본 앱이 마디로 바뀌었습니다"))
             }
             self.refreshAssociation()
         }

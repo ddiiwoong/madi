@@ -20,7 +20,7 @@ final class ActivityLogPanel: NSWindowController {
             styleMask: [.titled, .closable, .resizable, .utilityWindow],
             backing: .buffered, defer: false
         )
-        panel.title = "기록"
+        panel.title = String(localized: "기록")
         panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
         // 프로그램으로 만든 NSWindow는 닫힐 때 스스로 해제된다. 그런데 이 컨트롤러는
@@ -44,14 +44,14 @@ final class ActivityLogPanel: NSWindowController {
         let controller = NSViewController()
         let root = NSView()
 
-        let filter = NSSegmentedControl(labels: ["전체", "주의 이상", "실패만"],
+        let filter = NSSegmentedControl(labels: [String(localized: "전체"), String(localized: "주의 이상"), String(localized: "실패만")],
                                         trackingMode: .selectOne,
                                         target: self, action: #selector(filterChanged(_:)))
         filter.selectedSegment = 0
         filter.translatesAutoresizingMaskIntoConstraints = false
 
-        let copyButton = NSButton(title: "모두 복사", target: self, action: #selector(copyAll))
-        let clearButton = NSButton(title: "지우기", target: self, action: #selector(clearLog))
+        let copyButton = NSButton(title: String(localized: "모두 복사"), target: self, action: #selector(copyAll))
+        let clearButton = NSButton(title: String(localized: "지우기"), target: self, action: #selector(clearLog))
         for button in [copyButton, clearButton] {
             button.bezelStyle = .rounded
             button.translatesAutoresizingMaskIntoConstraints = false

@@ -26,9 +26,9 @@ public struct EditorPreferences: Equatable, Sendable {
 
         public var label: String {
             switch self {
-            case .system: return "시스템"
-            case .light: return "라이트"
-            case .dark: return "다크"
+            case .system: return String(localized: "시스템")
+            case .light: return String(localized: "라이트")
+            case .dark: return String(localized: "다크")
             }
         }
     }
@@ -45,11 +45,14 @@ public struct EditorPreferences: Equatable, Sendable {
             }
         }
 
+        /// 좁게·넓게는 **따로 키를 둔다.** 한국어로는 글 넓이·여백과 같은 낱말이지만
+        /// 영어로는 다르다(줄 간격은 Tight·Loose, 폭은 Narrow·Wide). 키 하나는 번역도
+        /// 하나뿐이라, 같은 키를 쓰면 어느 한쪽이 틀린 말이 된다.
         public var label: String {
             switch self {
-            case .tight: return "좁게"
-            case .normal: return "보통"
-            case .loose: return "넓게"
+            case .tight: return String(localized: "lineSpacing.tight", defaultValue: "좁게")
+            case .normal: return String(localized: "보통")
+            case .loose: return String(localized: "lineSpacing.loose", defaultValue: "넓게")
             }
         }
     }
@@ -75,10 +78,10 @@ public struct EditorPreferences: Equatable, Sendable {
 
         public var label: String {
             switch self {
-            case .narrow: return "좁게"
-            case .normal: return "보통"
-            case .wide: return "넓게"
-            case .full: return "창 너비"
+            case .narrow: return String(localized: "좁게")
+            case .normal: return String(localized: "보통")
+            case .wide: return String(localized: "넓게")
+            case .full: return String(localized: "창 너비")
             }
         }
     }
@@ -97,9 +100,9 @@ public struct EditorPreferences: Equatable, Sendable {
 
         public var label: String {
             switch self {
-            case .narrow: return "좁게"
-            case .normal: return "보통"
-            case .wide: return "넓게"
+            case .narrow: return String(localized: "좁게")
+            case .normal: return String(localized: "보통")
+            case .wide: return String(localized: "넓게")
             }
         }
     }
@@ -109,8 +112,8 @@ public struct EditorPreferences: Equatable, Sendable {
 
         public var label: String {
             switch self {
-            case .portrait: return "세로"
-            case .landscape: return "가로"
+            case .portrait: return String(localized: "세로")
+            case .landscape: return String(localized: "가로")
             }
         }
     }
@@ -131,7 +134,7 @@ public struct EditorPreferences: Equatable, Sendable {
 
         public var label: String {
             switch self {
-            case .system: return "시스템 기본"
+            case .system: return String(localized: "시스템 기본")
             case .a4: return "A4"
             case .letter: return "Letter"
             }

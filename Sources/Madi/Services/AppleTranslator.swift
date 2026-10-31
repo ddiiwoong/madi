@@ -42,13 +42,13 @@ enum AppleTranslator {
         var errorDescription: String? {
             switch self {
             case let .languagePackMissing(direction):
-                "\(direction.label) 번역 언어가 이 Mac에 받아져 있지 않습니다."
+                String(localized: "\(direction.label) 번역 언어가 이 Mac에 받아져 있지 않습니다.")
             case let .unsupported(direction):
-                "Apple 번역이 \(direction.label)을 지원하지 않습니다."
+                String(localized: "Apple 번역이 \(direction.label)을 지원하지 않습니다.")
             case .nothingToTranslate:
-                "번역할 글이 없습니다."
+                String(localized: "번역할 글이 없습니다.")
             case let .sameLanguage(language):
-                "원문과 번역할 언어가 모두 \(language)입니다."
+                String(localized: "원문과 번역할 언어가 모두 \(language)입니다.")
             case let .other(message):
                 message
             }
@@ -59,29 +59,29 @@ enum AppleTranslator {
         var recoverySuggestion: String? {
             switch self {
             case let .languagePackMissing(direction):
-                """
+                String(localized: """
                 시스템 설정 ▸ 일반 ▸ 언어 및 지역 ▸ 번역 언어에서 \
                 ‘\(direction.sourceLanguageName)’과 ‘\(direction.targetLanguageName)’을 받으십시오.
                 받은 뒤 이 문서에서 ⌘⇧T를 다시 누르면 됩니다. 받는 데에는 네트워크가 필요하고, \
                 한 번 받으면 그 뒤로는 인터넷 없이 기기 안에서 번역됩니다.
-                """
+                """)
             case .unsupported:
-                """
+                String(localized: """
                 시스템 설정 ▸ 일반 ▸ 언어 및 지역 ▸ 번역 언어에서 이 Mac이 어떤 언어를 \
                 번역할 수 있는지 볼 수 있습니다. 다른 언어로 옮기려면 도구 ▸ 번역 언어 \
                 선택…(⌥⌘⇧T)에서 고르십시오.
-                """
+                """)
             case .nothingToTranslate:
-                """
+                String(localized: """
                 이 문서에는 번역할 글이 없습니다 — 코드 블록·수평선·표 구분선·빈 줄은 \
                 일부러 건드리지 않습니다. 글의 일부만 번역하려면 그 부분을 선택하고 \
                 ⌘⇧T를 누르십시오.
-                """
+                """)
             case .sameLanguage:
-                """
+                String(localized: """
                 도구 ▸ 번역 언어 선택…(⌥⌘⇧T)에서 다른 언어를 고르십시오. 같은 언어로는 \
                 옮길 것이 없습니다.
-                """
+                """)
             case .other:
                 nil
             }

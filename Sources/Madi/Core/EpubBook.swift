@@ -75,9 +75,9 @@ public struct EpubBook {
         guard let mimetypeData = try archive.contents(named: "mimetype", inflate: inflate),
               let mimetype = String(data: mimetypeData, encoding: .utf8)?
                   .trimmingCharacters(in: .whitespacesAndNewlines)
-        else { throw Failure.notAnEpub("mimetype 항목이 없습니다") }
+        else { throw Failure.notAnEpub(String(localized: "mimetype 항목이 없습니다")) }
         guard mimetype == "application/epub+zip" else {
-            throw Failure.notAnEpub("mimetype이 '\(mimetype)'입니다")
+            throw Failure.notAnEpub(String(localized: "mimetype이 '\(mimetype)'입니다"))
         }
         let compliant = archive.firstEntry?.name == "mimetype"
             && archive.firstEntry?.method == .stored
@@ -97,7 +97,7 @@ public struct EpubBook {
         guard let opfPath = try container
             .nodes(forXPath: "//*[local-name()='rootfile']/@full-path")
             .compactMap(\.stringValue).first.map(decodePath)
-        else { throw Failure.missingOPF("container.xml에 rootfile이 없습니다") }
+        else { throw Failure.missingOPF(String(localized: "container.xml에 rootfile이 없습니다")) }
 
         guard let opfData = try archive.contents(named: opfPath, inflate: inflate) else {
             throw Failure.missingOPF(opfPath)
@@ -179,14 +179,14 @@ public struct EpubBook {
 
     /// 어떤 암호화인지 한 줄로. 사용자에게 "왜 못 읽는지"를 말해 주기 위한 것이다.
     private static func describeEncryption(_ data: Data) -> String {
-        guard let text = String(data: data, encoding: .utf8) else { return "알 수 없는 방식" }
+        guard let text = String(data: data, encoding: .utf8) else { return String(localized: "알 수 없는 방식") }
         if text.contains("adobe.com/adept") { return "Adobe ADEPT" }
         if text.contains("apple.com") || text.contains("FairPlay") { return "Apple FairPlay" }
         if text.contains("idpf.org/2008/embedding") {
             // 글꼴만 난독화한 경우다. 본문은 읽을 수 있지만 글꼴이 깨진다.
-            return "글꼴 난독화(IDPF)"
+            return String(localized: "글꼴 난독화(IDPF)")
         }
-        return "알 수 없는 방식"
+        return String(localized: "알 수 없는 방식")
     }
 
     // MARK: 목차

@@ -127,6 +127,20 @@ HISTORY ?= 1
 public-check:
 	@HISTORY=$(HISTORY) bash scripts/public-check.sh
 
+# 영어 표(`en.lproj/Localizable.strings`)가 소스의 `String(localized:)`와 맞는지 본다 —
+# 빠진 키(영어 화면에 한국어가 나온다), 남은 키, 형식 지정자가 어긋난 키.
+# 키는 컴파일러가 뽑는다(`-emit-localized-strings`). 문장을 더하거나 고친 뒤에 돌린다.
+L10N := $(BUILD)/l10n
+.PHONY: l10n-check
+l10n-check:
+	@rm -rf $(L10N) && mkdir -p $(L10N)
+	@swiftc -swift-version 6 -module-name Madi -wmo -c \
+		Sources/Madi/Core/*.swift Sources/Madi/Editor/*.swift Sources/Madi/Panels/*.swift \
+		Sources/Madi/Services/*.swift Sources/Madi/App/*.swift \
+		-emit-localized-strings -emit-localized-strings-path $(L10N) \
+		-o $(L10N)/madi.o > $(L10N)/extract.log 2>&1 || { grep "error:" $(L10N)/extract.log | head -10; exit 1; }
+	@swift scripts/l10n-check.swift $(L10N) Sources/Madi/Resources/en.lproj/Localizable.strings
+
 # README·기능 안내의 그림을 실제 편집기로 다시 그린다(docs/images/*.png). 공개용 샘플 문서
 # `docs/images/sample.md`만 그린다 — 앱 창을 찍으면 최근 문서·파일 목록이 함께 찍힌다.
 # 화면을 바꾸는 변경 뒤에 돌려 그림이 거짓이 되지 않게 한다.

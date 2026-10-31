@@ -70,7 +70,7 @@ public struct ZipArchive {
         guard count != 0xFFFF, directorySize != 0xFFFF_FFFF,
               directoryOffset != 0xFFFF_FFFF else { throw Failure.zip64Unsupported }
         guard directoryOffset >= 0, directoryOffset + directorySize <= data.count else {
-            throw Failure.truncated("중앙 디렉터리")
+            throw Failure.truncated(String(localized: "중앙 디렉터리"))
         }
 
         var found: [Entry] = []
@@ -79,7 +79,7 @@ public struct ZipArchive {
 
         while found.count < count, cursor + 46 <= directoryEnd {
             guard Self.uint32(data, cursor) == 0x0201_4B50 else {
-                throw Failure.badEntry("중앙 디렉터리 표지가 어긋났습니다 (\(cursor))")
+                throw Failure.badEntry(String(localized: "중앙 디렉터리 표지가 어긋났습니다 (\(cursor))"))
             }
             let method = Self.uint16(data, cursor + 10)
             let crc = Self.uint32(data, cursor + 16)
@@ -94,7 +94,7 @@ public struct ZipArchive {
                   localOffset != 0xFFFF_FFFF else { throw Failure.zip64Unsupported }
             let nameStart = cursor + 46
             guard nameStart + nameLength <= directoryEnd else {
-                throw Failure.truncated("항목 이름")
+                throw Failure.truncated(String(localized: "항목 이름"))
             }
 
             let nameBytes = data.subdata(in: nameStart ..< (nameStart + nameLength))
@@ -110,7 +110,7 @@ public struct ZipArchive {
         }
 
         guard found.count == count else {
-            throw Failure.badEntry("항목이 \(count)개라는데 \(found.count)개만 읽혔습니다")
+            throw Failure.badEntry(String(localized: "항목이 \(count)개라는데 \(found.count)개만 읽혔습니다"))
         }
         self.entries = found
     }
@@ -133,7 +133,7 @@ public struct ZipArchive {
         let header = entry.localHeaderOffset
         guard header + 30 <= bytes.count else { throw Failure.truncated(entry.name) }
         guard Self.uint32(bytes, header) == 0x0403_4B50 else {
-            throw Failure.badEntry("로컬 헤더 표지가 어긋났습니다: \(entry.name)")
+            throw Failure.badEntry(String(localized: "로컬 헤더 표지가 어긋났습니다: \(entry.name)"))
         }
         let nameLength = Int(Self.uint16(bytes, header + 26))
         let extraLength = Int(Self.uint16(bytes, header + 28))

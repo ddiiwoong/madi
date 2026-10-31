@@ -18,18 +18,29 @@ final class SettingsPanelWiringTests: XCTestCase {
     private var defaults: UserDefaults!
     private var store: PreferenceStore!
     private var panel: SettingsPanel!
+    /// 화면 언어를 적을 도메인. 사용자의 실제 `AppleLanguages`를 건드리지 않는다.
+    private var languageSuite: String!
+    private var languageDefaults: UserDefaults!
 
     override func setUp() {
         super.setUp()
         defaults = UserDefaults(suiteName: "madi.tests.\(UUID().uuidString)")!
         store = PreferenceStore(defaults: defaults)
-        panel = SettingsPanel(store: store)
+        languageSuite = "madi.tests.language.\(UUID().uuidString)"
+        languageDefaults = UserDefaults(suiteName: languageSuite)!
+        panel = makePanel()
+    }
+
+    private func makePanel() -> SettingsPanel {
+        SettingsPanel(store: store, languageDefaults: languageDefaults, languageDomain: languageSuite)
     }
 
     override func tearDown() {
+        languageDefaults.removePersistentDomain(forName: languageSuite)
         panel = nil
         store = nil
         defaults = nil
+        languageDefaults = nil
         super.tearDown()
     }
 
@@ -111,7 +122,7 @@ final class SettingsPanelWiringTests: XCTestCase {
         saved.loadsRemoteImages = true
         store.save(saved)
 
-        let reopened = SettingsPanel(store: store)
+        let reopened = makePanel()
         panel = reopened       // allViews가 이 창을 보도록
         XCTAssertEqual(picker(for: EditorPreferences.Appearance.self)?
             .selectedItem?.representedObject as? String, "dark")
@@ -190,7 +201,7 @@ final class SettingsPanelWiringTests: XCTestCase {
         saved.printPaper = .letter
         saved.loadsRemoteImages = true
         store.save(saved)
-        let reopened = SettingsPanel(store: store)
+        let reopened = makePanel()
         panel = reopened
 
         guard let reset = allViews.compactMap({ $0 as? NSButton })
@@ -264,7 +275,7 @@ final class SettingsPanelWiringTests: XCTestCase {
     /// 앱에 든 글꼴이 등록돼 있으면 고르개 맨 위에 '기본'으로 온다.
     func testBundledFontsAreListedFirst() {
         XCTAssertTrue(BundledFonts.register(from: FontPreferenceTests.repoFonts).isEmpty)
-        panel = SettingsPanel(store: store)
+        panel = makePanel()
         guard let body = fontPicker(system: "시스템 글꼴"),
               let code = fontPicker(system: "시스템 고정폭") else { return XCTFail("글꼴 고르개가 없다") }
         XCTAssertEqual(body.itemArray.first?.representedObject as? String, "Pretendard")
@@ -281,7 +292,7 @@ final class SettingsPanelWiringTests: XCTestCase {
         var saved = EditorPreferences.standard
         saved.bodyFontFamily = "Nonexistent Font Family 123"
         store.save(saved)
-        panel = SettingsPanel(store: store)
+        panel = makePanel()
         let selected = fontPicker(system: "시스템 글꼴")?.selectedItem
         XCTAssertEqual(selected?.representedObject as? String, "Nonexistent Font Family 123")
         XCTAssertTrue(selected?.title.contains("이 Mac에 없음") == true, selected?.title ?? "")
@@ -295,11 +306,41 @@ final class SettingsPanelWiringTests: XCTestCase {
         var saved = EditorPreferences.standard
         saved.translationTarget = "ja"
         store.save(saved)
-        panel = SettingsPanel(store: store)
+        panel = makePanel()
         guard let check = checkbox("표 열 맞추기") else { return XCTFail("체크박스가 없다") }
         check.state = .off
         fire(check)
         XCTAssertEqual(store.current.translationTarget, "ja")
+    }
+
+    // MARK: 화면 언어
+
+    func testChoosingALanguageWritesTheAppDomain() {
+        guard let languages = picker(for: InterfaceLanguage.self) else { return XCTFail("화면 언어 고르개가 없다") }
+        XCTAssertEqual(languages.selectedItem?.representedObject as? String, "system")
+
+        select("en", in: languages)
+        fire(languages)
+        XCTAssertEqual(languageDefaults.persistentDomain(forName: languageSuite)?["AppleLanguages"] as? [String],
+                       ["en"])
+
+        select("system", in: languages)
+        fire(languages)
+        XCTAssertNil(languageDefaults.persistentDomain(forName: languageSuite)?["AppleLanguages"])
+    }
+
+    /// 창을 열면 지금 고른 언어가 보여야 한다. **기본값으로** 단추는 언어를 되돌리지 않는다.
+    func testStoredLanguageIsShownAndSurvivesReset() {
+        InterfaceLanguage.korean.apply(to: languageDefaults)
+        panel = makePanel()
+        guard let languages = picker(for: InterfaceLanguage.self) else { return XCTFail("화면 언어 고르개가 없다") }
+        XCTAssertEqual(languages.selectedItem?.representedObject as? String, "ko")
+
+        guard let reset = allViews.compactMap({ $0 as? NSButton }).first(where: { $0.title == "기본값으로" })
+        else { return XCTFail("기본값으로 버튼이 없다") }
+        fire(reset)
+        XCTAssertEqual(InterfaceLanguage.current(in: languageDefaults.persistentDomain(forName: languageSuite)), .korean)
+        XCTAssertEqual(languages.selectedItem?.representedObject as? String, "ko")
     }
 
     /// 판 번호가 비어 있으면 안 된다 — 문제를 신고할 때 쓰는 값이다.

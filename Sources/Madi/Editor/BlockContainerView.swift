@@ -481,7 +481,7 @@ public final class BlockContainerView: NSView {
 
     /// 블록을 넘는 선택을 지운다. 걸친 블록들을 한 조각으로 합쳐 다시 읽는다.
     public func deleteSelectionAcrossBlocks() {
-        replaceSelectionAcrossBlocks(with: "", name: "삭제")
+        replaceSelectionAcrossBlocks(with: "", name: String(localized: "삭제"))
     }
 
     /// 블록을 넘는 선택을 글자로 바꾼다 — 치기·붙이기가 지나는 길이다.
@@ -489,7 +489,7 @@ public final class BlockContainerView: NSView {
     /// 블록마다 텍스트 뷰가 따로이므로 `insertText`에 맡기면 **자기 블록의 몫만**
     /// 지워지고 나머지 블록의 선택된 글이 남는다. 그래서 치기도 하나의 편집으로
     /// 여기서 처리한다(되돌리기도 한 번에 돌아간다).
-    public func replaceSelectionAcrossBlocks(with text: String, name: String = "입력") {
+    public func replaceSelectionAcrossBlocks(with text: String, name: String = String(localized: "입력")) {
         guard selectionSpansBlocks,
               let edit = factory.replacement(in: document, selection: selection,
                                              with: text, name: name) else { return }
@@ -519,7 +519,7 @@ public final class BlockContainerView: NSView {
         let span = BlockSelection(anchor: BlockPosition(blockIndex: index - 1,
                                                        offset: lastCharacter.location),
                                   head: BlockPosition(blockIndex: index, offset: 0))
-        guard let edit = factory.deletion(in: document, selection: span, name: "합치기"),
+        guard let edit = factory.deletion(in: document, selection: span, name: String(localized: "합치기")),
               !edit.isNoop else { return false }
         perform(edit, caretOffsetWithinNew: lastCharacter.location)
         return true

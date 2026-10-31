@@ -16,8 +16,8 @@ final class RecentDocumentsPanelView: NSView {
 
     private let tableView = NSTableView()
     private let scrollView = NSScrollView()
-    private let emptyLabel = NSTextField(labelWithString: "최근 문서 없음")
-    private let clearButton = NSButton(title: "메뉴 지우기", target: nil, action: nil)
+    private let emptyLabel = NSTextField(labelWithString: String(localized: "최근 문서 없음"))
+    private let clearButton = NSButton(title: String(localized: "메뉴 지우기"), target: nil, action: nil)
     private var urls: [URL] = []
 
     override init(frame frameRect: NSRect) {

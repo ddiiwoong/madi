@@ -533,6 +533,6 @@ final class BlockTextView: DecoratedTextView {
               let text = NSPasteboard.general.string(forType: .string) else {
             return super.paste(sender)
         }
-        container.replaceSelectionAcrossBlocks(with: text, name: "붙여넣기")
+        container.replaceSelectionAcrossBlocks(with: text, name: String(localized: "붙여넣기"))
     }
 }

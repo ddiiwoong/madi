@@ -100,7 +100,7 @@ public struct BlockEditFactory: Sendable {
     /// 블록을 다시 찾으므로, 한 글자 칠 때마다 식별자가 바뀌면 뷰가 매번 새로 만들어지고
     /// first responder와 조합 중인 한글이 날아간다.
     public func textEdit(in document: BlockDocument, blockIndex: Int,
-                         newSource: String, name: String = "입력") -> BlockEdit? {
+                         newSource: String, name: String = String(localized: "입력")) -> BlockEdit? {
         guard document.blocks.indices.contains(blockIndex) else { return nil }
         let oldBlock = document.blocks[blockIndex]
         guard oldBlock.sourceSlice != newSource else { return nil }
@@ -124,7 +124,7 @@ public struct BlockEditFactory: Sendable {
 
     /// 표의 칸을 고친다. 모델을 고치므로 직렬화가 그 블록만 다시 그린다.
     public func tableEdit(in document: BlockDocument, blockIndex: Int,
-                          name: String = "표 고치기",
+                          name: String = String(localized: "표 고치기"),
                           _ body: (inout TableModel) -> Void) -> BlockEdit? {
         guard document.blocks.indices.contains(blockIndex) else { return nil }
         let oldBlock = document.blocks[blockIndex]
@@ -143,7 +143,7 @@ public struct BlockEditFactory: Sendable {
     /// 글자를 쳤을 때 나머지 블록의 선택된 글이 남는다. 그래서 치기·붙이기도 이 길을
     /// 지나 하나의 되돌릴 수 있는 편집이 된다.
     public func replacement(in document: BlockDocument, selection: BlockSelection,
-                            with replacement: String, name: String = "삭제") -> BlockEdit? {
+                            with replacement: String, name: String = String(localized: "삭제")) -> BlockEdit? {
         guard !selection.isCollapsed else { return nil }
         let from = selection.start
         let to = selection.end
@@ -164,7 +164,7 @@ public struct BlockEditFactory: Sendable {
 
     /// 블록을 넘는 선택을 지운다.
     public func deletion(in document: BlockDocument, selection: BlockSelection,
-                         name: String = "삭제") -> BlockEdit? {
+                         name: String = String(localized: "삭제")) -> BlockEdit? {
         replacement(in: document, selection: selection, with: "", name: name)
     }
 }

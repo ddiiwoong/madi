@@ -1,0 +1,282 @@
+/* 마디의 영어 화면 글자.
+
+   키는 소스의 한국어 문장 그대로다(`String(localized:)`). 한국어가 개발 언어라
+   한국어 표는 따로 없다 — 키가 곧 한국어 글자다.
+
+   소스에 문장을 더하거나 고치면 `make l10n-check`가 이 파일에 없는 키, 소스에 없는 키,
+   형식 지정자(%@ · %lld)가 어긋난 키를 알려 준다. */
+
+/* ActivityLogPanel.swift */
+"기록" = "Activity Log";
+"실패만" = "Errors Only";
+"전체" = "All";
+"주의 이상" = "Warnings & Errors";
+"모두 복사" = "Copy All";
+"지우기" = "Clear";
+
+/* AppEnvironment.swift */
+"Markdown 파일은 현재 마디에서 열립니다." = "Markdown files currently open in Madi.";
+"Markdown 파일은 현재 ‘%@’에서 열립니다." = "Markdown files currently open in “%@”.";
+"Markdown 파일을 여는 기본 앱이 정해져 있지 않습니다." = "No default app is set for Markdown files.";
+"이 기계에서 Markdown 파일 타입을 찾지 못했습니다." = "Couldn’t find the Markdown file type on this Mac.";
+
+/* AppMenu.swift */
+"새로 만들기" = "New";
+"문서 열기…" = "Open…";
+"파일 브라우저" = "File Browser";
+"최근 문서" = "Recent Documents";
+"저장" = "Save";
+"다른 이름으로 저장…" = "Save As…";
+"되돌리기" = "Revert to Saved";
+"이미지 포함 내보내기…" = "Export with Embedded Images…";
+"PDF 내보내기…" = "Export as PDF…";
+"프린트하기…" = "Print…";
+"닫기" = "Close";
+"실행 취소" = "Undo";
+"실행 복귀" = "Redo";
+"잘라내기" = "Cut";
+"복사" = "Copy";
+"붙여넣기" = "Paste";
+"모두 선택" = "Select All";
+"검색" = "Find";
+"다음 찾기" = "Find Next";
+"이전 찾기" = "Find Previous";
+"목차" = "Outline";
+"마크다운 원본 보기" = "Show Markdown Source";
+"블록 편집기 (실험)" = "Block Editor (Experimental)";
+"전체 화면 시작" = "Enter Full Screen";
+"Apple 번역" = "Translate with Apple";
+"번역 언어 선택…" = "Choose Translation Languages…";
+"원문·번역 나란히 보기" = "Original and Translation Side by Side";
+"기록 보기" = "Show Activity Log";
+"마디 정보" = "About Madi";
+"설정…" = "Settings…";
+"마디 가리기" = "Hide Madi";
+"기타 가리기" = "Hide Others";
+"모두 보기" = "Show All";
+"마디 종료" = "Quit Madi";
+"파일" = "File";
+"편집" = "Edit";
+"보기" = "View";
+"도구" = "Tools";
+"윈도우" = "Window";
+"최소화" = "Minimize";
+"확대/축소" = "Zoom";
+"모두 앞으로 가져오기" = "Bring All to Front";
+"최근 문서 열기" = "Open Recent";
+"메뉴 지우기" = "Clear Menu";
+"문서 열기" = "Open";
+"다른 이름으로 저장" = "Save As";
+"이미지 포함 내보내기" = "Export with Embedded Images";
+"PDF 내보내기" = "Export as PDF";
+"프린트하기" = "Print";
+
+/* AppleTranslator.swift */
+"%@ 번역 언어가 이 Mac에 받아져 있지 않습니다." = "The languages for %@ haven’t been downloaded to this Mac.";
+"Apple 번역이 %@을 지원하지 않습니다." = "Apple Translation doesn’t support %@.";
+"번역할 글이 없습니다." = "There’s no text to translate.";
+"원문과 번역할 언어가 모두 %@입니다." = "The source and target languages are both %@.";
+"시스템 설정 ▸ 일반 ▸ 언어 및 지역 ▸ 번역 언어에서 ‘%@’과 ‘%@’을 받으십시오.\n받은 뒤 이 문서에서 ⌘⇧T를 다시 누르면 됩니다. 받는 데에는 네트워크가 필요하고, 한 번 받으면 그 뒤로는 인터넷 없이 기기 안에서 번역됩니다." = "Download “%@” and “%@” in System Settings ▸ General ▸ Language & Region ▸ Translation Languages.\nThen press ⌘⇧T in this document again. Downloading needs a network connection; after that, translation runs on this Mac without the internet.";
+"시스템 설정 ▸ 일반 ▸ 언어 및 지역 ▸ 번역 언어에서 이 Mac이 어떤 언어를 번역할 수 있는지 볼 수 있습니다. 다른 언어로 옮기려면 도구 ▸ 번역 언어 선택…(⌥⌘⇧T)에서 고르십시오." = "System Settings ▸ General ▸ Language & Region ▸ Translation Languages shows which languages this Mac can translate. To translate into another language, choose it in Tools ▸ Choose Translation Languages… (⌥⌘⇧T).";
+"이 문서에는 번역할 글이 없습니다 — 코드 블록·수평선·표 구분선·빈 줄은 일부러 건드리지 않습니다. 글의 일부만 번역하려면 그 부분을 선택하고 ⌘⇧T를 누르십시오." = "This document has no text to translate. Code blocks, horizontal rules, table delimiter rows, and blank lines are left alone on purpose. To translate part of the text, select it and press ⌘⇧T.";
+"도구 ▸ 번역 언어 선택…(⌥⌘⇧T)에서 다른 언어를 고르십시오. 같은 언어로는 옮길 것이 없습니다." = "Choose a different language in Tools ▸ Choose Translation Languages… (⌥⌘⇧T). There’s nothing to translate into the same language.";
+
+/* BlockContainerView.swift */
+"삭제" = "Delete";
+"합치기" = "Merge";
+
+/* BlockEditorWindowController.swift */
+"블록 편집기 — %@" = "Block Editor — %@";
+"설계 단계 1 · 표는 아직 글입니다" = "Design stage 1 · Tables are still plain text";
+"블록 %lld개 · 뷰 %lld개" = "Blocks: %lld · Views: %lld";
+
+/* BundledFonts.swift */
+"파일이 없습니다" = "File not found";
+"알 수 없는 오류" = "Unknown error";
+
+/* DocumentWindowController.swift */
+"폴더" = "Folder";
+"최근" = "Recent";
+"문서 내 검색" = "Find in Document";
+"제목 없음" = "Untitled";
+"문서를 열었습니다: %@" = "Opened document: %@";
+"%lld자" = "Characters: %lld";
+"원본 보기" = "Source";
+"마크다운 문법으로 보기 (⌘E)" = "Show Formatted View (⌘E)";
+"마크다운 원본 보기 (⌘E)" = "Show Markdown Source (⌘E)";
+"문서" = "Document";
+"문서.pdf" = "Document.pdf";
+"내보내기" = "Export";
+"PDF로 내보냈습니다" = "Exported as PDF";
+"PDF 내보내기에 실패했습니다" = "PDF export failed";
+"Apple 번역은 macOS 26 이상에서만 됩니다." = "Apple Translation requires macOS 26 or later.";
+"번역이 이미 진행 중입니다." = "A translation is already in progress.";
+"번역했습니다 (%@)" = "Translated (%@)";
+"이 Mac에서 한국어와 번역할 수 있는 언어를 찾지 못했습니다." = "Couldn’t find a language this Mac can translate to and from Korean.";
+"번역 결과를 새 문서로 열지 못했습니다." = "Couldn’t open the translation as a new document.";
+"번역본을 새 문서로 열었습니다 (%@)" = "Opened the translation as a new document (%@)";
+"번역본 창을 열지 못했습니다." = "Couldn’t open the translation window.";
+"번역본을 열었지만 나란히 놓지 못했습니다." = "Opened the translation but couldn’t place it side by side.";
+"번역본을 옆에 열었습니다 (%@)" = "Opened the translation alongside (%@)";
+"번역본을 열었습니다 (%@) — 전체 화면에서는 옆에 붙이지 않습니다" = "Opened the translation (%@) — it isn’t placed alongside in full screen";
+"번역본에서 고친 내용이 사라집니다" = "Your edits to the translation will be lost";
+"다시 번역하면 번역본 전체를 새 번역으로 바꿉니다. 바꾼 뒤에도 ⌘Z로 되돌릴 수 있습니다." = "Translating again replaces the whole translation with a new one. You can still undo it with ⌘Z.";
+"다시 번역" = "Translate Again";
+"취소" = "Cancel";
+"다시 번역했습니다 (%@)" = "Translated again (%@)";
+"나란히 보기 끝내기 — 번역본 창을 닫습니다 (⌃⌘T)" = "End Side by Side — closes the translation window (⌃⌘T)";
+"원문·번역 나란히 보기 (⌃⌘T)" = "Original and Translation Side by Side (⌃⌘T)";
+"번역하지 못했습니다" = "Couldn’t translate";
+"언어 설정 열기" = "Open Language Settings";
+"언어 설정을 열지 못했습니다" = "Couldn’t open Language settings";
+"시스템 설정 ▸ 일반 ▸ 언어 및 지역 ▸ 번역 언어" = "System Settings ▸ General ▸ Language & Region ▸ Translation Languages";
+"%@-이미지포함.md" = "%@-with-images.md";
+"이미지 포함 내보내기에 실패했습니다" = "Export with embedded images failed";
+"그림을 포함하지 못했습니다: %@" = "Couldn’t embed an image: %@";
+"이미지 포함으로 내보냈습니다" = "Exported with embedded images";
+"그림 %lld개 포함, %lld개 건너뜀 · %@" = "Images embedded: %lld, skipped: %lld · %@";
+"그림 %lld개를 포함해 내보냈습니다" = "Exported (images embedded: %lld)";
+"그림 %lld개 포함, %lld개 건너뜀 (기록 참조)" = "Images embedded: %lld, skipped: %lld (see the Activity Log)";
+"무제" = "Untitled";
+"블록 편집기를 열었습니다" = "Opened the block editor";
+"일치 없음" = "No matches";
+"문서 내 검색 (⌘F)" = "Find in Document (⌘F)";
+"일치" = "Matches";
+"목차 (⌘⇧O)" = "Outline (⌘⇧O)";
+"최근 문서 (⌘⇧R)" = "Recent Documents (⌘⇧R)";
+"파일 브라우저 (⌘⇧F)" = "File Browser (⌘⇧F)";
+"나란히 보기" = "Side by Side";
+"문서 열기 (⌘O)" = "Open (⌘O)";
+"더 많은 작업" = "More Actions";
+
+/* EditorPreferences.swift */
+"시스템" = "System";
+"라이트" = "Light";
+"다크" = "Dark";
+"lineSpacing.tight" = "Tight";
+"보통" = "Normal";
+"lineSpacing.loose" = "Loose";
+"좁게" = "Narrow";
+"넓게" = "Wide";
+"창 너비" = "Window Width";
+"세로" = "Portrait";
+"가로" = "Landscape";
+"시스템 기본" = "System Default";
+
+/* EpubBook.swift */
+"mimetype 항목이 없습니다" = "No mimetype entry";
+"mimetype이 '%@'입니다" = "mimetype is '%@'";
+"container.xml에 rootfile이 없습니다" = "container.xml has no rootfile";
+"알 수 없는 방식" = "Unknown method";
+"글꼴 난독화(IDPF)" = "Font obfuscation (IDPF)";
+
+/* FileBrowserPanelView.swift */
+"폴더 선택…" = "Choose Folder…";
+"선택" = "Choose";
+
+/* FrontMatterCardView.swift */
+"문서 메타데이터 · %lld개 항목" = "Document metadata · Fields: %lld";
+
+/* ImageEmbedder.swift */
+"원격 주소는 포함하지 않습니다" = "Remote addresses aren’t embedded";
+"이미 포함되어 있습니다" = "Already embedded";
+"경로를 풀 수 없습니다" = "Couldn’t resolve the path";
+"읽지 못했습니다" = "Couldn’t read the file";
+"그림 종류를 알 수 없습니다" = "Unknown image type";
+"너무 커서 건너뛰었습니다" = "Skipped because it’s too large";
+
+/* InlineImageStore.swift */
+"그림을 읽지 못했습니다" = "Couldn’t read the image";
+"https가 아닌 원격 그림은 받지 않습니다" = "Remote images that aren’t https are not loaded";
+"원격 그림을 받지 못했습니다" = "Couldn’t load a remote image";
+"%@ — %lld바이트" = "%@ — %lld bytes";
+"원격 그림을 받았습니다" = "Loaded a remote image";
+
+/* InterfaceLanguage.swift */
+"시스템 언어" = "System Language";
+
+/* OutlinePanelView.swift */
+"제목이 없습니다" = "No headings";
+
+/* RecentDocumentsPanelView.swift */
+"최근 문서 없음" = "No Recent Documents";
+
+/* SettingsPanel.swift */
+"마디 사용" = "Use Madi";
+"새 창을 마크다운 원본 보기로 열기" = "Open new windows in Markdown source view";
+"원격 이미지 불러오기" = "Load remote images";
+"코드 블록 구문 강조" = "Syntax highlighting in code blocks";
+"표 열 맞추기" = "Align table columns";
+"한글·CJK 기울임 강제 적용" = "Force italics for Korean and CJK text";
+"설정" = "Settings";
+"일반" = "General";
+"PDF·프린트" = "PDF & Print";
+"정보" = "About";
+"기본값으로" = "Restore Defaults";
+"%@ — 기본, 앱에 들어 있음" = "%@ — default, bundled";
+"%@ (이 Mac에 없음)" = "%@ (not on this Mac)";
+"시스템 글꼴" = "System Font";
+"시스템 고정폭" = "System Monospaced";
+"문서 내용을 바꾸지 않고 읽기 화면만 조정합니다." = "These settings change how documents look, never what they contain.";
+"화면 모양" = "Appearance";
+"줄 간격" = "Line spacing";
+"글 넓이" = "Text width";
+"본문 글꼴" = "Body font";
+"코드 글꼴" = "Code font";
+"코드 글꼴은 고정폭만 고를 수 있습니다. 글자 폭이 다르면 코드의 들여쓰기와 줄 맞춤이 어긋납니다." = "Only monospaced fonts can be chosen for code. With varying character widths, indentation and alignment in code fall apart.";
+"본문 글자 크기" = "Body text size";
+"화면 언어" = "Language";
+"바꾼 언어는 마디를 다시 열면 적용됩니다." = "A new language takes effect the next time you open Madi.";
+"이미지" = "Images";
+"꺼져 있으면 문서에 적힌 웹 주소의 그림을 받아오지 않습니다. 문서를 열었을 뿐인데 바깥으로 요청이 나가면 그 주소를 가진 쪽이 문서를 언제 열었는지 알 수 있고, 주소 자체가 추적용일 수 있습니다. 켜도 https 주소만 받고, 로컬 문서의 그림은 영향을 받지 않습니다." = "When this is off, images at web addresses in a document aren’t downloaded. If merely opening a document sends a request out, whoever controls that address learns when you opened it, and the address itself may be a tracker. When it’s on, only https addresses are loaded. Local images aren’t affected either way.";
+"파일 연결" = "Default app";
+"프린트와 PDF 내보내기가 같은 설정을 씁니다." = "Printing and PDF export use the same settings.";
+"용지" = "Paper";
+"방향" = "Orientation";
+"여백" = "Margins";
+"‘시스템 기본’ 용지는 시스템 프린트 설정의 용지를 그대로 씁니다." = "“System Default” paper uses the paper size from the system print settings.";
+"마디 / Madi" = "Madi (마디)";
+"현재 버전: %@" = "Version %@";
+"글꼴 라이선스 보기" = "Show Font Licenses";
+"자동 업데이트는 아직 없습니다. 판 번호는 문제를 신고할 때 쓰십시오." = "There are no automatic updates yet. Include the version number when you report a problem.";
+"본문 글꼴 Pretendard(© Kil Hyung-jin)와 코드 글꼴 IBM Plex Mono(© IBM Corp.)가 앱에 들어 있습니다. 둘 다 SIL Open Font License 1.1입니다." = "The body font Pretendard (© Kil Hyung-jin) and the code font IBM Plex Mono (© IBM Corp.) are bundled with the app. Both use the SIL Open Font License 1.1.";
+"글꼴 라이선스 파일을 찾지 못했습니다" = "Couldn’t find the font license files";
+"화면 언어를 바꿨습니다 — 마디를 다시 열면 적용됩니다" = "Changed the interface language — it takes effect the next time you open Madi";
+"기본 앱으로 등록하지 못했습니다" = "Couldn’t make Madi the default app";
+"Markdown 파일의 기본 앱이 마디로 바뀌었습니다" = "Madi is now the default app for Markdown files";
+
+/* SideBySideTranslation.swift */
+"원문이 번역한 뒤에 바뀌었습니다." = "The original has changed since it was translated.";
+
+/* TranslationDirection.swift */
+/* 언어 이름을 쓸 언어. 이 표의 언어 코드(en, ja…)를 적는다. */
+"languageNameLocale" = "en";
+
+/* TranslationLanguageSheet.swift */
+"번역 언어" = "Translation Languages";
+"한국어 → 다른 언어" = "Korean → Another Language";
+"다른 언어 → 한국어" = "Another Language → Korean";
+"번역" = "Translate";
+"%@ (받아야 함)" = "%@ (download required)";
+"%@ — 바로 번역할 수 있습니다." = "%@ — ready to translate.";
+"%@ — 이 언어는 아직 받아져 있지 않습니다. 번역을 누르면 받는 길을 알려 드립니다." = "%@ — this language hasn’t been downloaded yet. Click Translate to see how to get it.";
+
+/* TranslationProgressSheet.swift */
+"번역 중…" = "Translating…";
+"번역 중… (%@)" = "Translating… (%@)";
+"%lld분 %lld초" = "%lld min %lld s";
+"%lld초" = "%lld s";
+"%lld/%lld 조각 · %lld%% · %@ 경과" = "%lld/%lld chunks · %lld%% · %@ elapsed";
+"취소 중…" = "Canceling…";
+
+/* ZipArchive.swift */
+"중앙 디렉터리" = "central directory";
+"중앙 디렉터리 표지가 어긋났습니다 (%lld)" = "Central directory signature mismatch (%lld)";
+"항목 이름" = "entry name";
+"항목이 %lld개라는데 %lld개만 읽혔습니다" = "Expected %lld entries but read only %lld";
+"로컬 헤더 표지가 어긋났습니다: %@" = "Local header signature mismatch: %@";
+
+/* main.swift */
+"앱에 든 글꼴을 등록하지 못했습니다 — 시스템 글꼴로 그립니다" = "Couldn’t register the bundled fonts — using system fonts";
+"입력" = "Typing";
+"표 고치기" = "Edit Table";
