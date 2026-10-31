@@ -70,6 +70,7 @@ public final class MarkdownEditorView: NSView {
         styler.imageStore = imageStore
         // 원격 그림은 나중에 도착한다. 도착하면 자리를 잡아야 하므로 다시 칠한다.
         imageStore.onRemoteImageLoaded = { [weak self] in self?.restyleAll() }
+        useDiagramRenderer(DiagramRenderer.shared)
 
         textView.isEditable = true
         textView.isRichText = false
@@ -466,6 +467,52 @@ public final class MarkdownEditorView: NSView {
         }
     }
 
+    // MARK: 다이어그램·수식
+
+    /// `deinit`에서 지워야 해서 격리 밖에 둔다. 쓰는 곳은 메인 스레드뿐이다.
+    nonisolated(unsafe) private var diagramObserver: NSObjectProtocol?
+
+    deinit {
+        if let diagramObserver { NotificationCenter.default.removeObserver(diagramObserver) }
+    }
+
+    /// 다이어그램·수식을 그릴 곳을 바꾼다. 앱은 `DiagramRenderer.shared`를 쓰고, 테스트가
+    /// 저장소의 자원으로 만든 렌더러나 대역을 넣는다. nil이면 원문으로 둔다.
+    func useDiagramRenderer(_ renderer: RenderedBlockImages?) {
+        if let diagramObserver { NotificationCenter.default.removeObserver(diagramObserver) }
+        diagramObserver = nil
+        styler.renderedBlockImages = renderer
+        if let renderer {
+            // 그림은 나중에 도착한다. 이 문서에 블록이 있을 때만 다시 칠한다 — 다른 창의
+            // 그림이 도착할 때마다 큰 문서를 칠하면 타이핑이 멈춘다.
+            diagramObserver = NotificationCenter.default.addObserver(
+                // 큐 없이 받는다 — 렌더러는 메인 액터에서 알리므로 그 자리에서 바로 칠한다.
+                forName: DiagramRenderer.didRender, object: renderer, queue: nil
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, !self.styler.renderedBlocks.isEmpty else { return }
+                    self.restyleAll()
+                }
+            }
+        }
+        restyleAll()
+    }
+
+    /// 화면이 다크·라이트로 바뀌면 그림을 그 외관으로 다시 받는다(Mermaid 테마, 수식 색).
+    /// 다른 색은 시스템 의미색이라 저절로 바뀐다.
+    public override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        guard !styler.renderedBlocks.isEmpty else { return }
+        restyleAll()
+    }
+
+    private var isDarkAppearance: Bool {
+        effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+    }
+
+    /// 지금 그림으로 그려진 블록의 수. 테스트가 쓴다.
+    var renderedImageCount: Int { styler.imagePlacements.count }
+
     private func restyleAll() {
         guard !isStyling else { return }
         if batchDepth > 0 {
@@ -475,6 +522,7 @@ public final class MarkdownEditorView: NSView {
         isStyling = true
         fullRestyleCount += 1
         lastCaretLine = caretLine()
+        styler.isDarkAppearance = isDarkAppearance
         styler.contentWidth = max(120, Double(container.size.width) - 24)
         styler.style(storage, caretLine: lastCaretLine, search: searchState, lines: currentLines())
         syncCodeBlockBackgrounds()
@@ -484,6 +532,7 @@ public final class MarkdownEditorView: NSView {
     private func restyle(dirty range: NSRange) {
         guard !isStyling else { return }
         isStyling = true
+        styler.isDarkAppearance = isDarkAppearance
         styler.style(storage, caretLine: caretLine(), search: searchState, dirtyRange: range,
                      lines: currentLines())
         syncCodeBlockBackgrounds()

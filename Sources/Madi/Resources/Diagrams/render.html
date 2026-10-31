@@ -1,0 +1,38 @@
+<!doctype html>
+<!--
+  마디가 Mermaid 다이어그램과 KaTeX 수식을 그리는 숨은 페이지. 화면에 보이지 않는다.
+  DiagramRenderer.swift가 블록 하나의 원문을 renderBlock()에 넘기고, 그린 자리를 PDF로 받는다.
+
+  CSP가 첫 번째 벽이다: 이 폴더의 파일 말고는 아무것도 싣지 않고 어디로도 요청하지 않는다
+  (default-src 'none'). Mermaid가 그림 안에 <style>을 넣으므로 인라인 스타일만 허용한다.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src file:; style-src file: 'unsafe-inline'; font-src file: data:; img-src data:">
+<link rel="stylesheet" href="katex.min.css">
+<style>
+  /* 앱에 든 본문 글꼴. 앱 번들에서는 Resources 바로 아래, 저장소에서는 Resources/Fonts 아래다
+     (테스트가 저장소의 이 폴더를 싣는다). 첫 주소가 없으면 다음 주소를 쓴다. */
+  @font-face {
+    font-family: "Pretendard";
+    font-weight: 400;
+    src: url("../Pretendard-Regular.otf"), url("../Fonts/Pretendard-Regular.otf");
+  }
+  @font-face {
+    font-family: "Pretendard";
+    font-weight: 700;
+    src: url("../Pretendard-Bold.otf"), url("../Fonts/Pretendard-Bold.otf");
+  }
+  html, body { margin: 0; padding: 0; background: transparent; }
+  /* 그림 크기만큼만 차지하게 한다 — 그 상자를 잰다. */
+  #out { display: inline-block; padding: 2px; }
+  #out .katex-display { margin: 0; }
+</style>
+<script src="katex.min.js"></script>
+<script src="mermaid.min.js"></script>
+<script src="render.js"></script>
+</head>
+<body><div id="out"></div></body>
+</html>

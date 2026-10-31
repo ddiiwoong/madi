@@ -47,6 +47,15 @@ public final class MarkdownStyler {
 
     /// 그림을 읽어 주는 곳. 편집기가 넣어 준다. 없으면 그림을 그리지 않는다.
     var imageStore: InlineImageStore?
+
+    /// Mermaid·수식 블록을 그려 주는 곳(`DiagramRenderer`). 없으면 원문으로 둔다 —
+    /// 블록 편집기와 대부분의 테스트가 그렇다.
+    var renderedBlockImages: RenderedBlockImages?
+    /// 지금 화면이 다크인가. Mermaid 테마와 수식 글자 색을 고른다. 편집기가 칠하기 전에 넣는다.
+    public var isDarkAppearance = false
+    /// 이번 패스에서 찾은 다이어그램·수식 블록. 편집기가 "그림이 도착하면 다시 칠할 것이
+    /// 있는가"를 이것으로 안다.
+    public private(set) var renderedBlocks: [RenderedBlock] = []
     /// 상대 경로의 기준이 되는 문서 위치. 저장하지 않은 문서는 nil이다.
     public var documentURL: URL?
     /// 그림을 줄일 때 쓰는 글 넓이.
@@ -88,6 +97,14 @@ public final class MarkdownStyler {
         // 바뀌므로 다른 행의 글자 간격이 낡는다. 그 줄만 칠하면 표가 어긋난 채 남는다.
         if alignsTables, writeRange.length != full.length {
             writeRange = extendedOverTables(writeRange, in: text, limit: full, lines: lines)
+        }
+        // 다이어그램·수식 블록도 **통째로** 칠한다. 블록은 캐럿이 안에 있으면 원문, 밖에 있으면
+        // 그림인데, 캐럿이 블록의 가운데 줄로 들어와도 바뀌는 것은 블록 전체다 — 그 줄만 칠하면
+        // 나머지 줄은 접힌 채 남는다.
+        renderedBlocks = (renderedBlockImages != nil && !codeView)
+            ? RenderedBlock.blocks(in: text, lines: lines) : []
+        if writeRange.length != full.length, !renderedBlocks.isEmpty {
+            writeRange = Self.extended(writeRange, over: renderedBlocks.map(\.range), in: text, limit: full)
         }
 
         storage.beginEditing()
@@ -150,6 +167,11 @@ public final class MarkdownStyler {
         // 어느 글자가 숨었는지 이미 정해져 있어야 하기 때문이다.
         if alignsTables {
             alignTables(lines, in: storage, text: text, writeRange: writeRange)
+        }
+        // 마지막이다 — 블록의 줄에 앞의 패스가 준 속성을 통째로 덮어쓴다.
+        if !renderedBlocks.isEmpty {
+            placeRenderedBlocks(lines, in: storage, text: text, caretLine: caretLine,
+                                writeRange: writeRange)
         }
 
         for (index, range) in search.ranges.enumerated()
@@ -294,6 +316,128 @@ public final class MarkdownStyler {
             storage.addAttribute(.paragraphStyle, value: style, range: line.range)
         }
         imagePlacements = placements
+    }
+
+    // MARK: 다이어그램·수식
+
+    /// `range`가 닿는 블록을 통째로 감싸도록 넓힌다(`extendedOverTables`와 같은 이유).
+    static func extended(_ range: NSRange, over blocks: [NSRange], in text: NSString,
+                         limit: NSRange) -> NSRange {
+        var start = range.location
+        var end = NSMaxRange(range)
+        for block in blocks where NSIntersectionRange(block, range).length > 0
+            || NSLocationInRange(range.location, block) || NSLocationInRange(block.location, range) {
+            start = min(start, block.location)
+            end = max(end, NSMaxRange(block))
+        }
+        let grown = NSRange(location: start, length: max(0, end - start))
+        return NSIntersectionRange(text.lineRange(for: NSIntersectionRange(grown, limit)), limit)
+    }
+
+    /// 블록을 그림으로 바꾼다 — **문서를 고치지 않고**(`placeImages`와 같은 길).
+    ///
+    /// 여는 줄이 그림의 높이를 갖고 나머지 줄은 높이 0으로 접힌다. 글자는 모두 숨는다.
+    /// 캐럿이 블록 안에 있으면 원문을 보인다 — 고치려면 원문이 보여야 하고, 캐럿이 있는 줄의
+    /// 마커를 보이는 이 편집기의 성질을 블록 단위로 넓힌 것이다. 그림이 아직 없거나(그리는 중)
+    /// 그리지 못했으면 원문 그대로 둔다 — 틀린 Mermaid를 고칠 수 있어야 한다.
+    ///
+    /// 자리 목록은 `placeImages`처럼 **문서 전체**로 만들고, 속성 쓰기만 `writeRange`로 좁힌다.
+    private func placeRenderedBlocks(_ lines: [LineToken], in storage: NSTextStorage,
+                                     text: NSString, caretLine: Int?, writeRange: NSRange) {
+        guard let renderer = renderedBlockImages else { return }
+        let textColor = resolvedTextColorHex()
+        let family = theme.bodyFontFamily.map { "\"\($0.replacingOccurrences(of: "\"", with: ""))\", " } ?? ""
+        let fontFamily = family + "-apple-system, sans-serif"
+
+        var placements = imagePlacements
+        var shownAsImage: [NSRange] = []
+        var dollarSources: [NSRange] = []
+
+        for block in renderedBlocks {
+            let writes = NSIntersectionRange(block.range, writeRange).length > 0
+                || NSLocationInRange(block.range.location, writeRange)
+            let blockLines = lines[(block.firstLine - 1) ... (block.lastLine - 1)]
+
+            var image: NSImage?
+            if caretLine.map(block.contains(line:)) != true {
+                let request = RenderRequest(kind: block.kind, source: block.source,
+                                            isDark: isDarkAppearance,
+                                            fontSize: Double(theme.bodyPointSize),
+                                            textColor: textColor, fontFamily: fontFamily)
+                if case let .ready(ready) = renderer.image(for: request) { image = ready }
+            }
+
+            guard let image else {
+                // 원문으로 둔다. `$$` 블록의 줄은 문단으로 칠해졌으므로 코드처럼 다시 칠한다 —
+                // `x_1 + y_1`의 `_`가 기울임 표시로 읽혀 숨으면 고칠 수식이 망가져 보인다.
+                if block.delimiter == .dollars {
+                    dollarSources.append(block.range)
+                    if writes { showAsCode(blockLines, in: storage, text: text) }
+                }
+                continue
+            }
+
+            let pixels = ImageReference.Size(width: Double(image.size.width),
+                                             height: Double(image.size.height))
+            let display = ImageReference.displaySize(for: pixels, maxWidth: contentWidth)
+            let size = CGSize(width: display.width, height: display.height)
+            guard size.height > 0, let first = blockLines.first else { continue }
+            placements.append(ImagePlacement(lineRange: first.range, size: size, image: image))
+            shownAsImage.append(block.range)
+            guard writes else { continue }
+
+            for line in blockLines {
+                if line.range.length > 0 { hide(line.range, in: storage) }
+                // 줄바꿈까지 덮는다 — 문단 스타일은 줄바꿈 글자까지가 한 문단이다.
+                // **줄바꿈은 숨기지 않는다**: 숨긴 글자는 폭 0의 제어 문자가 되고, 줄바꿈이
+                // 그렇게 되면 줄이 끊기지 않아 블록 뒤의 글이 그림 줄에 붙는다.
+                let paragraph = text.lineRange(for: NSRange(location: line.range.location, length: 0))
+                let style = NSMutableParagraphStyle()
+                if line.lineNumber == block.firstLine {
+                    style.paragraphSpacing = theme.paragraphSpacing
+                    style.minimumLineHeight = size.height + 8
+                    style.maximumLineHeight = size.height + 8
+                } else {
+                    // 접는다. 0은 "제한 없음"이라 아주 작은 값을 준다.
+                    style.minimumLineHeight = 0
+                    style.maximumLineHeight = 0.001
+                }
+                storage.addAttribute(.paragraphStyle, value: style, range: paragraph)
+            }
+        }
+
+        // 그림이 된 펜스 블록은 회색 상자를 그리지 않는다. 원문으로 보이는 `$$` 블록은 코드처럼
+        // 상자를 그린다. 그리는 쪽이 이분 탐색하므로 **위치 순**이어야 한다.
+        codeBlockRanges = (codeBlockRanges.filter { range in
+            !shownAsImage.contains { NSIntersectionRange($0, range).length > 0 }
+        } + dollarSources).sorted { $0.location < $1.location }
+        imagePlacements = placements.sorted { $0.lineRange.location < $1.lineRange.location }
+    }
+
+    /// `$$` 블록의 원문을 코드처럼 칠한다 — 고정폭, 코드 색, 마커 숨김 없음.
+    private func showAsCode(_ lines: ArraySlice<LineToken>, in storage: NSTextStorage, text: NSString) {
+        let style = paragraphStyle(for: .codeBody)
+        for line in lines where line.range.length > 0 {
+            storage.setAttributes([
+                .font: theme.monoFont,
+                .foregroundColor: theme.codeText,
+                .paragraphStyle: style,
+            ], range: line.range)
+        }
+    }
+
+    /// 본문 글자 색을 지금 외관에서 푼 `#rrggbb`. 수식 글자 색이다.
+    private func resolvedTextColorHex() -> String {
+        var hex = isDarkAppearance ? "#ffffff" : "#000000"
+        let appearance = NSAppearance(named: isDarkAppearance ? .darkAqua : .aqua)
+        appearance?.performAsCurrentDrawingAppearance {
+            guard let color = theme.text.usingColorSpace(.sRGB) else { return }
+            hex = String(format: "#%02x%02x%02x",
+                         Int((color.redComponent * 255).rounded()),
+                         Int((color.greenComponent * 255).rounded()),
+                         Int((color.blueComponent * 255).rounded()))
+        }
+        return hex
     }
 
     /// 앞의 스페이스·탭 뒤가 `![`인가. 줄 전체가 그림이려면 다듬은 내용이 `![`로 시작해야 한다.

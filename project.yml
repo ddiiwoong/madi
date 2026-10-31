@@ -29,6 +29,14 @@ targets:
           - "Resources/Info.plist"
           # 저장소용 설명이다 — 앱에는 글꼴과 라이선스 전문만 들어간다.
           - "Resources/Fonts/README.md"
+          # 아래에서 폴더째 넣는다. 여기 두면 파일이 Resources 바로 아래로 펴진다.
+          - "Resources/Diagrams"
+          - "Resources/Diagrams/**"
+      # 다이어그램·수식 페이지는 **폴더 참조**로 넣는다. KaTeX의 CSS가 `fonts/KaTeX_*.woff2`를
+      # 상대 경로로 부르므로, 다른 자원처럼 납작하게 펴면 수식이 글꼴 없이 그려진다.
+      - path: Sources/Madi/Resources/Diagrams
+        type: folder
+        buildPhase: resources
     settings:
       base:
         INFOPLIST_FILE: Sources/Madi/Resources/Info.plist

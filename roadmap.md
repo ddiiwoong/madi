@@ -46,4 +46,4 @@ UI를 영어로도 내기로 정해 들어갔다(`TODO.md` 'UI 언어'). 시스�
 ## 그 뒤
 
 공개를 막지 않는 것들이다. 공개 뒤에 쓰는 사람의 말을 듣고 순서를 정한다: 블록 편집기
-단계 2(표 격자), LLM 교정, Mermaid·KaTeX, EPUB, Windows.
+단계 2(표 격자), LLM 교정, EPUB, Windows. (Mermaid·KaTeX는 2026-10-31에 들어갔다.)

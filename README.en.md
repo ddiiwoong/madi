@@ -23,9 +23,11 @@ make test     # tests (no app launch)
 make run      # build, then launch
 ```
 
-AppKit · Swift 6 · **no dependencies**. No package manager, no web view, no second buffer.
-The only things bundled are two fonts (Pretendard for text, IBM Plex Mono for code — both
-SIL OFL 1.1).
+AppKit · Swift 6 · **no Swift dependencies**. No package manager, no second buffer, and editing
+happens in one text system, not a web view. Two third-party things ship in the app: two fonts
+(Pretendard for text, IBM Plex Mono for code — both SIL OFL 1.1), and the scripts of the hidden
+web view that draws Mermaid and KaTeX (Mermaid 12.2.0, KaTeX 0.19.1 — both MIT;
+[list and licenses](Sources/Madi/Resources/Diagrams/README.md), Korean).
 How to build, test and contribute: [docs/building.md](docs/building.md) (Korean).
 
 > **Status: 0.1.0, not distributed yet.** The app is ad-hoc signed
@@ -60,7 +62,7 @@ The full list and every shortcut are in [docs/features.md](docs/features.md) (Ko
 
 | | |
 |---|---|
-| Editing | Live preview ↔ Markdown source toggle (`⌘E`), syntax highlighting for 11 languages, table column alignment, inline images |
+| Editing | Live preview ↔ Markdown source toggle (`⌘E`), syntax highlighting for 11 languages, table column alignment, inline images, Mermaid diagram and KaTeX math blocks |
 | Find | In-document search (`⌘F`), match count and stepping (`⌘G`) |
 | Navigation | Outline · recent documents · file browser sidebar (each toggles) |
 | Documents | YAML front matter card; `NSDocument` open, save, autosave and version restore |
@@ -84,8 +86,10 @@ Stated plainly. The background and plans are in [TODO.md](TODO.md) (Korean).
 - **Tables are not drawn as grids.** They stay as text with aligned columns. That is not a
   missing piece of work but a consequence of the text system's model; what has to change is
   written up in the [block editor design](docs/block-editor-design.md).
-- **No Mermaid diagrams and no KaTeX math.** The native route is expensive, and whether to use
-  a hidden web view is waiting on a decision.
+- **Diagrams and math are drawn for blocks only.** ```` ```mermaid ````, ```` ```math ```` and
+  `$$` blocks become pictures; inline `$…$` stays as source. The pictures are view-only: to change
+  one, put the caret inside the block and edit its source. The block editor (experimental) does
+  not draw them.
 - **The interface comes in English and Korean only.** On a system whose language list has
   neither, Madi opens in Korean; choose English in Settings ▸ General ▸ Language.
 - **Images in the middle of a line stay as source.** Only an image that has a line to itself

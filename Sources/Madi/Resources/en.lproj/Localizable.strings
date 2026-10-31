@@ -149,6 +149,15 @@
 "문서 열기 (⌘O)" = "Open (⌘O)";
 "더 많은 작업" = "More Actions";
 
+/* DiagramRenderer.swift */
+"수식을 그리지 못했습니다" = "Couldn’t render a math block";
+"다이어그램을 그리지 못했습니다" = "Couldn’t render a diagram";
+"그림의 크기를 알 수 없습니다" = "Couldn’t measure the rendered picture";
+"그림을 PDF로 받지 못했습니다" = "Couldn’t capture the rendered picture as PDF";
+"그림을 그릴 자원이 앱에 없습니다" = "The files for rendering diagrams are missing from the app";
+"웹뷰의 바깥 요청 차단 규칙을 만들지 못했습니다 — 페이지의 CSP만 막습니다" = "Couldn’t build the web view’s network-blocking rules — only the page’s CSP blocks requests";
+"그림을 그리던 웹 프로세스가 멈췄습니다" = "The web process that renders pictures stopped";
+
 /* EditorPreferences.swift */
 "시스템" = "System";
 "라이트" = "Light";

@@ -18,8 +18,12 @@ guard fontFailures.isEmpty else {
     exit(1)
 }
 
+/// 다이어그램·수식을 그리는 숨은 웹뷰. 저장소의 자원을 싣는다(이 실행 파일에는 앱 번들이 없다).
+let diagrams = DiagramRenderer(resources: URL(fileURLWithPath: "Sources/Madi/Resources/Diagrams"))
+
 @MainActor
-func render(_ name: String, source: String, width: CGFloat, codeView: Bool, caretOn needle: String?) {
+func render(_ name: String, source: String, width: CGFloat, codeView: Bool, caretOn needle: String?,
+            expectsPictures: Int = 0) {
     let text = try! String(contentsOfFile: source, encoding: .utf8)
     let window = NSWindow(contentRect: NSRect(x: -20000, y: 0, width: width, height: 600),
                           styleMask: [.titled], backing: .buffered, defer: false)
@@ -27,6 +31,7 @@ func render(_ name: String, source: String, width: CGFloat, codeView: Bool, care
     let editor = MarkdownEditorView(frame: NSRect(x: 0, y: 0, width: width, height: 600))
     window.contentView = editor
     window.orderBack(nil)
+    editor.useDiagramRenderer(diagrams)
     editor.batchUpdates {
         editor.markdown = text
         editor.documentURL = URL(fileURLWithPath: source)
@@ -38,6 +43,16 @@ func render(_ name: String, source: String, width: CGFloat, codeView: Bool, care
         editor.textView.setSelectedRange(NSRange(location: at, length: 0))
     } else {
         editor.textView.setSelectedRange(NSRange(location: (editor.markdown as NSString).length, length: 0))
+    }
+    // 그림은 웹뷰에서 나중에 온다. 다 올 때까지 런루프를 돌린다(20초에서 포기한다).
+    let deadline = Date().addingTimeInterval(20)
+    while editor.renderedImageCount < expectsPictures, Date() < deadline {
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+    }
+    guard editor.renderedImageCount >= expectsPictures else {
+        FileHandle.standardError.write("\(name): 그림 \(expectsPictures)개 중 \(editor.renderedImageCount)개만 왔습니다\n"
+            .data(using: .utf8)!)
+        exit(1)
     }
     let textView = editor.textView
     textView.layoutManager!.ensureLayout(for: textView.textContainer!)
@@ -62,3 +77,7 @@ render("source-view.png", source: source, width: 720, codeView: true, caretOn: n
 let highlight = URL(fileURLWithPath: source).deletingLastPathComponent()
     .appendingPathComponent("highlight.md").path
 render("highlight.png", source: highlight, width: 560, codeView: false, caretOn: nil)
+// 다이어그램과 수식 — 숨은 웹뷰가 그린 그림이 들어간다.
+let diagramSample = URL(fileURLWithPath: source).deletingLastPathComponent()
+    .appendingPathComponent("diagrams.md").path
+render("diagrams.png", source: diagramSample, width: 640, codeView: false, caretOn: nil, expectsPictures: 2)
