@@ -254,6 +254,41 @@
 "기본 앱으로 등록하지 못했습니다" = "Couldn’t make Madi the default app";
 "Markdown 파일의 기본 앱이 마디로 바뀌었습니다" = "Madi is now the default app for Markdown files";
 
+/* SettingsPanel.swift — AI 교정 */
+"AI 교정" = "AI Proofreading";
+"교정에 쓸 API 키를 이 Mac의 키체인에 둡니다. 문서를 바깥 서비스로 보내는 교정은 아직 없습니다 — 보낼지는 정하지 않았습니다." = "API keys for proofreading are kept in this Mac’s keychain. Proofreading that sends a document to an outside service doesn’t exist yet — whether to send documents hasn’t been decided.";
+"서비스" = "Service";
+"API 키" = "API key";
+"API 키를 붙여 넣으십시오" = "Paste an API key";
+"키체인에 저장" = "Save to Keychain";
+"llm.removeKey" = "Remove Key";
+"리전" = "Region";
+"키 확인" = "Check Key";
+"키 확인은 그 서비스에 모델 목록만 묻습니다. 문서는 보내지 않습니다." = "Checking a key only asks the service for its model list. No document is sent.";
+"키 받는 곳: %@" = "Get a key at: %@";
+"키체인에 저장된 키가 있습니다" = "A key is saved in the keychain";
+"저장된 키가 없습니다" = "No key saved";
+"마디 — %@ API 키" = "Madi — %@ API key";
+"키를 키체인에 저장했습니다" = "Saved the key to the keychain";
+"키를 저장하지 못했습니다" = "Couldn’t save the key";
+"키체인에서 키를 지웠습니다" = "Removed the key from the keychain";
+"확인하는 중…" = "Checking…";
+"키를 확인했습니다" = "Checked the key";
+"키를 확인하지 못했습니다" = "Couldn’t check the key";
+
+/* KeychainSecretStore.swift */
+"키체인에 저장하지 못했습니다: %@" = "Couldn’t save to the keychain: %@";
+
+/* LLMKeyCheck.swift */
+"키가 맞습니다 — 모델 %lld개, 권장 모델 %@ 있음" = "Key accepted — models: %lld, including the recommended %@";
+"키가 맞습니다 — 모델 %lld개. 목록에 권장 모델이 없습니다: %@" = "Key accepted — models: %lld. The recommended model isn’t in the list: %@";
+"키가 거절됐습니다 (HTTP %lld): %@" = "Key rejected (HTTP %lld): %@";
+"확인하지 못했습니다: %@" = "Couldn’t check: %@";
+"서비스에 닿지 못했습니다: %@" = "Couldn’t reach the service: %@";
+"키나 리전이 비어 있거나 맞지 않습니다" = "The key or region is empty or invalid";
+"HTTP 응답이 아닙니다" = "Not an HTTP response";
+"모델 목록을 읽지 못했습니다" = "Couldn’t read the model list";
+
 /* SideBySideTranslation.swift */
 "원문이 번역한 뒤에 바뀌었습니다." = "The original has changed since it was translated.";
 

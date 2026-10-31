@@ -81,6 +81,9 @@ targets:
       # 번역 실패 안내 문구를 테스트가 지킨다. 이 파일의 `availability`/`preflight`는
       # 시스템을 묻기 때문에 테스트에서 부르지 않는다 — 순수한 `Failure` 문구만 본다.
       - Sources/Madi/Services/AppleTranslator.swift
+      # 설정 창의 AI 교정 탭이 쓴다. 테스트는 키체인 대신 메모리 저장소와 대역 확인기를 넣는다.
+      - Sources/Madi/Services/KeychainSecretStore.swift
+      - Sources/Madi/Services/LLMKeyCheck.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.jinwoong.md.tests

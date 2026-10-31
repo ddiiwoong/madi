@@ -44,6 +44,25 @@ final class SettingsPanel: NSWindowController {
     private let languageDefaults: UserDefaults
     private let languageDomain: String?
 
+    // AI 교정 — 키 두기와 확인
+    private let servicePicker = NSPopUpButton()
+    private let keyStatusLabel = NSTextField(labelWithString: "")
+    private let keyField = NSSecureTextField()
+    private let saveKeyButton = NSButton(title: String(localized: "키체인에 저장"), target: nil, action: nil)
+    // 기록 창의 '지우기'(Clear)와 영어가 다르다(Remove Key) — 키를 따로 둔다.
+    private let removeKeyButton = NSButton(title: String(localized: "llm.removeKey", defaultValue: "지우기"),
+                                           target: nil, action: nil)
+    private let regionRow = NSStackView()
+    private let regionField = NSTextField()
+    private let checkKeyButton = NSButton(title: String(localized: "키 확인"), target: nil, action: nil)
+    private let checkResultLabel = NSTextField(wrappingLabelWithString: "")
+    private let consoleLabel = NSTextField(labelWithString: "")
+    private let secrets: SecretStore
+    private let keyChecker: KeyChecking
+    /// Bedrock 리전처럼 **비밀이 아닌** 값. 키는 여기 두지 않는다.
+    private let llmDefaults: UserDefaults
+    static let bedrockRegionKey = "llm.bedrock.region"
+
     // PDF·프린트
     private let paperPicker = NSPopUpButton()
     private let orientationPicker = NSPopUpButton()
@@ -69,11 +88,17 @@ final class SettingsPanel: NSWindowController {
 
     init(store: PreferenceStore,
          languageDefaults: UserDefaults = .standard,
-         languageDomain: String? = Bundle.main.bundleIdentifier) {
+         languageDomain: String? = Bundle.main.bundleIdentifier,
+         secrets: SecretStore = KeychainSecretStore.app,
+         keyChecker: KeyChecking = LiveKeyChecker(),
+         llmDefaults: UserDefaults = .standard) {
         self.store = store
         self.preferences = store.current
         self.languageDefaults = languageDefaults
         self.languageDomain = languageDomain
+        self.secrets = secrets
+        self.keyChecker = keyChecker
+        self.llmDefaults = llmDefaults
         let panel = NSPanel(
             contentRect: NSRect(origin: .zero, size: Self.panelSize),
             styleMask: [.titled, .closable, .utilityWindow],
@@ -109,6 +134,7 @@ final class SettingsPanel: NSWindowController {
         tabs.addTabViewItem(tab(String(localized: "보기"), view: makeViewTab()))
         tabs.addTabViewItem(tab(String(localized: "일반"), view: makeGeneralTab()))
         tabs.addTabViewItem(tab(String(localized: "PDF·프린트"), view: makePrintTab()))
+        tabs.addTabViewItem(tab(String(localized: "AI 교정"), view: makeAITab()))
         tabs.addTabViewItem(tab(String(localized: "정보"), view: makeAboutTab()))
 
         let reset = NSButton(title: String(localized: "기본값으로"), target: self, action: #selector(resetAll))
@@ -353,6 +379,163 @@ final class SettingsPanel: NSWindowController {
             spacer(),
             note(String(localized: "‘시스템 기본’ 용지는 시스템 프린트 설정의 용지를 그대로 씁니다.")),
         ])
+    }
+
+    // MARK: AI 교정
+
+    /// 교정에 쓸 키를 키체인에 두고 확인하는 탭. **교정 자체는 아직 없다** — 문서를 바깥으로 보낼지
+    /// 정하지 않았다(TODO '결정이 필요한 것'). 그래서 이 탭의 항목은 모두 키를 두고 확인하는 데에만
+    /// 닿고, 그 사실을 탭 머리에 적는다.
+    private func makeAITab() -> NSView {
+        servicePicker.removeAllItems()
+        for service in LLMService.allCases {
+            servicePicker.addItem(withTitle: service.displayName)
+            servicePicker.lastItem?.representedObject = service.rawValue
+        }
+        servicePicker.target = self
+        servicePicker.action = #selector(serviceChanged)
+
+        keyField.placeholderString = String(localized: "API 키를 붙여 넣으십시오")
+        keyField.translatesAutoresizingMaskIntoConstraints = false
+        keyField.widthAnchor.constraint(equalToConstant: 250).isActive = true
+        for button in [saveKeyButton, removeKeyButton, checkKeyButton] { button.bezelStyle = .rounded }
+        saveKeyButton.target = self
+        saveKeyButton.action = #selector(saveKey)
+        removeKeyButton.target = self
+        removeKeyButton.action = #selector(removeKey)
+        checkKeyButton.target = self
+        checkKeyButton.action = #selector(checkKey)
+        keyStatusLabel.font = .systemFont(ofSize: 11)
+        keyStatusLabel.textColor = .secondaryLabelColor
+        consoleLabel.font = .systemFont(ofSize: 11)
+        consoleLabel.textColor = .secondaryLabelColor
+        consoleLabel.isSelectable = true
+        checkResultLabel.font = .systemFont(ofSize: 11)
+        checkResultLabel.isSelectable = true
+
+        regionField.placeholderString = LLMService.defaultBedrockRegion
+        regionField.translatesAutoresizingMaskIntoConstraints = false
+        regionField.widthAnchor.constraint(equalToConstant: 140).isActive = true
+        regionField.target = self
+        regionField.action = #selector(regionChanged)
+        regionField.stringValue = llmDefaults.string(forKey: Self.bedrockRegionKey) ?? ""
+        let regionLabel = NSTextField(labelWithString: String(localized: "리전"))
+        for view in [regionLabel, regionField] { regionRow.addArrangedSubview(view) }
+        regionRow.orientation = .horizontal
+        regionRow.spacing = 10
+
+        let keyButtons = NSStackView(views: [saveKeyButton, removeKeyButton])
+        keyButtons.orientation = .horizontal
+        keyButtons.spacing = 8
+
+        let stack = column([
+            // 이 탭이 무엇을 하고 무엇을 하지 않는지 — 말하지 않으면 키를 넣는 순간 문서가 나간다고
+            // 짐작하거나, 교정 기능을 찾아 헤맨다.
+            note(String(localized: "교정에 쓸 API 키를 이 Mac의 키체인에 둡니다. 문서를 바깥 서비스로 보내는 교정은 아직 없습니다 — 보낼지는 정하지 않았습니다.")),
+            row(String(localized: "서비스"), servicePicker),
+            keyStatusLabel,
+            row(String(localized: "API 키"), keyField),
+            keyButtons,
+            regionRow,
+            spacer(),
+            checkKeyButton,
+            checkResultLabel,
+            note(String(localized: "키 확인은 그 서비스에 모델 목록만 묻습니다. 문서는 보내지 않습니다.")),
+            consoleLabel,
+        ])
+        refreshService()
+        return stack
+    }
+
+    private var selectedService: LLMService {
+        (servicePicker.selectedItem?.representedObject as? String).flatMap(LLMService.init(rawValue:)) ?? .anthropic
+    }
+
+    /// 고른 서비스에 맞춰 화면을 다시 쓴다. **키 값은 꺼내지 않는다** — 있는지만 묻는다
+    /// (`KeychainSecretStore`의 설명: 값을 꺼내면 서명이 바뀐 빌드에서 키체인 창이 뜬다).
+    private func refreshService() {
+        let service = selectedService
+        let stored = secrets.hasSecret(for: service.rawValue)
+        keyStatusLabel.stringValue = stored
+            ? String(localized: "키체인에 저장된 키가 있습니다")
+            : String(localized: "저장된 키가 없습니다")
+        removeKeyButton.isEnabled = stored
+        checkKeyButton.isEnabled = stored
+        regionRow.isHidden = !service.needsRegion
+        consoleLabel.stringValue = String(localized: "키 받는 곳: \(service.keyConsole)")
+        checkResultLabel.stringValue = ""
+    }
+
+    @objc private func serviceChanged() {
+        keyField.stringValue = ""
+        refreshService()
+    }
+
+    @objc private func saveKey() {
+        let service = selectedService
+        // 붙여 넣은 키 끝의 줄바꿈·공백을 뗀다 — 흔하고, 그대로 두면 서비스가 키를 거절한다.
+        let key = keyField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else { return }
+        do {
+            try secrets.setSecret(key, for: service.rawValue,
+                                  label: String(localized: "마디 — \(service.displayName) API 키"))
+            // 기록에 키를 남기지 않는다 — 서비스 이름만.
+            AppLog.info(String(localized: "키를 키체인에 저장했습니다"), detail: service.displayName)
+        } catch {
+            AppLog.error(String(localized: "키를 저장하지 못했습니다"), detail: error.localizedDescription)
+            checkResultLabel.stringValue = error.localizedDescription
+            return
+        }
+        // 저장한 뒤에는 칸을 비운다 — 화면에 키가 남아 있을 이유가 없다.
+        keyField.stringValue = ""
+        refreshService()
+    }
+
+    @objc private func removeKey() {
+        let service = selectedService
+        secrets.removeSecret(for: service.rawValue)
+        AppLog.info(String(localized: "키체인에서 키를 지웠습니다"), detail: service.displayName)
+        refreshService()
+    }
+
+    @objc private func regionChanged() {
+        let region = regionField.stringValue.trimmingCharacters(in: .whitespaces).lowercased()
+        if region.isEmpty {
+            llmDefaults.removeObject(forKey: Self.bedrockRegionKey)
+        } else if LLMService.isValidRegion(region) {
+            llmDefaults.set(region, forKey: Self.bedrockRegionKey)
+        }
+        regionField.stringValue = llmDefaults.string(forKey: Self.bedrockRegionKey) ?? ""
+    }
+
+    /// 키 확인 중인 일. 테스트가 끝나기를 기다린다.
+    private(set) var keyCheckTask: Task<Void, Never>?
+
+    @objc private func checkKey() {
+        let service = selectedService
+        regionChanged()     // 칸에 친 채 엔터를 누르지 않았어도 지금 값으로 묻는다
+        guard let key = secrets.secret(for: service.rawValue) else {
+            refreshService()
+            return
+        }
+        let region = service.needsRegion
+            ? llmDefaults.string(forKey: Self.bedrockRegionKey) ?? LLMService.defaultBedrockRegion : nil
+        checkKeyButton.isEnabled = false
+        checkResultLabel.stringValue = String(localized: "확인하는 중…")
+        let checker = keyChecker
+        keyCheckTask = Task { @MainActor [weak self] in
+            let result = await checker.check(service, key: key, region: region)
+            guard let self else { return }
+            let line = result.line(for: service)
+            // 확인하는 동안 다른 서비스로 옮겼으면 그 화면에 쓰지 않는다.
+            if self.selectedService == service { self.checkResultLabel.stringValue = line }
+            self.checkKeyButton.isEnabled = self.secrets.hasSecret(for: self.selectedService.rawValue)
+            if case .accepted = result {
+                AppLog.info(String(localized: "키를 확인했습니다"), detail: "\(service.displayName) — \(line)")
+            } else {
+                AppLog.warning(String(localized: "키를 확인하지 못했습니다"), detail: "\(service.displayName) — \(line)")
+            }
+        }
     }
 
     private func makeAboutTab() -> NSView {

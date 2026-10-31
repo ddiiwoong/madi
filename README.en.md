@@ -86,6 +86,10 @@ Stated plainly. The background and plans are in [TODO.md](TODO.md) (Korean).
 - **Tables are not drawn as grids.** They stay as text with aligned columns. That is not a
   missing piece of work but a consequence of the text system's model; what has to change is
   written up in the [block editor design](docs/block-editor-design.md).
+- **There is no AI proofreading yet.** Settings ▸ AI Proofreading can keep API keys for Anthropic,
+  OpenAI, Gemini, Groq and Bedrock in the keychain and check them, but whether a document may be
+  sent to an outside service hasn't been decided, so nothing is proofread. Checking a key only
+  asks for the model list.
 - **Diagrams and math are drawn for blocks only.** ```` ```mermaid ````, ```` ```math ```` and
   `$$` blocks become pictures; inline `$…$` stays as source. The pictures are view-only: to change
   one, put the caret inside the block and edit its source. The block editor (experimental) does

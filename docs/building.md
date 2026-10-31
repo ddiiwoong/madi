@@ -16,7 +16,7 @@
 
 ```sh
 make build       # 빌드. 로그는 .build/build.log
-make test        # 테스트 557개. 로그는 .build/test.log
+make test        # 테스트 579개. 로그는 .build/test.log
 make run         # 빌드 후 실행
 make core-only   # Core가 Foundation만으로 서는지 (아래 참고)
 make universal   # Release, arm64 + x86_64, lipo로 검사까지

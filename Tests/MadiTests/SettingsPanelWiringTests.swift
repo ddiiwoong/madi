@@ -31,8 +31,23 @@ final class SettingsPanelWiringTests: XCTestCase {
         panel = makePanel()
     }
 
+    /// 키는 메모리에 둔다 — 시험이 사용자의 키체인에 닿지 않는다.
+    private var secrets = MemorySecretStore()
+    private var checker = StubChecker()
+
+    /// 키 확인 대역. 받은 것을 기억하고 정해 둔 결과를 준다.
+    final class StubChecker: KeyChecking {
+        var result = KeyCheckResult.accepted(models: 3, hasRecommended: true)
+        private(set) var calls: [(LLMService, String, String?)] = []
+        func check(_ service: LLMService, key: String, region: String?) async -> KeyCheckResult {
+            calls.append((service, key, region))
+            return result
+        }
+    }
+
     private func makePanel() -> SettingsPanel {
-        SettingsPanel(store: store, languageDefaults: languageDefaults, languageDomain: languageSuite)
+        SettingsPanel(store: store, languageDefaults: languageDefaults, languageDomain: languageSuite,
+                      secrets: secrets, keyChecker: checker, llmDefaults: languageDefaults)
     }
 
     override func tearDown() {
@@ -101,7 +116,7 @@ final class SettingsPanelWiringTests: XCTestCase {
     func testFourTabsExist() {
         guard let tabs = tabView else { return XCTFail("NSTabView가 없다") }
         XCTAssertEqual(tabs.tabViewItems.map(\.label),
-                       ["보기", "일반", "PDF·프린트", "정보"])
+                       ["보기", "일반", "PDF·프린트", "AI 교정", "정보"])
     }
 
     /// 고르개가 비어 있으면 사용자가 고를 것이 없다.
@@ -311,6 +326,137 @@ final class SettingsPanelWiringTests: XCTestCase {
         check.state = .off
         fire(check)
         XCTAssertEqual(store.current.translationTarget, "ja")
+    }
+
+    // MARK: AI 교정 — 키
+
+    private var servicePicker: NSPopUpButton? {
+        let wanted = Set(LLMService.allCases.map(\.rawValue))
+        return allViews.compactMap { $0 as? NSPopUpButton }.first { button in
+            Set(button.itemArray.compactMap { $0.representedObject as? String }) == wanted
+        }
+    }
+
+    private var keyField: NSSecureTextField? {
+        allViews.compactMap { $0 as? NSSecureTextField }.first
+    }
+
+    private func button(_ title: String) -> NSButton? {
+        allViews.compactMap { $0 as? NSButton }.first { $0.title == title && $0.action != nil }
+    }
+
+    private func label(containing text: String) -> NSTextField? {
+        allViews.compactMap { $0 as? NSTextField }.first { $0.stringValue.contains(text) && !$0.isEditable }
+    }
+
+    private func choose(_ service: LLMService) {
+        guard let picker = servicePicker else { return XCTFail("서비스 고르개가 없다") }
+        select(service.rawValue, in: picker)
+        fire(picker)
+    }
+
+    /// 다섯 서비스를 고를 수 있다 — 소곤이 부르는 바깥 서비스와 같다.
+    func testServicesAreListed() {
+        XCTAssertEqual(servicePicker?.itemArray.map(\.title),
+                       ["Anthropic Claude", "OpenAI", "Google Gemini", "Groq", "Amazon Bedrock"])
+    }
+
+    func testSavingAKeyStoresItTrimmedAndClearsTheField() {
+        choose(.gemini)
+        guard let field = keyField, let save = button("키체인에 저장") else { return XCTFail("키 칸·저장 단추가 없다") }
+        XCTAssertNotNil(label(containing: "저장된 키가 없습니다"))
+        field.stringValue = "  AIza-secret\n"
+        fire(save)
+        XCTAssertEqual(secrets.values["gemini"], "AIza-secret", "붙여 넣은 공백·줄바꿈을 뗀다")
+        XCTAssertEqual(field.stringValue, "", "저장한 뒤 화면에 키를 남기지 않는다")
+        XCTAssertNotNil(label(containing: "키체인에 저장된 키가 있습니다"))
+        // 편집기 설정 저장소에는 키가 없다.
+        XCTAssertFalse(defaults.dictionaryRepresentation().values.contains { "\($0)".contains("AIza-secret") })
+    }
+
+    /// 기록 창에 키가 남지 않는다 — 기록은 복사해 붙여 넣는 곳이다.
+    func testKeyIsNeverLogged() async {
+        choose(.openai)
+        keyField?.stringValue = "sk-never-logged"
+        if let save = button("키체인에 저장") { fire(save) }
+        if let check = button("키 확인") { fire(check) }
+        await panel.keyCheckTask?.value
+        let logged = AppLog.shared.entries.map { "\($0.message) \($0.detail ?? "")" }.joined(separator: "\n")
+        XCTAssertFalse(logged.contains("sk-never-logged"))
+    }
+
+    func testRemovingAKeyDeletesIt() {
+        try? secrets.setSecret("k", for: "groq", label: "")
+        choose(.groq)
+        guard let remove = button("지우기"), remove.isEnabled else { return XCTFail("지우기가 꺼져 있다") }
+        fire(remove)
+        XCTAssertNil(secrets.values["groq"])
+        XCTAssertFalse(remove.isEnabled)
+    }
+
+    /// 화면을 그리면서 **값을 꺼내지 않는다** — ad-hoc 서명 빌드에서는 값을 꺼낼 때마다 키체인 창이
+    /// 뜰 수 있다. 있는지만 묻고, 값은 키 확인을 누를 때만 꺼낸다.
+    func testShowingTheTabDoesNotReadSecrets() {
+        try? secrets.setSecret("k", for: "anthropic", label: "")
+        panel = makePanel()
+        for service in LLMService.allCases { choose(service) }
+        XCTAssertEqual(secrets.reads, 0)
+    }
+
+    func testCheckUsesTheStoredKeyAndShowsTheResult() async {
+        try? secrets.setSecret("sk-ant-x", for: "anthropic", label: "")
+        panel = makePanel()
+        choose(.anthropic)
+        guard let check = button("키 확인"), check.isEnabled else { return XCTFail("키 확인이 꺼져 있다") }
+        checker.result = .rejected(status: 401, message: "invalid x-api-key")
+        fire(check)
+        await panel.keyCheckTask?.value
+        XCTAssertEqual(checker.calls.count, 1)
+        XCTAssertEqual(checker.calls.first?.0, .anthropic)
+        XCTAssertEqual(checker.calls.first?.1, "sk-ant-x")
+        XCTAssertNil(checker.calls.first?.2, "Bedrock이 아니면 리전을 넘기지 않는다")
+        XCTAssertNotNil(label(containing: "invalid x-api-key"))
+    }
+
+    func testCheckIsOffWithoutAKey() {
+        choose(.openai)
+        XCTAssertEqual(button("키 확인")?.isEnabled, false)
+    }
+
+    /// 리전은 Bedrock에만 보이고, 비밀이 아니므로 설정에 둔다. 확인이 그 리전으로 묻는다.
+    func testBedrockRegionIsShownStoredAndUsed() async {
+        try? secrets.setSecret("bedrock-key", for: "bedrock", label: "")
+        panel = makePanel()
+        let regionField = allViews.compactMap { $0 as? NSTextField }
+            .first { $0.placeholderString == LLMService.defaultBedrockRegion }
+        guard let regionField, let row = regionField.superview else { return XCTFail("리전 칸이 없다") }
+
+        choose(.anthropic)
+        XCTAssertTrue(row.isHidden, "Bedrock이 아니면 리전이 없다")
+        choose(.bedrock)
+        XCTAssertFalse(row.isHidden)
+
+        regionField.stringValue = "ap-northeast-2"
+        fire(regionField)
+        XCTAssertEqual(languageDefaults.string(forKey: SettingsPanel.bedrockRegionKey), "ap-northeast-2")
+
+        regionField.stringValue = "evil.example.com"
+        fire(regionField)
+        XCTAssertEqual(languageDefaults.string(forKey: SettingsPanel.bedrockRegionKey), "ap-northeast-2",
+                       "리전이 아닌 글은 받지 않는다")
+
+        if let check = button("키 확인") { fire(check) }
+        await panel.keyCheckTask?.value
+        XCTAssertEqual(checker.calls.last?.2, "ap-northeast-2")
+    }
+
+    /// `기본값으로`는 보기·프린트 설정을 되돌린다. 키를 지우지 않는다.
+    func testResetKeepsKeys() {
+        try? secrets.setSecret("k", for: "openai", label: "")
+        guard let reset = allViews.compactMap({ $0 as? NSButton }).first(where: { $0.title == "기본값으로" })
+        else { return XCTFail("기본값으로 버튼이 없다") }
+        fire(reset)
+        XCTAssertEqual(secrets.values["openai"], "k")
     }
 
     // MARK: 화면 언어
