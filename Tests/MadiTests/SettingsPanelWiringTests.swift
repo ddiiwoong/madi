@@ -213,8 +213,9 @@ final class SettingsPanelWiringTests: XCTestCase {
 
     // MARK: 글꼴
 
+    /// '시스템' 항목이 든 글꼴 고르개. 앱에 든 글꼴이 등록돼 있으면 그것이 맨 위에 온다.
     private func fontPicker(system title: String) -> NSPopUpButton? {
-        allViews.compactMap { $0 as? NSPopUpButton }.first { $0.itemArray.first?.title == title }
+        allViews.compactMap { $0 as? NSPopUpButton }.first { $0.itemArray.contains { $0.title == title } }
     }
 
     /// 두 고르개가 있고, 맨 위가 시스템이며, 이 Mac의 글꼴이 실려 있다.
@@ -250,10 +251,29 @@ final class SettingsPanelWiringTests: XCTestCase {
         XCTAssertEqual(store.current.bodyFontFamily, "Helvetica")
         XCTAssertEqual(store.current.codeFontFamily, "Menlo")
 
-        body.selectItem(at: 0)
+        guard let systemIndex = body.itemArray.firstIndex(where: { $0.title == "시스템 글꼴" }) else {
+            return XCTFail("시스템 항목이 없다")
+        }
+        body.selectItem(at: systemIndex)
         fire(body)
-        XCTAssertNil(store.current.bodyFontFamily, "시스템을 고르면 지운다")
-        XCTAssertNil(defaults.object(forKey: "editor.bodyFontFamily"), "빈 값을 남기지 않는다")
+        XCTAssertNil(store.current.bodyFontFamily, "시스템을 고르면 nil로 읽힌다")
+        // 키를 지우면 기본값(앱에 든 글꼴)으로 읽히므로 빈 값으로 남는다.
+        XCTAssertEqual(defaults.string(forKey: "editor.bodyFontFamily"), "")
+    }
+
+    /// 앱에 든 글꼴이 등록돼 있으면 고르개 맨 위에 '기본'으로 온다.
+    func testBundledFontsAreListedFirst() {
+        XCTAssertTrue(BundledFonts.register(from: FontPreferenceTests.repoFonts).isEmpty)
+        panel = SettingsPanel(store: store)
+        guard let body = fontPicker(system: "시스템 글꼴"),
+              let code = fontPicker(system: "시스템 고정폭") else { return XCTFail("글꼴 고르개가 없다") }
+        XCTAssertEqual(body.itemArray.first?.representedObject as? String, "Pretendard")
+        XCTAssertEqual(code.itemArray.first?.representedObject as? String, "IBM Plex Mono")
+        // 처음 열면(아무것도 고른 적 없으면) 그것이 골라져 있다.
+        XCTAssertEqual(body.selectedItem?.representedObject as? String, "Pretendard")
+        XCTAssertEqual(code.selectedItem?.representedObject as? String, "IBM Plex Mono")
+        XCTAssertEqual(body.itemArray.filter { ($0.representedObject as? String) == "Pretendard" }.count, 1,
+                       "아래 목록에 한 번 더 나오지 않는다")
     }
 
     /// 이 Mac에 없는 글꼴이 저장돼 있으면 시스템을 고른 것처럼 보이지 않는다.

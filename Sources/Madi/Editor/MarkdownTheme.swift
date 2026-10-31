@@ -57,6 +57,10 @@ public struct MarkdownTheme {
 
     private static var resolved: [String: Any] = [:]
 
+    /// 기억해 둔 글꼴을 버린다. 글꼴을 새로 등록한 뒤에 부른다 — 등록 전에 찾았다가 '없음'으로
+    /// 기억한 이름이 계속 없는 것으로 남지 않게.
+    static func forgetResolvedFonts() { resolved = [:] }
+
     public var text: NSColor { .labelColor }
     /// 마커(`#`, `**`, 목록 글머리, 인용 막대) 색. 본문보다 물러나야 하지만 **보여야**
     /// 한다 — 캐럿을 올린 줄의 마커는 구조를 고치기 위해 읽는 것이다.

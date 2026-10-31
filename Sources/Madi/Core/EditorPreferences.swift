@@ -159,12 +159,18 @@ public struct EditorPreferences: Equatable, Sendable {
     /// 원문이 한국어가 **아닐** 때는 대상이 늘 한국어이므로 이 값이 쓰이지 않는다.
     public var translationTarget: String
     /// 본문 글꼴의 패밀리 이름(`NSFontManager`의 이름, 예: `Helvetica Neue`). `nil`이면 시스템
-    /// 글꼴이다. 이 Mac에 없는 이름이면 그리는 쪽이 시스템 글꼴로 떨어진다 — 설정을 다른
-    /// Mac으로 옮겨도 화면이 깨지지 않는다.
+    /// 글꼴이다. 기본값은 앱에 들어 있는 Pretendard다. 이 Mac에 없는 이름이면 그리는 쪽이
+    /// 시스템 글꼴로 떨어진다 — 설정을 다른 Mac으로 옮겨도 화면이 깨지지 않는다.
     public var bodyFontFamily: String?
-    /// 코드 글꼴의 패밀리 이름. `nil`이면 시스템 고정폭이다. **고정폭만** 받는다 — 그리는
-    /// 쪽이 고정폭이 아닌 이름을 시스템 고정폭으로 바꾼다(코드의 들여쓰기와 열이 맞아야 한다).
+    /// 코드 글꼴의 패밀리 이름. `nil`이면 시스템 고정폭이다. 기본값은 앱에 들어 있는
+    /// IBM Plex Mono다. **고정폭만** 받는다 — 그리는 쪽이 고정폭이 아닌 이름을 시스템
+    /// 고정폭으로 바꾼다(코드의 들여쓰기와 열이 맞아야 한다).
     public var codeFontFamily: String?
+
+    /// 앱에 들어 있는 글꼴(`Resources/Fonts`). 어느 Mac에서도 같은 모양이 나오고, 시스템
+    /// 글꼴보다 한글 본문이 읽기 좋아 기본값으로 쓴다.
+    public static let bundledBodyFamily = "Pretendard"
+    public static let bundledCodeFamily = "IBM Plex Mono"
 
     /// 글자 크기의 허용 범위. 너무 작으면 한글이 뭉개지고, 너무 크면 표 열 맞추기가
     /// 한 줄에 들어가지 않는다.
@@ -183,7 +189,9 @@ public struct EditorPreferences: Equatable, Sendable {
         printMargin: .normal,
         printOrientation: .portrait,
         printPaper: .system,
-        translationTarget: "en"
+        translationTarget: "en",
+        bodyFontFamily: bundledBodyFamily,
+        codeFontFamily: bundledCodeFamily
     )
 
     public init(bodyPointSize: Double, highlightCode: Bool, alignTables: Bool,
@@ -303,9 +311,16 @@ public final class PreferenceStore {
             printPaper: value(Key.printPaper, standard.printPaper),
             translationTarget: defaults.string(forKey: Key.translationTarget)
                 ?? standard.translationTarget,
-            bodyFontFamily: defaults.string(forKey: Key.bodyFontFamily),
-            codeFontFamily: defaults.string(forKey: Key.codeFontFamily)
+            bodyFontFamily: family(Key.bodyFontFamily, standard.bodyFontFamily),
+            codeFontFamily: family(Key.codeFontFamily, standard.codeFontFamily)
         )
+    }
+
+    /// 키가 **없으면** 기본값(앱에 든 글꼴), 빈 값이면 시스템 글꼴(`nil`)이다. 둘을 갈라야
+    /// '시스템 글꼴을 골랐다'와 '아직 고른 적이 없다'가 다르게 읽힌다.
+    private func family(_ key: String, _ fallback: String?) -> String? {
+        guard defaults.object(forKey: key) != nil else { return fallback }
+        return EditorPreferences.family(defaults.string(forKey: key))
     }
 
     /// 저장한다. 값은 `EditorPreferences`의 이니셜라이저가 이미 가둬 둔 것이다.
@@ -323,11 +338,10 @@ public final class PreferenceStore {
         defaults.set(preferences.printOrientation.rawValue, forKey: Key.printOrientation)
         defaults.set(preferences.printPaper.rawValue, forKey: Key.printPaper)
         defaults.set(preferences.translationTarget, forKey: Key.translationTarget)
-        // 시스템 글꼴(`nil`)은 키를 지워 둔다 — 빈 문자열을 남기면 그 키가 '정한 값'처럼 보인다.
-        for (key, family) in [(Key.bodyFontFamily, preferences.bodyFontFamily),
-                              (Key.codeFontFamily, preferences.codeFontFamily)] {
-            if let family { defaults.set(family, forKey: key) } else { defaults.removeObject(forKey: key) }
-        }
+        // 시스템 글꼴(`nil`)은 **빈 값으로** 적는다. 키를 지우면 기본값(앱에 든 글꼴)으로
+        // 읽혀, 시스템 글꼴을 골라도 다음에 열면 Pretendard로 돌아간다.
+        defaults.set(preferences.bodyFontFamily ?? "", forKey: Key.bodyFontFamily)
+        defaults.set(preferences.codeFontFamily ?? "", forKey: Key.codeFontFamily)
     }
 
     /// 전부 기본값으로. 키를 지워 두면 다음에 기본값이 다시 읽힌다.

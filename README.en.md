@@ -24,6 +24,8 @@ make run      # build, then launch
 ```
 
 AppKit · Swift 6 · **no dependencies**. No package manager, no web view, no second buffer.
+The only things bundled are two fonts (Pretendard for text, IBM Plex Mono for code — both
+SIL OFL 1.1).
 How to build, test and contribute: [docs/building.md](docs/building.md) (Korean).
 
 > **Status: 0.1.0, not distributed yet.** The app is ad-hoc signed

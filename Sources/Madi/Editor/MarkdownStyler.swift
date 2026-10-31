@@ -605,13 +605,16 @@ public final class MarkdownStyler {
             case .strong:
                 storage.addAttribute(.font, value: bold(existing), range: token.contentRange)
             case .emphasis:
-                storage.addAttribute(.font, value: italic(existing), range: token.contentRange)
+                let slanted = italic(existing)
+                storage.addAttribute(.font, value: slanted, range: token.contentRange)
                 // 한글·일본어·중국어에는 기울임꼴이 없어 글꼴을 바꿔도 그림이 한 픽셀도
                 // 달라지지 않는다(실측). 그 글자에만 강제 기울임을 더한다 — 모든 글자에
                 // 주면 진짜 기울임꼴을 받는 영문이 두 번 기울어 지나치게 눕는다.
-                for slantRange in (appliesSyntheticSlant
-                                   ? SyntheticSlant.ranges(in: text, range: token.contentRange)
-                                   : []) {
+                // 글꼴 자체에 기울임꼴이 없으면(Pretendard) 영문도 강제로 기울인다.
+                let hasItalic = NSFontManager.shared.traits(of: slanted).contains(.italicFontMask)
+                for slantRange in SyntheticSlant.ranges(in: text, range: token.contentRange,
+                                                        fontHasItalic: hasItalic,
+                                                        cjk: appliesSyntheticSlant) {
                     storage.addAttribute(.obliqueness,
                                          value: SyntheticSlant.obliqueness,
                                          range: slantRange)

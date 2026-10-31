@@ -43,6 +43,32 @@ public enum SyntheticSlant {
     }
 
     /// `range` 안에서 강제로 기울일 부분들. 이어진 글자는 한 범위로 묶는다.
+    /// 강제로 기울일 범위 — 글꼴에 기울임꼴이 있는지와 설정에 따라.
+    ///
+    /// - `fontHasItalic`: 기울임꼴로 바꾼 글꼴이 정말 기울임꼴인가. 기울임꼴이 **없는** 글꼴
+    ///   (앱에 든 Pretendard가 그렇다)에서는 영문도 기울지 않으므로, 영문까지 강제로 기울인다.
+    ///   설정과 상관없이 그렇게 한다 — 안 하면 `*강조*`가 아예 보이지 않는다.
+    /// - `cjk`: 설정(한글·CJK 기울임 강제 적용). 꺼져 있으면 CJK 글자는 기울이지 않는다.
+    public static func ranges(in text: NSString, range: NSRange,
+                              fontHasItalic: Bool, cjk: Bool) -> [NSRange] {
+        let cjkRanges = ranges(in: text, range: range)
+        if fontHasItalic { return cjk ? cjkRanges : [] }
+        if cjk { return range.length > 0 ? [range] : [] }
+        // 기울임꼴이 없고 CJK는 기울이지 않는다 — CJK가 아닌 나머지만.
+        var result: [NSRange] = []
+        var cursor = range.location
+        for piece in cjkRanges {
+            if piece.location > cursor {
+                result.append(NSRange(location: cursor, length: piece.location - cursor))
+            }
+            cursor = NSMaxRange(piece)
+        }
+        if cursor < NSMaxRange(range) {
+            result.append(NSRange(location: cursor, length: NSMaxRange(range) - cursor))
+        }
+        return result
+    }
+
     public static func ranges(in text: NSString, range: NSRange) -> [NSRange] {
         guard range.length > 0, NSMaxRange(range) <= text.length else { return [] }
         var result: [NSRange] = []

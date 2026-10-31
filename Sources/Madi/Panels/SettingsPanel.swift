@@ -178,12 +178,28 @@ final class SettingsPanel: NSWindowController {
 
     /// 글꼴 고르개를 채운다. 맨 위가 시스템 글꼴이고 그 아래가 패밀리 이름이다. 각 이름은
     /// 그 글꼴로 그린다 — 고르기 전에 모양을 볼 수 있어야 한다.
-    private func fillFonts(_ picker: NSPopUpButton, system: String, families: [String]) {
+    private func fillFonts(_ picker: NSPopUpButton, system: String, bundled: String,
+                           families: [String]) {
         picker.removeAllItems()
+        // 앱에 든 글꼴이 맨 위다 — 기본값이고, 어느 Mac에서도 같은 모양이 나온다.
+        // 목록(`availableFontFamilies`)이 아니라 **이름으로 찾아** 판정한다 — 그 목록은 글꼴을
+        // 등록한 뒤 런루프가 한 번 돌아야 갱신된다(실측: 등록 직후에는 빠져 있었다).
+        if families.contains(bundled) || MarkdownTheme.font(family: bundled, size: 13) != nil {
+            picker.addItem(withTitle: bundled)
+            if let item = picker.lastItem {
+                item.representedObject = bundled
+                let title = "\(bundled) — 기본, 앱에 들어 있음"
+                if let font = MarkdownTheme.font(family: bundled, size: 13) {
+                    item.attributedTitle = NSAttributedString(string: title, attributes: [.font: font])
+                } else {
+                    item.title = title
+                }
+            }
+        }
         picker.addItem(withTitle: system)
         picker.lastItem?.representedObject = Self.systemFontTag
         picker.menu?.addItem(.separator())
-        for family in families {
+        for family in families where family != bundled {
             picker.addItem(withTitle: family)
             guard let item = picker.lastItem else { continue }
             item.representedObject = family
@@ -242,9 +258,9 @@ final class SettingsPanel: NSWindowController {
         fill(appearancePicker, EditorPreferences.Appearance.allCases) { $0.label }
         fill(lineSpacingPicker, EditorPreferences.LineSpacing.allCases) { $0.label }
         fill(widthPicker, EditorPreferences.DocumentWidth.allCases) { $0.label }
-        fillFonts(bodyFontPicker, system: "시스템 글꼴",
+        fillFonts(bodyFontPicker, system: "시스템 글꼴", bundled: EditorPreferences.bundledBodyFamily,
                   families: Self.installedFamilies(fixedPitchOnly: false))
-        fillFonts(codeFontPicker, system: "시스템 고정폭",
+        fillFonts(codeFontPicker, system: "시스템 고정폭", bundled: EditorPreferences.bundledCodeFamily,
                   families: Self.installedFamilies(fixedPitchOnly: true))
 
         for check in [highlightCheck, alignCheck, slantCheck, codeViewCheck] {
@@ -326,11 +342,26 @@ final class SettingsPanel: NSWindowController {
         version.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
         version.textColor = .secondaryLabelColor
         version.isSelectable = true      // 문제를 신고할 때 복사할 수 있어야 한다
+        // 앱에 든 글꼴의 라이선스(SIL OFL 1.1)는 전문을 사용자가 볼 수 있어야 한다(OFL 2조).
+        let licenses = NSButton(title: "글꼴 라이선스 보기", target: self, action: #selector(showFontLicenses))
+        licenses.bezelStyle = .rounded
         return column([
             name, version,
             spacer(),
             note("자동 업데이트는 아직 없습니다. 판 번호는 문제를 신고할 때 쓰십시오."),
+            spacer(),
+            note("본문 글꼴 Pretendard(© Kil Hyung-jin)와 코드 글꼴 IBM Plex Mono(© IBM Corp.)가 앱에 들어 있습니다. 둘 다 SIL Open Font License 1.1입니다."),
+            licenses,
         ])
+    }
+
+    @objc private func showFontLicenses() {
+        let urls = BundledFonts.licenseFiles.compactMap { BundledFonts.url(of: $0, in: nil) }
+        guard !urls.isEmpty else {
+            AppLog.warning("글꼴 라이선스 파일을 찾지 못했습니다", detail: BundledFonts.licenseFiles.joined(separator: ", "))
+            return
+        }
+        NSWorkspace.shared.activateFileViewerSelecting(urls)
     }
 
     private func spacer() -> NSView {

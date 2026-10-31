@@ -23,6 +23,8 @@ targets:
       - path: Sources/Madi
         excludes:
           - "Resources/Info.plist"
+          # 저장소용 설명이다 — 앱에는 글꼴과 라이선스 전문만 들어간다.
+          - "Resources/Fonts/README.md"
     settings:
       base:
         INFOPLIST_FILE: Sources/Madi/Resources/Info.plist

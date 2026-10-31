@@ -11,6 +11,12 @@ _ = NSApplication.shared
 NSApp.setActivationPolicy(.prohibited)
 let source = CommandLine.arguments[1]
 let outDir = CommandLine.arguments[2]
+// 앱처럼 앱에 든 글꼴로 그린다 — 안 하면 그림만 시스템 글꼴로 나와 앱과 다르다.
+let fontFailures = BundledFonts.register(from: URL(fileURLWithPath: "Sources/Madi/Resources/Fonts"))
+guard fontFailures.isEmpty else {
+    FileHandle.standardError.write("글꼴을 등록하지 못했습니다: \(fontFailures)\n".data(using: .utf8)!)
+    exit(1)
+}
 
 @MainActor
 func render(_ name: String, source: String, width: CGFloat, codeView: Bool, caretOn needle: String?) {

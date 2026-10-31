@@ -24,6 +24,7 @@ make run      # 빌드 후 실행
 ```
 
 AppKit · Swift 6 · **의존성 없음**. 패키지 매니저도, 웹뷰도, 두 번째 버퍼도 쓰지 않습니다.
+글꼴 둘(본문 Pretendard, 코드 IBM Plex Mono — 둘 다 SIL OFL 1.1)만 앱에 들어 있습니다.
 빌드·테스트·기여 방법은 [빌드와 기여](docs/building.md)에 있습니다.
 
 > **상태: 0.1.0, 아직 배포하지 않았습니다.** 서명이 ad-hoc(`CODE_SIGN_IDENTITY=-`)이라
