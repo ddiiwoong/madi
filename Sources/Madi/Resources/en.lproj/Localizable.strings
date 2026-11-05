@@ -201,6 +201,11 @@
 "줄 옮기기" = "Move Line";
 "들여쓰기" = "Indent";
 "내어쓰기" = "Outdent";
+"그림을 넣으려면 먼저 문서를 저장하세요" = "Save the document before adding images";
+"그림은 문서 옆의 ‘문서 이름.assets’ 폴더에 복사됩니다." = "Images are copied into the “document name.assets” folder next to the document.";
+"그림을 넣지 못했습니다" = "Couldn’t add the image";
+"그림 넣기" = "Add Image";
+"그림 %lld개를 넣었습니다" = "Added %lld image(s)";
 
 /* ImageEmbedder.swift */
 "원격 주소는 포함하지 않습니다" = "Remote addresses aren’t embedded";

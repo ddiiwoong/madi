@@ -98,6 +98,10 @@ public final class MarkdownEditorView: NSView {
         textView.clickHandler = { [weak self] index, modifiers in
             self?.handleClick(at: index, modifiers: modifiers) ?? false
         }
+        textView.imageInsertHandler = { [weak self] pasteboard, range in
+            self?.insertImages(from: pasteboard, replacing: range) ?? false
+        }
+        textView.updateDragTypeRegistration()
 
         scrollView.documentView = textView
         scrollView.hasVerticalScroller = true
@@ -627,6 +631,48 @@ extension MarkdownEditorView {
             return true
         }
         return false
+    }
+
+    // MARK: 그림 넣기
+
+    /// 대지의 그림을 문서에 넣는다 — 파일은 문서 옆 `<이름>.assets`로 복사하고(문서 폴더 안의
+    /// 파일은 그 자리를 가리킨다), 그림 데이터는 PNG로 적는다. 그림마다 자기 줄 하나.
+    ///
+    /// 저장하지 않은 문서에는 넣지 않는다. 그림을 둘 폴더가 없고, 절대 경로로 적으면 문서를
+    /// 옮기는 순간 깨진다. 그때는 먼저 저장하라고 알린다.
+    ///
+    /// - Returns: 대지에 그림이 없으면 false(평소의 붙여넣기·끌어놓기에 맡긴다).
+    func insertImages(from pasteboard: NSPasteboard, replacing range: NSRange?, date: Date = Date()) -> Bool {
+        let files = ImagePasteboard.imageFiles(in: pasteboard)
+        let data = files.isEmpty ? ImagePasteboard.pngData(in: pasteboard) : nil
+        guard !files.isEmpty || data != nil else { return false }
+        guard let documentURL else {
+            presentImageAlert(String(localized: "그림을 넣으려면 먼저 문서를 저장하세요"),
+                              detail: String(localized: "그림은 문서 옆의 ‘문서 이름.assets’ 폴더에 복사됩니다."))
+            return true
+        }
+        let importer = ImageImporter(documentURL: documentURL)
+        var lines: [String] = []
+        do {
+            for file in files { lines.append(try importer.importFile(file)) }
+            if let data { lines.append(try importer.importImage(png: data, date: date)) }
+        } catch {
+            AppLog.error(String(localized: "그림을 넣지 못했습니다"), detail: error.localizedDescription)
+            presentImageAlert(String(localized: "그림을 넣지 못했습니다"), detail: error.localizedDescription)
+            return true
+        }
+        let target = range ?? textView.selectedRange()
+        let edit = ImageAttachment.insertion(lines, replacing: target, in: storage.string as NSString)
+        perform(edit, actionName: String(localized: "그림 넣기"))
+        AppLog.info(String(localized: "그림 \(lines.count)개를 넣었습니다"), detail: lines.joined(separator: "\n"))
+        return true
+    }
+
+    private func presentImageAlert(_ message: String, detail: String) {
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.informativeText = detail
+        if let window { alert.beginSheetModal(for: window) } else { alert.runModal() }
     }
 
     // MARK: 각주
