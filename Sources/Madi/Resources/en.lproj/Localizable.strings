@@ -75,6 +75,8 @@
 "PDF 내보내기" = "Export as PDF";
 "프린트하기" = "Print";
 
+"빠른 열기…" = "Open Quickly…";
+"명령 팔레트…" = "Command Palette…";
 "글자 크게" = "Make Text Bigger";
 "글자 작게" = "Make Text Smaller";
 "글자 기본 크기" = "Default Text Size";
@@ -158,6 +160,10 @@
 "더 많은 작업" = "More Actions";
 
 "글자 크기 %lldpt" = "Text size %lldpt";
+"문서 이름으로 찾기" = "Find a document by name";
+"맞는 문서가 없습니다" = "No matching documents";
+"명령 찾기" = "Find a command";
+"맞는 명령이 없습니다" = "No matching commands";
 
 /* DiagramRenderer.swift */
 "수식을 그리지 못했습니다" = "Couldn’t render a math block";

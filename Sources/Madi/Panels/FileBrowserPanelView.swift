@@ -16,9 +16,12 @@ final class FileBrowserPanelView: NSView {
     private let scrollView = NSScrollView()
     private let pathButton = NSButton(title: String(localized: "폴더 선택…"), target: nil, action: nil)
     private var rootURL: URL?
+    /// 지금 보이는 폴더. 빠른 열기가 이 폴더의 문서를 훑는다 — 사용자가 고른 폴더가 있으면 그쪽.
+    var currentRoot: URL? { rootURL }
     private var children: [URL: [URL]] = [:]
 
-    static let markdownExtensions: Set<String> = ["md", "markdown", "mdown", "mkd", "mdx", "txt"]
+    /// 빠른 열기가 다른 스레드에서 읽는다 — 값이라 격리가 필요 없다.
+    nonisolated static let markdownExtensions: Set<String> = ["md", "markdown", "mdown", "mkd", "mdx", "txt"]
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)

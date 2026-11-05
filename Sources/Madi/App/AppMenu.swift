@@ -38,6 +38,8 @@ enum AppMenu {
         [
             Command(String(localized: "새로 만들기"), #selector(NSDocumentController.newDocument(_:)), "n"),
             Command(String(localized: "문서 열기…"), #selector(NSDocumentController.openDocument(_:)), "o"),
+            Command(String(localized: "빠른 열기…"), #selector(DocumentWindowController.showQuickOpenAction(_:)), "o",
+                    [.command, .option], windowTarget: true),
             Command(String(localized: "파일 브라우저"), #selector(DocumentWindowController.showBrowserAction(_:)), "f",
                     [.command, .shift], windowTarget: true),
             Command(String(localized: "최근 문서"), #selector(DocumentWindowController.showRecentAction(_:)), "r",
@@ -90,6 +92,9 @@ enum AppMenu {
 
     private static var viewCommands: [Command?] {
         [
+            Command(String(localized: "명령 팔레트…"), #selector(DocumentWindowController.showCommandPaletteAction(_:)),
+                    "p", [.command, .shift], windowTarget: true),
+            nil,
             Command(String(localized: "목차"), #selector(DocumentWindowController.showOutlineAction(_:)), "o",
                     [.command, .shift], windowTarget: true),
             Command(String(localized: "마크다운 원본 보기"), #selector(DocumentWindowController.toggleCodeViewAction(_:)), "e",

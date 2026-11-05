@@ -21,6 +21,8 @@ final class DocumentWindowController: NSWindowController {
     private var logPanel: ActivityLogPanel?
     /// 설정 창도 같은 방식으로 하나만 둔다.
     private var settingsPanel: SettingsPanel?
+    /// 빠른 열기·명령 팔레트. 하나만 뜬다 — 새로 열면 앞의 것을 버린다.
+    private(set) var quickPick: QuickPickPanel?
     /// 블록 편집기 창(설계 단계 1). 기본 편집기는 그대로 두고 평가용으로 띄운다.
     private var blockEditorWindow: BlockEditorWindowController?
     /// 이 창이 낀 나란히 보기. 원문 창과 번역본 창이 같은 객체를 함께 든다.
@@ -296,6 +298,50 @@ final class DocumentWindowController: NSWindowController {
 
     @objc func openDocumentAction(_ sender: Any?) {
         NSDocumentController.shared.openDocument(sender)
+    }
+
+    // MARK: 빠른 열기 · 명령 팔레트
+
+    /// 빠른 열기 ⌥⌘O — 열린 문서, 최근 문서, 파일 브라우저 폴더(없으면 이 문서의 폴더)의 마크다운
+    /// 파일에서 이름으로 고른다. 폴더는 뒤에서 훑고, 다 훑으면 목록에 더한다 — 큰 폴더에서도
+    /// 창이 바로 뜬다.
+    @objc func showQuickOpenAction(_ sender: Any?) {
+        guard let window else { return }
+        let panel = QuickPickPanel(placeholder: String(localized: "문서 이름으로 찾기"),
+                                   emptyText: String(localized: "맞는 문서가 없습니다"))
+        quickPick = panel
+        let root = browserPanel.currentRoot ?? markdownDocument?.fileURL?.deletingLastPathComponent()
+        panel.present(over: window, items: quickOpenItems(folderFiles: [], root: root))
+        guard let root else { return }
+        Task { @MainActor [weak self, weak panel] in
+            let files = await Task.detached(priority: .userInitiated) {
+                QuickOpenSource.markdownFiles(under: root)
+            }.value
+            guard let self, let panel, self.quickPick === panel else { return }
+            panel.update(items: self.quickOpenItems(folderFiles: files, root: root))
+        }
+    }
+
+    private func quickOpenItems(folderFiles: [URL], root: URL?) -> [QuickPickItem] {
+        let controller = NSDocumentController.shared
+        let open = controller.documents.compactMap(\.fileURL)
+        return QuickOpenSource.candidates(open: open, recent: controller.recentDocumentURLs,
+                                          folderFiles: folderFiles, root: root)
+            .map { candidate in
+                QuickPickItem(title: candidate.url.lastPathComponent, detail: candidate.detail) { [weak self] in
+                    self?.open(candidate.url)
+                }
+            }
+    }
+
+    /// 명령 팔레트 ⇧⌘P — 메뉴의 명령을 이름으로 찾아 실행한다. 지금 쓸 수 없는 명령은 메뉴처럼 빠진다.
+    @objc func showCommandPaletteAction(_ sender: Any?) {
+        guard let window, let menu = NSApp.mainMenu else { return }
+        let items = CommandPaletteSource.items(from: menu, excluding: [#selector(showCommandPaletteAction(_:))])
+        let panel = QuickPickPanel(placeholder: String(localized: "명령 찾기"),
+                                   emptyText: String(localized: "맞는 명령이 없습니다"))
+        quickPick = panel
+        panel.present(over: window, items: items)
     }
 
     // MARK: 글자 크기 (보기 ▸ 글자 크게 · 작게 · 기본 크기)
