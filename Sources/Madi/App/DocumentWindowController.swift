@@ -25,10 +25,14 @@ final class DocumentWindowController: NSWindowController {
     private(set) var quickPick: QuickPickPanel?
     /// 블록 편집기 창(설계 단계 1). 기본 편집기는 그대로 두고 평가용으로 띄운다.
     private var blockEditorWindow: BlockEditorWindowController?
-    /// 이 창이 낀 나란히 보기. 원문 창과 번역본 창이 같은 객체를 함께 든다.
+    /// 이 창의 나란히 보기 — 오른쪽 칸의 번역본과 스크롤 잇기.
     private(set) var sideBySide: SideBySideTranslation?
-    /// 번역본 창에만 뜨는 띠 — 원문이 번역한 뒤에 바뀌었다.
-    private let sourceChangedBand = SourceChangedBandView()
+    /// 편집기 영역을 좌우로 나눈다. 평소에는 원문 하나, 나란히 보기에서는 원문 | 번역본.
+    let contentSplit = NSSplitView()
+    /// 나란히 보기 때문에 넓힌 창의 원래 자리와 넓힌 자리. 끝날 때 창이 넓힌 자리에 그대로 있으면
+    /// (사용자가 바꾸지 않았으면) 원래 자리로 돌린다.
+    private var frameBeforeSplit: NSRect?
+    private var splitFrame: NSRect?
     /// 설정 저장소. 앱은 표준 저장소이고, 테스트가 디스크에 쓰지 않는 저장소를 넣는다.
     private var preferences = PreferenceStore()
     /// 창 자리를 저장할지. 테스트·화면 밖 그리기는 끈다 — 켜 두면 그 프로세스의 설정 파일에
@@ -111,20 +115,16 @@ final class DocumentWindowController: NSWindowController {
         // of the text. A vertical NSStackView does NOT stretch a child that has
         // its own intrinsic width — the card ended up hugging its content on
         // the right — so both children get explicit width constraints.
-        let documentArea = NSStackView(views: [sourceChangedBand, frontMatterCard, editor])
+        let documentArea = NSStackView(views: [frontMatterCard, editor])
         documentArea.orientation = .vertical
         documentArea.alignment = .leading
         documentArea.spacing = 0
         documentArea.detachesHiddenViews = true
         documentArea.edgeInsets = NSEdgeInsets(top: 12, left: 0, bottom: 0, right: 0)
         frontMatterCard.isHidden = true
-        sourceChangedBand.isHidden = true
-        sourceChangedBand.onRetranslate = { [weak self] in self?.retranslateSideBySide() }
         frontMatterCard.onToggle = { [weak documentArea] in documentArea?.needsLayout = true }
 
         NSLayoutConstraint.activate([
-            sourceChangedBand.leadingAnchor.constraint(equalTo: documentArea.leadingAnchor, constant: 24),
-            sourceChangedBand.trailingAnchor.constraint(equalTo: documentArea.trailingAnchor, constant: -24),
             frontMatterCard.leadingAnchor.constraint(equalTo: documentArea.leadingAnchor, constant: 24),
             frontMatterCard.trailingAnchor.constraint(equalTo: documentArea.trailingAnchor, constant: -24),
             editor.leadingAnchor.constraint(equalTo: documentArea.leadingAnchor),
@@ -138,14 +138,18 @@ final class DocumentWindowController: NSWindowController {
         // 스택에 넣으면 흐름에 끼어들어 편집기를 밀어낸다. 그래서 담는 뷰를 하나 두고
         // 편집기 영역을 꽉 채운 뒤 그 위에 겹친다.
         let editorContainer = NSView()
-        documentArea.translatesAutoresizingMaskIntoConstraints = false
-        editorContainer.addSubview(documentArea)
+        // 나란히 보기가 오른쪽에 번역본 칸을 더한다. 평소에는 칸이 원문 하나다.
+        contentSplit.isVertical = true
+        contentSplit.dividerStyle = .thin
+        contentSplit.translatesAutoresizingMaskIntoConstraints = false
+        contentSplit.addArrangedSubview(documentArea)
+        editorContainer.addSubview(contentSplit)
         editorContainer.addSubview(statusOverlay)
         NSLayoutConstraint.activate([
-            documentArea.leadingAnchor.constraint(equalTo: editorContainer.leadingAnchor),
-            documentArea.trailingAnchor.constraint(equalTo: editorContainer.trailingAnchor),
-            documentArea.topAnchor.constraint(equalTo: editorContainer.topAnchor),
-            documentArea.bottomAnchor.constraint(equalTo: editorContainer.bottomAnchor),
+            contentSplit.leadingAnchor.constraint(equalTo: editorContainer.leadingAnchor),
+            contentSplit.trailingAnchor.constraint(equalTo: editorContainer.trailingAnchor),
+            contentSplit.topAnchor.constraint(equalTo: editorContainer.topAnchor),
+            contentSplit.bottomAnchor.constraint(equalTo: editorContainer.bottomAnchor),
 
             statusOverlay.centerXAnchor.constraint(equalTo: editorContainer.centerXAnchor),
             statusOverlay.bottomAnchor.constraint(equalTo: editorContainer.bottomAnchor,
@@ -208,6 +212,33 @@ final class DocumentWindowController: NSWindowController {
         NotificationCenter.default.addObserver(
             self, selector: #selector(windowDidBecomeKey(_:)),
             name: NSWindow.didBecomeKeyNotification, object: window)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(windowWillClose(_:)),
+            name: NSWindow.willCloseNotification, object: window)
+    }
+
+    /// 창이 닫힌다(원문 문서가 이미 저장할지 물었고, 닫기로 정해졌다). 번역본 칸이 있으면 걷는다.
+    /// 번역본을 고치고 저장하지 않았으면 **자기 창으로 옮긴다** — 여기서는 닫기를 되돌릴 수 없으므로
+    /// 물을 수가 없고, 말없이 버리면 고친 것이 사라진다.
+    @objc private func windowWillClose(_ note: Notification) {
+        guard let session = sideBySide else { return }
+        removeTranslationPane(session, restoreFrame: false)
+        let document = session.document
+        if document.isDocumentEdited {
+            document.hostWindow = nil
+            keepUnsavedTranslation(document)
+            AppLog.info(String(localized: "저장하지 않은 번역본을 자기 창으로 옮겼습니다"),
+                        detail: document.displayName)
+        } else {
+            document.close()
+        }
+    }
+
+    /// 원문 창이 닫힐 때 저장 안 한 번역본을 어떻게 살릴지. 앱은 자기 창을 열어 준다. 테스트가 바꾼다 —
+    /// 창을 사용자 화면에 띄우지 않고, 창 자리를 설정 파일에 쓰지 않게.
+    var keepUnsavedTranslation: (MarkdownDocument) -> Void = { document in
+        document.makeWindowControllers()
+        document.showWindows()
     }
 
     @objc private func windowDidBecomeKey(_ note: Notification) {
@@ -234,7 +265,7 @@ final class DocumentWindowController: NSWindowController {
         window?.title = markdownDocument?.displayName ?? String(localized: "제목 없음")
         // 원문이 디스크에서 다시 읽혔을 때(다른 앱이 고침, 되돌리기)도 띠를 맞춘다 — 이 길은
         // 편집기 위임을 지나지 않는다.
-        if let session = sideBySide, session.source === self { session.sourceTextDidChange() }
+        sideBySide?.sourceTextDidChange()
         AppLog.info(String(localized: "문서를 열었습니다: \(markdownDocument?.displayName ?? String(localized: "제목 없음"))"),
                     detail: String(localized: "\(markdown.count)자"))
     }
@@ -508,7 +539,7 @@ final class DocumentWindowController: NSWindowController {
     enum TranslationDestination: Equatable {
         /// 선택이 있으면 그 자리, 없으면 새 문서(⌘⇧T).
         case automatic
-        /// 번역본 창을 열어 이 창 옆에 붙인다(⌃⌘T). 선택과 상관없이 문서 전체다.
+        /// 이 창의 오른쪽에 번역본 칸을 연다(⌃⌘T). 선택과 상관없이 문서 전체다.
         case sideBySide
         /// 이미 열린 나란히 보기의 번역본을 새 번역으로 바꾼다.
         case refresh
@@ -701,11 +732,11 @@ final class DocumentWindowController: NSWindowController {
 
     // MARK: 원문·번역 나란히 보기
 
-    /// ⌃⌘T · 도구 막대 토글. 켜면 번역해서 번역본 창을 이 창 옆에 붙이고, 끄면 번역본 창을
-    /// 닫는다(저장하지 않은 번역본이면 `NSDocument`가 저장할지 묻는다 — 취소하면 그대로 남는다).
+    /// ⌃⌘T · 도구 막대 토글. 켜면 번역해서 이 창의 오른쪽에 번역본 칸을 열고, 끄면 칸을 닫는다
+    /// (고친 번역본을 저장하지 않았으면 먼저 묻는다 — 취소하면 그대로 남는다).
     @objc func toggleSideBySideAction(_ sender: Any?) {
-        if let session = sideBySide {
-            session.translation?.window?.performClose(nil)
+        if sideBySide != nil {
+            closeSideBySide()
         } else {
             translate(direction: nil, destination: .sideBySide)
         }
@@ -714,71 +745,117 @@ final class DocumentWindowController: NSWindowController {
         syncSideBySideState()
     }
 
-    /// 번역본 문서를 만들고 창을 이 창 옆에 붙인다.
+    /// 번역본 문서를 만들고 이 창의 오른쪽 칸에 싣는다. 번역은 이미 끝났다(테스트가 이 길로 바로 연다).
     ///
-    /// 탭으로 열리면 안 된다 — 창이 `tabbingMode = .preferred`라 그냥 열면 이 창의 **탭**이
-    /// 되어 나란히 놓을 수가 없다. 그래서 창을 보이기 전에 탭을 끄고, 자리를 정한 뒤에 보인다.
-    private func openSideBySide(composed: String, direction: TranslationDirection, sourceBody: String) {
-        let controller = NSDocumentController.shared
-        let document: MarkdownDocument
-        do {
-            guard let made = try controller.makeUntitledDocument(
-                ofType: controller.defaultType ?? "net.daringfireball.markdown") as? MarkdownDocument
-            else {
-                report(String(localized: "번역본 창을 열지 못했습니다."))
-                return
-            }
-            document = made
-        } catch {
-            NSApp.presentError(error)
-            return
-        }
-        controller.addDocument(document)
-        document.markdown = composed
+    /// 문서는 문서 관리자에 넣는다 — 앱을 끝낼 때 저장 안 한 번역본을 묻게 하려면 관리자가 알아야
+    /// 한다. 창은 만들지 않는다.
+    func openSideBySide(composed: String, direction: TranslationDirection, sourceBody: String) {
+        guard sideBySide == nil, let window else { return }
+        // 문서를 직접 만든다. `makeUntitledDocument(ofType:)`은 Info.plist의 문서 종류에서 클래스를
+        // 찾는데, 쓸 클래스는 이미 정해져 있다 — 찾다가 실패하면 오류 대화상자가 앱을 막는다(실측:
+        // 문서 종류가 없는 테스트 프로세스에서 멈췄다).
+        let document = MarkdownDocument()
+        document.fileType = MarkdownDocument.writableTypes.first
+        NSDocumentController.shared.addDocument(document)
         if let suggested = direction.translatedFileName(for: markdownDocument?.fileURL) {
             document.displayName = suggested
         }
-        document.makeWindowControllers()
-        document.updateChangeCount(.changeDone)
-        guard let other = document.windowControllers.first as? DocumentWindowController,
-              let otherWindow = other.window else {
-            document.showWindows()
-            report(String(localized: "번역본을 열었지만 나란히 놓지 못했습니다."))
-            return
-        }
-        otherWindow.tabbingMode = .disallowed
 
-        let session = SideBySideTranslation(source: self, translation: other, direction: direction,
-                                            sourceBody: sourceBody,
-                                            translatedBody: other.editor.markdown)
-        sideBySide = session
-        other.sideBySide = session
-        document.showWindows()
-        syncSideBySideState()
-        other.syncSideBySideState()
-        // 자리는 **창을 보인 뒤 한 바퀴 돌고** 정한다(실측). 보이기 전에 정하면 처음 보일 때
-        // 창이 내용의 선호 크기(860×752)로 되돌아가고, 원문 창도 다음 레이아웃에서 같은
-        // 크기로 되돌아갔다 — 나란히 놓은 프레임이 한순간 들어갔다가 사라졌다.
-        DispatchQueue.main.async { [weak self, weak session, weak other] in
-            guard let self, let session, let other else { return }
-            let tiled = session.tile()
-            // 초점은 원문 창에 남긴다 — 사용자는 원문에서 ⌃⌘T를 눌렀고, 하던 일을 이어서
-            // 해야 한다. `showWindows`가 번역본 창을 key로 만들었으므로 되돌린다.
-            other.window?.orderFront(nil)
-            self.window?.makeKeyAndOrderFront(nil)
-            // 두 창을 처음부터 같은 자리에 둔다 — 원문 창에서 보던 곳을 번역본도 보여 준다.
-            session.link.follow(self.editor)
-            self.report(tiled
-                        ? String(localized: "번역본을 옆에 열었습니다 (\(direction.label))")
-                        : String(localized: "번역본을 열었습니다 (\(direction.label)) — 전체 화면에서는 옆에 붙이지 않습니다"))
+        document.hostWindow = window
+        let pane = TranslationPaneView(document: document, direction: direction)
+        pane.editor.apply(preferences.current)
+        // 그림의 상대 경로는 원문 폴더를 기준으로 푼다 — 번역본은 보통 원문 옆에 저장한다.
+        pane.editor.documentURL = markdownDocument?.fileURL
+        pane.load(markdown: composed)
+        document.updateChangeCount(.changeDone)       // 아직 저장하지 않은 번역이다
+        pane.band.onRetranslate = { [weak self] in self?.retranslateSideBySide() }
+        pane.onClose = { [weak self] in self?.closeSideBySide() }
+        pane.onLink = { [weak self] url in
+            guard let self else { return }
+            self.markdownEditor(self.editor, didClickLink: url)
         }
+
+        let session = SideBySideTranslation(source: self, pane: pane, direction: direction,
+                                            sourceBody: sourceBody, translatedBody: pane.editor.markdown)
+        sideBySide = session
+        widenForSplit(window)
+        contentSplit.addArrangedSubview(pane)
+        contentSplit.adjustSubviews()
+        contentSplit.layoutSubtreeIfNeeded()
+        contentSplit.setPosition(floor(contentSplit.bounds.width / 2), ofDividerAt: 0)
+        syncSideBySideState()
+        // 초점은 원문에 남긴다 — 사용자는 원문에서 ⌃⌘T를 눌렀고, 하던 일을 이어서 해야 한다.
+        window.makeFirstResponder(editor.textView)
+        // 두 칸을 처음부터 같은 자리에 둔다 — 원문에서 보던 곳을 번역본도 보여 준다.
+        session.link.follow(editor)
+        report(String(localized: "번역본을 오른쪽에 열었습니다 (\(direction.label))"))
     }
 
-    /// 번역본 창의 띠에서 '다시 번역'을 눌렀다. 번역은 원문 창이 한다.
+    /// 칸을 나눌 자리를 만든다. 창이 좁으면 화면 안에서 넓힌다(전체 화면은 그대로).
+    private func widenForSplit(_ window: NSWindow) {
+        guard !window.styleMask.contains(.fullScreen),
+              let visible = (window.screen ?? NSScreen.main)?.visibleFrame else { return }
+        let frame = window.frame
+        let wanted = min(visible.width, max(frame.width, 1280))
+        guard wanted > frame.width + 1 else { return }
+        var widened = frame
+        widened.size.width = wanted
+        // 오른쪽으로 넓히되 화면을 넘으면 왼쪽으로 민다.
+        if widened.maxX > visible.maxX { widened.origin.x = max(visible.minX, visible.maxX - wanted) }
+        frameBeforeSplit = frame
+        window.setFrame(widened, display: true)
+        splitFrame = window.frame
+    }
+
+    /// 번역본 칸을 닫는다. 번역본을 고치고 저장하지 않았으면 저장할지 묻는다(시트) —
+    /// 저장하거나 '저장 안 함'을 고르면 닫고, 취소하면 그대로 둔다.
+    func closeSideBySide() {
+        guard let session = sideBySide else { return }
+        let document = session.document
+        guard document.isDocumentEdited else {
+            finishClosing(session)
+            return
+        }
+        document.canClose(withDelegate: self,
+                          shouldClose: #selector(translationDocument(_:shouldClose:contextInfo:)),
+                          contextInfo: nil)
+    }
+
+    @objc private func translationDocument(_ document: NSDocument, shouldClose: Bool,
+                                           contextInfo: UnsafeMutableRawPointer?) {
+        guard shouldClose, let session = sideBySide, session.document === document else {
+            syncSideBySideState()
+            return
+        }
+        finishClosing(session)
+    }
+
+    private func finishClosing(_ session: SideBySideTranslation) {
+        removeTranslationPane(session, restoreFrame: true)
+        session.document.close()
+        window?.makeFirstResponder(editor.textView)
+    }
+
+    /// 칸을 걷고 잇기를 끊는다. 넓힌 창은 사용자가 손대지 않았으면 원래 자리로.
+    private func removeTranslationPane(_ session: SideBySideTranslation, restoreFrame: Bool) {
+        session.disconnect()
+        session.pane.removeFromSuperview()
+        contentSplit.adjustSubviews()
+        sideBySide = nil
+        if restoreFrame, let window, let before = frameBeforeSplit, let widened = splitFrame,
+           window.frame == widened {
+            window.setFrame(before, display: true)
+        }
+        frameBeforeSplit = nil
+        splitFrame = nil
+        syncSideBySideState()
+    }
+
+    /// 번역본 칸의 띠에서 '다시 번역'을 눌렀다.
     private func retranslateSideBySide() {
-        guard let session = sideBySide, let source = session.source else { return }
+        guard let session = sideBySide else { return }
         guard session.translationWasEdited, let window else {
-            source.translate(direction: session.direction, destination: .refresh)
+            translate(direction: session.direction, destination: .refresh)
             return
         }
         // 고친 번역본을 말없이 덮지 않는다.
@@ -788,46 +865,27 @@ final class DocumentWindowController: NSWindowController {
         alert.informativeText = String(localized: "다시 번역하면 번역본 전체를 새 번역으로 바꿉니다. 바꾼 뒤에도 ⌘Z로 되돌릴 수 있습니다.")
         alert.addButton(withTitle: String(localized: "다시 번역"))
         alert.addButton(withTitle: String(localized: "취소"))
-        alert.beginSheetModal(for: window) { [weak source, weak session] response in
-            guard response == .alertFirstButtonReturn, let source, let session else { return }
-            source.translate(direction: session.direction, destination: .refresh)
+        alert.beginSheetModal(for: window) { [weak self, weak session] response in
+            guard response == .alertFirstButtonReturn, let self, let session else { return }
+            self.translate(direction: session.direction, destination: .refresh)
         }
     }
 
-    /// 다시 번역한 결과를 번역본 창에 싣는다.
-    private func finishRetranslation(_ text: String, direction: TranslationDirection,
-                                     sourceBody: String) {
-        guard let session = sideBySide, let translation = session.translation else {
-            // 번역하는 사이에 번역본 창이 닫혔다. 결과를 버리지 않고 새 문서로 연다.
+    /// 다시 번역한 결과를 번역본 칸에 싣는다.
+    func finishRetranslation(_ text: String, direction: TranslationDirection, sourceBody: String) {
+        guard let session = sideBySide else {
+            // 번역하는 사이에 칸이 닫혔다. 결과를 버리지 않고 새 문서로 연다.
             // 다시 번역은 front matter를 옮기지 않았으므로 원본 블록을 그대로 붙인다.
             openTranslatedCopy(composed: Self.composed(text, frontMatter: frontMatter,
                                                        values: [], translations: []),
                                direction: direction)
             return
         }
-        translation.replaceBody(with: text)
+        session.pane.replaceBody(with: text)
+        session.pane.setDirection(direction)
         session.didRetranslate(direction: direction, sourceBody: sourceBody,
-                               translatedBody: translation.editor.markdown)
+                               translatedBody: session.pane.editor.markdown)
         report(String(localized: "다시 번역했습니다 (\(direction.label))"))
-    }
-
-    /// 본문 전체를 바꾼다. 텍스트 뷰를 지나므로 ⌘Z로 되돌릴 수 있다.
-    func replaceBody(with text: String) {
-        let whole = NSRange(location: 0, length: (editor.markdown as NSString).length)
-        replaceSelection(whole, with: text)
-        editor.textView.setSelectedRange(NSRange(location: 0, length: 0))
-    }
-
-    func setSourceChangedBand(visible: Bool) {
-        guard sourceChangedBand.isHidden == visible else { return }
-        sourceChangedBand.isHidden = !visible
-    }
-
-    /// 나란히 보기가 끝났다(어느 창이든 닫혔다).
-    func sideBySideDidEnd(_ session: SideBySideTranslation) {
-        guard sideBySide === session else { return }
-        sideBySide = nil
-        syncSideBySideState()
     }
 
     /// 도구 막대 토글과 메뉴 체크 표시를 지금 상태로.
@@ -841,7 +899,7 @@ final class DocumentWindowController: NSWindowController {
     }
 
     private static func sideBySideTip(isOn: Bool) -> String {
-        isOn ? String(localized: "나란히 보기 끝내기 — 번역본 창을 닫습니다 (⌃⌘T)")
+        isOn ? String(localized: "나란히 보기 끝내기 — 번역본을 닫습니다 (⌃⌘T)")
              : String(localized: "원문·번역 나란히 보기 (⌃⌘T)")
     }
 
@@ -969,6 +1027,7 @@ final class DocumentWindowController: NSWindowController {
     /// 있는 것이 있는데 아무 일도 안 일어나면 사용자는 자기 잘못을 찾느라 시간을 버린다.
     @objc private func preferencesDidChange(_ note: Notification) {
         editor.apply(preferences.current)
+        sideBySide?.pane.editor.apply(preferences.current)
     }
 
     /// 블록 편집기를 띄운다 — 설계의 단계 1.
@@ -1195,7 +1254,7 @@ extension DocumentWindowController: MarkdownEditorDelegate {
     func markdownEditorDidChangeText(_ editor: MarkdownEditorView) {
         markdownDocument?.editorDidChange(markdown: composedMarkdown())
         refreshOutline()
-        if let session = sideBySide, session.source === self { session.sourceTextDidChange() }
+        sideBySide?.sourceTextDidChange()
     }
 
     func markdownEditor(_ editor: MarkdownEditorView, didClickLink url: String) {

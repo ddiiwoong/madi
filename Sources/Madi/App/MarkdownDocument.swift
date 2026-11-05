@@ -76,6 +76,29 @@ final class MarkdownDocument: NSDocument {
         }
     }
 
+    /// 고친 상태(저장 안 함 ↔ 저장함)가 바뀔 수 있을 때 부른다. 창이 없는 문서(나란히 보기의
+    /// 번역본)는 제목 막대가 없으므로, 그 칸의 머리가 이것으로 '편집됨'을 맞춘다.
+    var changeCountDidChange: (() -> Void)?
+
+    /// 창 없는 문서의 시트(저장 패널, '저장할까요?')를 띄울 창. 나란히 보기의 번역본은 원문 창에
+    /// 띄운다 — 정하지 않으면 그때의 주 창에 뜨고, 주 창이 없으면 앱 전체를 막는 대화상자가 된다.
+    weak var hostWindow: NSWindow?
+
+    override var windowForSheet: NSWindow? {
+        windowControllers.isEmpty ? (hostWindow ?? super.windowForSheet) : super.windowForSheet
+    }
+
+    override func updateChangeCount(_ change: NSDocument.ChangeType) {
+        super.updateChangeCount(change)
+        changeCountDidChange?()
+    }
+
+    override func updateChangeCount(withToken changeCountToken: Any,
+                                    for saveOperation: NSDocument.SaveOperationType) {
+        super.updateChangeCount(withToken: changeCountToken, for: saveOperation)
+        changeCountDidChange?()
+    }
+
     /// Called by the window controller when the user types.
     func editorDidChange(markdown text: String) {
         guard text != markdown else { return }

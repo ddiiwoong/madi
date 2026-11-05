@@ -15,6 +15,10 @@ public final class MarkdownEditorView: NSView {
 
     public weak var editorDelegate: MarkdownEditorDelegate?
 
+    /// 이 편집기만의 실행 취소 관리자. nil이면 창의 것을 쓴다. 한 창에 문서가 둘일 때(나란히
+    /// 보기의 번역본) 쓴다 — 창의 것을 함께 쓰면 번역본을 고칠 때 원문이 '편집됨'이 된다.
+    public var undoManagerOverride: UndoManager?
+
     public let textView: MarkdownTextView
     private let scrollView = NSScrollView()
     /// 속성을 미루지 않고 고치는 저장소(`EagerTextStorage` — 큰 문서 앞쪽의 타이핑 비용).
@@ -787,6 +791,10 @@ extension MarkdownEditorView: NSTextViewDelegate {
             scheduleSearchRefresh()
         }
         editorDelegate?.markdownEditorDidChangeText(self)
+    }
+
+    public func undoManager(for view: NSTextView) -> UndoManager? {
+        undoManagerOverride ?? view.window?.undoManager
     }
 
     public func textViewDidChangeSelection(_ notification: Notification) {

@@ -24,6 +24,13 @@ final class DocumentWindowControllerTests: XCTestCase {
 
     override func tearDown() async throws {
         for controller in controllers {
+            if let session = controller.sideBySide {
+                controller.window?.attachedSheet.map { controller.window?.endSheet($0) }
+                session.document.updateChangeCount(.changeCleared)
+                controller.closeSideBySide()
+            }
+        }
+        for controller in controllers {
             controller.document?.removeWindowController(controller)
             controller.window?.orderOut(nil)
         }
@@ -217,5 +224,135 @@ final class DocumentWindowControllerTests: XCTestCase {
         XCTAssertNotNil(hiddenPlus, "⌘+도 받는다")
         XCTAssertEqual(hiddenPlus?.isHidden, true)
         XCTAssertEqual(hiddenPlus?.allowsKeyEquivalentWhenHidden, true)
+    }
+
+    // MARK: 나란히 보기 — 한 창 안의 좌우
+
+    private let english = TranslationDirection(source: "ko", target: "en")
+
+    /// 번역은 Apple 번역이 하므로(macOS 26 + 언어 팩) 테스트는 번역이 끝난 자리에서 연다.
+    private func openSideBySide(_ source: String = "# 제목\n\n본문\n",
+                                translation: String = "# Title\n\nBody\n")
+        -> (MarkdownDocument, DocumentWindowController, SideBySideTranslation) {
+        let (document, controller) = open(source)
+        controller.openSideBySide(composed: translation, direction: english,
+                                  sourceBody: controller.editor.markdown)
+        guard let session = controller.sideBySide else {
+            XCTFail("나란히 보기가 열리지 않았다")
+            fatalError()
+        }
+        return (document, controller, session)
+    }
+
+    func testSideBySideOpensInTheSameWindow() throws {
+        let (_, controller, session) = openSideBySide()
+        XCTAssertTrue(session.pane.window === controller.window, "번역본은 같은 창의 오른쪽 칸이다")
+        XCTAssertEqual(controller.contentSplit.arrangedSubviews.count, 2)
+        XCTAssertTrue(controller.contentSplit.arrangedSubviews.last === session.pane)
+        XCTAssertTrue(session.document.windowControllers.isEmpty, "번역본 문서에는 창이 없다")
+        XCTAssertTrue(NSDocumentController.shared.documents.contains { $0 === session.document },
+                      "문서 관리자가 안다 — 앱을 끝낼 때 저장 안 한 번역본을 묻는다")
+        XCTAssertEqual(session.pane.editor.markdown, "# Title\n\nBody\n")
+        XCTAssertEqual(toolbarButton("sideBySide", in: controller)?.state, .on)
+
+        controller.window?.layoutIfNeeded()
+        let left = try XCTUnwrap(controller.contentSplit.arrangedSubviews.first).frame.width
+        let right = session.pane.frame.width
+        XCTAssertEqual(left, right, accuracy: 4, "반씩 나눈다")
+    }
+
+    func testTranslationFrontMatterGoesToItsCardNotTheEditor() {
+        let front = "---\ntitle: Title\n---\n"
+        let (_, _, session) = openSideBySide(translation: front + "Body\n")
+        XCTAssertEqual(session.pane.editor.markdown, "Body\n", "편집기에는 본문만 — 원문 칸과 같다")
+        XCTAssertEqual(session.pane.composedMarkdown, front + "Body\n", "저장할 글은 블록째")
+    }
+
+    func testEditingTheTranslationDoesNotMarkTheSourceEdited() throws {
+        let (document, controller, session) = openSideBySide()
+        document.updateChangeCount(.changeCleared)
+        let tv = session.pane.editor.textView
+        XCTAssertTrue(tv.undoManager === session.document.undoManager, "번역본은 자기 실행 취소 관리자를 쓴다")
+        XCTAssertFalse(tv.undoManager === controller.editor.textView.undoManager)
+
+        tv.setSelectedRange(NSRange(location: (session.pane.editor.markdown as NSString).length, length: 0))
+        tv.insertText("More", replacementRange: tv.selectedRange())
+        XCTAssertTrue(session.document.isDocumentEdited)
+        XCTAssertEqual(session.document.markdown, "# Title\n\nBody\nMore", "번역본 문서가 고친 글을 든다")
+        XCTAssertFalse(document.isDocumentEdited, "원문은 '편집됨'이 되지 않는다")
+        XCTAssertTrue(session.pane.statusText.contains(String(localized: "편집됨")))
+    }
+
+    /// `⌘S`는 초점을 따른다 — 번역본 칸 안이면 번역본, 원문이면 원문.
+    func testSaveFollowsTheFocus() {
+        let (_, controller, session) = openSideBySide()
+        func firstSaver(from responder: NSResponder) -> NSResponder? {
+            var current: NSResponder? = responder
+            while let item = current {
+                if item.responds(to: #selector(NSDocument.save(_:))) { return item }
+                current = item.nextResponder
+            }
+            return nil
+        }
+        XCTAssertTrue(firstSaver(from: session.pane.editor.textView) === session.pane,
+                      "번역본 칸 안에서는 칸이 먼저 받는다")
+        XCTAssertFalse(firstSaver(from: controller.editor.textView) === session.pane,
+                       "원문 쪽에서는 칸을 지나지 않는다 — 원문 문서가 저장된다")
+    }
+
+    func testSourceChangesRaiseTheBandAndRetranslationClearsIt() throws {
+        let (_, controller, session) = openSideBySide()
+        XCTAssertTrue(session.pane.band.isHidden)
+        let tv = controller.editor.textView
+        tv.setSelectedRange(NSRange(location: (controller.editor.markdown as NSString).length, length: 0))
+        tv.insertText("더", replacementRange: tv.selectedRange())
+        XCTAssertFalse(session.pane.band.isHidden, "원문이 번역한 뒤에 바뀌었다")
+
+        controller.finishRetranslation("# Title\n\nBody more\n", direction: english,
+                                       sourceBody: controller.editor.markdown)
+        XCTAssertEqual(session.pane.editor.markdown, "# Title\n\nBody more\n")
+        XCTAssertTrue(session.pane.band.isHidden, "다시 번역하면 띠가 사라진다")
+        XCTAssertFalse(session.translationWasEdited)
+
+        try XCTUnwrap(session.document.undoManager).undo()
+        XCTAssertEqual(session.pane.editor.markdown, "# Title\n\nBody\n", "다시 번역도 ⌘Z로 돌아간다")
+    }
+
+    func testClosingAnUnchangedTranslationRestoresTheWindow() throws {
+        let (_, controller) = open("본문\n")
+        let before = try XCTUnwrap(controller.window?.frame)
+        controller.openSideBySide(composed: "Body\n", direction: english, sourceBody: "본문\n")
+        let session = try XCTUnwrap(controller.sideBySide)
+        XCTAssertGreaterThanOrEqual(controller.window?.frame.width ?? 0, before.width, "좁으면 넓힌다")
+
+        session.document.updateChangeCount(.changeCleared)        // 저장한 것과 같다
+        controller.closeSideBySide()
+        XCTAssertNil(controller.sideBySide)
+        XCTAssertNil(session.pane.superview)
+        XCTAssertEqual(controller.contentSplit.arrangedSubviews.count, 1)
+        XCTAssertFalse(NSDocumentController.shared.documents.contains { $0 === session.document },
+                       "번역본 문서를 닫는다")
+        XCTAssertEqual(controller.window?.frame, before, "넓힌 창을 원래대로")
+        XCTAssertEqual(toolbarButton("sideBySide", in: controller)?.state, .off)
+    }
+
+    func testClosingAnEditedTranslationAsksFirst() throws {
+        let (_, controller, session) = openSideBySide()
+        XCTAssertTrue(session.document.isDocumentEdited, "막 번역한 것은 아직 저장하지 않았다")
+        controller.closeSideBySide()
+        XCTAssertNotNil(controller.window?.attachedSheet, "저장할지 원문 창에 묻는다")
+        XCTAssertNotNil(controller.sideBySide, "답하기 전에는 닫지 않는다")
+        XCTAssertTrue(session.pane.superview != nil)
+    }
+
+    func testClosingTheWindowKeepsAnUnsavedTranslation() throws {
+        let (_, controller, session) = openSideBySide()
+        var kept: [MarkdownDocument] = []
+        controller.keepUnsavedTranslation = { kept.append($0) }
+        controller.window?.close()
+        XCTAssertTrue(kept.first === session.document, "저장 안 한 번역본은 버리지 않고 자기 창으로")
+        XCTAssertNil(controller.sideBySide)
+        kept.first?.updateChangeCount(.changeCleared)
+        kept.first?.close()
     }
 }

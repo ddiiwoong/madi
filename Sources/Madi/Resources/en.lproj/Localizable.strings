@@ -125,16 +125,11 @@
 "이 Mac에서 한국어와 번역할 수 있는 언어를 찾지 못했습니다." = "Couldn’t find a language this Mac can translate to and from Korean.";
 "번역 결과를 새 문서로 열지 못했습니다." = "Couldn’t open the translation as a new document.";
 "번역본을 새 문서로 열었습니다 (%@)" = "Opened the translation as a new document (%@)";
-"번역본 창을 열지 못했습니다." = "Couldn’t open the translation window.";
-"번역본을 열었지만 나란히 놓지 못했습니다." = "Opened the translation but couldn’t place it side by side.";
-"번역본을 옆에 열었습니다 (%@)" = "Opened the translation alongside (%@)";
-"번역본을 열었습니다 (%@) — 전체 화면에서는 옆에 붙이지 않습니다" = "Opened the translation (%@) — it isn’t placed alongside in full screen";
 "번역본에서 고친 내용이 사라집니다" = "Your edits to the translation will be lost";
 "다시 번역하면 번역본 전체를 새 번역으로 바꿉니다. 바꾼 뒤에도 ⌘Z로 되돌릴 수 있습니다." = "Translating again replaces the whole translation with a new one. You can still undo it with ⌘Z.";
 "다시 번역" = "Translate Again";
 "취소" = "Cancel";
 "다시 번역했습니다 (%@)" = "Translated again (%@)";
-"나란히 보기 끝내기 — 번역본 창을 닫습니다 (⌃⌘T)" = "End Side by Side — closes the translation window (⌃⌘T)";
 "원문·번역 나란히 보기 (⌃⌘T)" = "Original and Translation Side by Side (⌃⌘T)";
 "번역하지 못했습니다" = "Couldn’t translate";
 "언어 설정 열기" = "Open Language Settings";
@@ -164,6 +159,17 @@
 "맞는 문서가 없습니다" = "No matching documents";
 "명령 찾기" = "Find a command";
 "맞는 명령이 없습니다" = "No matching commands";
+
+"번역본을 오른쪽에 열었습니다 (%@)" = "Opened the translation on the right (%@)";
+"나란히 보기 끝내기 — 번역본을 닫습니다 (⌃⌘T)" = "End Side by Side — closes the translation (⌃⌘T)";
+"저장하지 않은 번역본을 자기 창으로 옮겼습니다" = "Moved the unsaved translation to its own window";
+
+/* TranslationPaneView.swift */
+"번역본 저장 — 이 칸에 캐럿이 있으면 ⌘S도 번역본을 저장합니다" = "Save the translation — ⌘S also saves it while the cursor is in this pane";
+"번역본 닫기" = "Close Translation";
+"번역본 닫기 (⌃⌘T)" = "Close Translation (⌃⌘T)";
+"번역본" = "Translation";
+"편집됨" = "Edited";
 
 /* DiagramRenderer.swift */
 "수식을 그리지 못했습니다" = "Couldn’t render a math block";
