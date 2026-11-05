@@ -72,6 +72,8 @@ final class ImageInsertTests: XCTestCase {
 
     private var windows: [NSWindow] = []
     private var folder: URL!
+    /// 이름 붙인 대지는 로그아웃할 때까지 남는다 — 테스트가 만든 것은 끝나면 놓는다.
+    private var boards: [NSPasteboard] = []
 
     override func setUp() async throws {
         folder = FileManager.default.temporaryDirectory
@@ -85,6 +87,8 @@ final class ImageInsertTests: XCTestCase {
             window.orderOut(nil)
         }
         windows = []
+        for board in boards { board.releaseGlobally() }
+        boards = []
         try? FileManager.default.removeItem(at: folder)
     }
 
@@ -112,6 +116,7 @@ final class ImageInsertTests: XCTestCase {
         let board = NSPasteboard(name: NSPasteboard.Name("madi-test-\(UUID().uuidString)"))
         board.clearContents()
         fill(board)
+        boards.append(board)
         return board
     }
 
