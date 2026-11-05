@@ -236,6 +236,30 @@ final class RenderedBlockLayoutTests: XCTestCase {
         XCTAssertEqual(view.textView.codeBlockRanges.count, 1)
     }
 
+    /// 수식은 글 넓이의 가운데에, 다이어그램은 왼쪽에 놓는다.
+    func testMathIsCenteredAndDiagramsAreNot() {
+        let markdown = "```mermaid\npie\n```\n\n$$ E = mc^2 $$\n\n끝\n"
+        let view = editor(markdown, renderer: StubRenderer { _ in .ready(Self.picture(100, 40)) },
+                          caretAt: (markdown as NSString).length)
+        let placements = view.textView.imagePlacements
+        XCTAssertEqual(placements.map(\.centered), [false, true])
+
+        // 그리는 자리: 가운데 맞춤은 글 넓이의 가운데, 왼쪽 맞춤은 줄의 처음.
+        let box = NSRect(x: 40, y: 10, width: 0, height: 48)   // 빈 줄 조각 — 폭이 0일 수 있다
+        let math = DecoratedTextView.imageFrame(for: placements[1], lineBox: box, textOriginX: 40,
+                                                containerWidth: 600, padding: 5)
+        XCTAssertEqual(math.midX, 40 + 300, accuracy: 0.5)
+        let diagram = DecoratedTextView.imageFrame(for: placements[0], lineBox: box, textOriginX: 40,
+                                                   containerWidth: 600, padding: 5)
+        XCTAssertEqual(diagram.minX, 45, accuracy: 0.5)
+        // 글 넓이보다 넓으면 왼쪽에서 시작한다(음수로 밀려나지 않는다).
+        let wide = MarkdownStyler.ImagePlacement(lineRange: placements[1].lineRange,
+                                                 size: CGSize(width: 900, height: 40),
+                                                 image: placements[1].image, centered: true)
+        XCTAssertEqual(DecoratedTextView.imageFrame(for: wide, lineBox: box, textOriginX: 40,
+                                                    containerWidth: 600, padding: 5).minX, 45, accuracy: 0.5)
+    }
+
     /// 넓은 그림은 글 넓이에 맞춰 줄인다.
     func testWidePictureIsScaledToTheTextWidth() {
         let view = editor(document, renderer: StubRenderer { _ in .ready(Self.picture(3000, 600)) })

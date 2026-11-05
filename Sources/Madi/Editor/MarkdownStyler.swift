@@ -41,6 +41,16 @@ public final class MarkdownStyler {
         public let lineRange: NSRange
         public let size: CGSize
         public let image: NSImage
+        /// 글 넓이의 가운데에 놓는가. 수식 블록이 그렇다(TeX·KaTeX의 표시 수식 관례). 그림과
+        /// 다이어그램은 글처럼 왼쪽에 붙는다.
+        public var centered = false
+
+        public init(lineRange: NSRange, size: CGSize, image: NSImage, centered: Bool = false) {
+            self.lineRange = lineRange
+            self.size = size
+            self.image = image
+            self.centered = centered
+        }
     }
 
     public private(set) var imagePlacements: [ImagePlacement] = []
@@ -382,7 +392,8 @@ public final class MarkdownStyler {
             let display = ImageReference.displaySize(for: pixels, maxWidth: contentWidth)
             let size = CGSize(width: display.width, height: display.height)
             guard size.height > 0, let first = blockLines.first else { continue }
-            placements.append(ImagePlacement(lineRange: first.range, size: size, image: image))
+            placements.append(ImagePlacement(lineRange: first.range, size: size, image: image,
+                                             centered: block.kind == .math))
             shownAsImage.append(block.range)
             guard writes else { continue }
 

@@ -112,6 +112,19 @@ public class DecoratedTextView: NSTextView {
         }
     }
 
+    /// 비워 둔 줄 안에서 그림이 놓일 자리. 보통은 왼쪽 맞춤이고, `centered`면 **글 넓이**의
+    /// 가운데다 — 줄 조각의 가운데가 아니다(빈 줄 조각은 글자가 없어 폭이 0일 수 있다).
+    static func imageFrame(for placement: MarkdownStyler.ImagePlacement, lineBox: NSRect,
+                           textOriginX: CGFloat, containerWidth: CGFloat, padding: CGFloat) -> NSRect {
+        let left = textOriginX + padding
+        let available = containerWidth - padding * 2
+        let x = placement.centered
+            ? left + max(0, (available - placement.size.width) / 2)
+            : lineBox.minX + padding
+        return NSRect(x: x, y: lineBox.minY, width: placement.size.width,
+                      height: min(placement.size.height, lineBox.height))
+    }
+
     /// 그림을 그린다.
     ///
     /// 문서에 첨부 글자(U+FFFC)를 끼워 넣지 않는다. 그 길은 **실측으로 막혔다**:
@@ -135,13 +148,9 @@ public class DecoratedTextView: NSTextView {
             box.origin.x += origin.x
             box.origin.y += origin.y
 
-            // 비워 둔 줄 안에 왼쪽 맞춤으로 놓는다.
-            let frame = NSRect(
-                x: box.minX + textContainer.lineFragmentPadding,
-                y: box.minY,
-                width: placement.size.width,
-                height: min(placement.size.height, box.height)
-            )
+            let frame = Self.imageFrame(for: placement, lineBox: box, textOriginX: origin.x,
+                                        containerWidth: textContainer.size.width,
+                                        padding: textContainer.lineFragmentPadding)
             guard frame.intersects(rect) else { continue }
             placement.image.draw(in: frame, from: .zero, operation: .sourceOver, fraction: 1,
                                  respectFlipped: true, hints: [.interpolation: NSImageInterpolation.high])
