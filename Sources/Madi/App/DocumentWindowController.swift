@@ -27,7 +27,11 @@ final class DocumentWindowController: NSWindowController {
     private(set) var sideBySide: SideBySideTranslation?
     /// 번역본 창에만 뜨는 띠 — 원문이 번역한 뒤에 바뀌었다.
     private let sourceChangedBand = SourceChangedBandView()
-    private let preferences = PreferenceStore()
+    /// 설정 저장소. 앱은 표준 저장소이고, 테스트가 디스크에 쓰지 않는 저장소를 넣는다.
+    private var preferences = PreferenceStore()
+    /// 창 자리를 저장할지. 테스트·화면 밖 그리기는 끈다 — 켜 두면 그 프로세스의 설정 파일에
+    /// 창 자리가 써진다(실측: 그림을 그린 실행 파일 이름의 plist가 생겼다).
+    private var autosavesFrame = true
 
     /// The document's front matter, kept so the body can be re-joined with the
     /// ORIGINAL block on every save rather than a re-serialised one.
@@ -57,6 +61,11 @@ final class DocumentWindowController: NSWindowController {
     private weak var sideBySideButton: NSButton?
 
     convenience init() {
+        self.init(preferences: PreferenceStore(), autosavesFrame: true)
+    }
+
+    /// 테스트가 쓴다 — 설정 저장소를 바꾸고 창 자리를 저장하지 않는다.
+    convenience init(preferences: PreferenceStore, autosavesFrame: Bool) {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1040, height: 720),
             // No .fullSizeContentView: with it the sidebar's tab row is laid
@@ -68,6 +77,8 @@ final class DocumentWindowController: NSWindowController {
         window.tabbingMode = .preferred
         window.minSize = NSSize(width: 520, height: 360)
         self.init(window: window)
+        self.preferences = preferences
+        self.autosavesFrame = autosavesFrame
         build()
     }
 
@@ -165,7 +176,7 @@ final class DocumentWindowController: NSWindowController {
         // 도구 막대 식별자는 **저장된 상태를 찾는 열쇠**이고 사람이 읽는 이름이
         // 아니다. 바꾸면 기존 사용자의 창 위치·크기와 도구 막대 구성이 한 번
         // 사라진다. 번들 식별자를 그대로 둔 것과 같은 이유다.
-        window?.setFrameAutosaveName("MdDocumentWindow")
+        if autosavesFrame { window?.setFrameAutosaveName("MdDocumentWindow") }
 
         matchLabel.font = .systemFont(ofSize: 11)
         matchLabel.textColor = .secondaryLabelColor

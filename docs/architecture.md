@@ -12,7 +12,7 @@ Sources/Madi/
   Panels/      사이드바 · 카드 · 시트 · 설정
   Services/    Apple 번역, 압축 해제 — 플랫폼 API에 붙는 것
   App/         NSDocument · 윈도우 컨트롤러 · 메뉴 · main
-Tests/MadiTests/   Core 파일을 직접 컴파일해 돈다 (앱을 띄우지 않음)
+Tests/MadiTests/   앱 소스를 직접 컴파일해 돈다 (main.swift만 뺀다, 앱을 띄우지 않음)
 ```
 
 위에서 아래로만 의존합니다. `Core`는 자기 위의 어느 층도 모릅니다.
@@ -126,8 +126,14 @@ Mermaid·KaTeX는 `Editor/DiagramRenderer.swift`의 숨은 `WKWebView` 하나가
 ("The test runner hung before establishing connection"). 앱 자체는 정상 실행되므로 호스팅
 문제였고, `Core`가 Foundation만 쓰니 호스트를 뗄 수 있었습니다 — 365개가 몇 초 안에 끝납니다.
 
-그래서 테스트 타깃은 `Tests/MadiTests`와 `Sources/Madi/Core`를 **둘 다 소스로 컴파일**하고
-`@testable import`를 쓰지 않습니다. `Core`에 파일을 더하면 자동으로 들어갑니다.
+그래서 테스트 타깃은 `Tests/MadiTests`와 앱 소스를 **둘 다 소스로 컴파일**하고
+`@testable import`를 쓰지 않습니다. 처음에는 `Core`만 넣었고, 편집기·설정 창을 거쳐 지금은
+`main.swift`(앱을 실행하는 최상위 코드)만 뺀 전부가 들어갑니다(2026-11-05, 문서 창 테스트 때문).
+어느 폴더에 파일을 더해도 자동으로 들어갑니다.
+
+테스트는 **사용자의 디스크에 흔적을 남기지 않습니다.** 설정은 `MemoryDefaults`(쓴 도메인은 지워도
+빈 plist가 남는다), 키는 메모리 저장소, 네트워크는 대역 URL 프로토콜, 창은 자리를 저장하지 않게
+만듭니다. `TestStorageHygieneTests`가 테스트 소스에 디스크 스위트가 생기면 실패합니다.
 
 `Editor`도 함께 컴파일합니다 — 블록 편집기의 되돌리기·블록 넘는 선택·한글 조합 보호는
 응답자 연쇄와 실제 `NSTextView`를 지나야 참임을 알 수 있고, 순수 모델 테스트만으로는

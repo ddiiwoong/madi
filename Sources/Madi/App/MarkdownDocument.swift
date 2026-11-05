@@ -32,9 +32,17 @@ final class MarkdownDocument: NSDocument {
 
     override func makeWindowControllers() {
         let controller = DocumentWindowController()
-        windowController = controller
         addWindowController(controller)
         controller.load(markdown: markdown)
+    }
+
+    /// 창 컨트롤러는 **붙는 자리에서** 기억한다. `makeWindowControllers`에서만 기억하면 다른 길로
+    /// 붙은 창(테스트가 그렇게 붙인다)은 디스크에서 다시 읽힌 글을 받지 못한다.
+    override func addWindowController(_ windowController: NSWindowController) {
+        super.addWindowController(windowController)
+        if let controller = windowController as? DocumentWindowController {
+            self.windowController = controller
+        }
     }
 
     // MARK: Reading and writing
