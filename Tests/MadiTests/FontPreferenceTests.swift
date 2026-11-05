@@ -69,7 +69,7 @@ final class FontPreferenceTests: XCTestCase {
     // MARK: 저장소
 
     private func freshStore() -> (PreferenceStore, UserDefaults) {
-        let defaults = UserDefaults(suiteName: "madi.tests.\(UUID().uuidString)")!
+        let defaults = MemoryDefaults()
         return (PreferenceStore(defaults: defaults), defaults)
     }
 

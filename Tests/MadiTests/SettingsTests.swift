@@ -10,9 +10,8 @@ import XCTest
 final class SettingsTests: XCTestCase {
 
     private func store() -> (PreferenceStore, UserDefaults) {
-        // 사용자의 실제 설정을 건드리지 않는다.
-        let suite = "madi.tests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
+        // 사용자의 실제 설정을 건드리지 않고, 디스크에도 쓰지 않는다(`MemoryDefaults`).
+        let defaults = MemoryDefaults()
         return (PreferenceStore(defaults: defaults), defaults)
     }
 

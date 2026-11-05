@@ -113,9 +113,8 @@ final class InterfaceLanguageTests: XCTestCase {
     }
 
     func testApplyWritesAndSystemClears() throws {
-        let name = "madi.tests.language.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
-        addTeardownBlock { UserDefaults(suiteName: name)?.removePersistentDomain(forName: name) }
+        let name = "madi.tests.language"
+        let defaults = MemoryDefaults(name: name)
 
         InterfaceLanguage.english.apply(to: defaults)
         XCTAssertEqual(defaults.persistentDomain(forName: name)?["AppleLanguages"] as? [String], ["en"])

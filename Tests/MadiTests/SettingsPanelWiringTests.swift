@@ -24,10 +24,11 @@ final class SettingsPanelWiringTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        defaults = UserDefaults(suiteName: "madi.tests.\(UUID().uuidString)")!
+        // 둘 다 디스크에 쓰지 않는다(`MemoryDefaults`).
+        defaults = MemoryDefaults()
         store = PreferenceStore(defaults: defaults)
-        languageSuite = "madi.tests.language.\(UUID().uuidString)"
-        languageDefaults = UserDefaults(suiteName: languageSuite)!
+        languageSuite = "madi.tests.language"
+        languageDefaults = MemoryDefaults(name: languageSuite)
         panel = makePanel()
     }
 

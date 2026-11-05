@@ -4,19 +4,16 @@ import XCTest
 final class EditorPreferencesTests: XCTestCase {
 
     /// 테스트는 **사용자의 실제 설정을 건드리지 않아야** 한다. 따로 저장소를 만든다.
+    /// 디스크에도 쓰지 않는다(`MemoryDefaults`) — 쓴 도메인은 지워도 빈 파일이 남는다.
     private var defaults: UserDefaults!
-    private var suiteName: String!
 
     override func setUp() {
         super.setUp()
-        suiteName = "dev.jinwoong.md.tests.\(UUID().uuidString)"
-        defaults = UserDefaults(suiteName: suiteName)
+        defaults = MemoryDefaults()
     }
 
     override func tearDown() {
-        defaults.removePersistentDomain(forName: suiteName)
         defaults = nil
-        suiteName = nil
         super.tearDown()
     }
 
