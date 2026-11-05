@@ -17,7 +17,8 @@ public final class MarkdownEditorView: NSView {
 
     public let textView: DecoratedTextView
     private let scrollView = NSScrollView()
-    private let storage = NSTextStorage()
+    /// 속성을 미루지 않고 고치는 저장소(`EagerTextStorage` — 큰 문서 앞쪽의 타이핑 비용).
+    private let storage = EagerTextStorage()
     private let layout = NSLayoutManager()
     private let container: NSTextContainer
     private let styler = MarkdownStyler()

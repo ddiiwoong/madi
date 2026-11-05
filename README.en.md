@@ -104,10 +104,11 @@ Stated plainly. The background and plans are in [TODO.md](TODO.md) (Korean).
 - **The front matter card is read-only.** Re-serializing YAML would quietly rewrite constructs
   the parser does not model (anchors, nested mappings, comments). The original block is kept
   byte for byte.
-- **Typing in very large documents is a little heavy.** A 220,000-character document (about
-  6,000 lines) opens in 0.5 s, app launch included, but near the top of it one keystroke takes
-  about 35 ms. Lines are re-classified only from the edit onward; what remains is restyling the
-  edited line and TextKit rebuilding that line's glyphs and its fallback font for Hangul.
+- **A keystroke in a very large document takes a dozen or so milliseconds.** In a 220,000-character
+  document (about 6,000 lines), typing at human speed costs about 13 ms per keystroke anywhere in the
+  document with the bundled font. With the system font as body font it is about 22 ms, because each
+  Hangul character needs a fallback font. What remains is restyling the edited line and TextKit
+  rebuilding that line's glyphs.
 
 ## Layout
 
