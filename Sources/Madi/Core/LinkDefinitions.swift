@@ -13,17 +13,28 @@ public struct LinkDefinitions: Equatable, Sendable {
 
     /// 열쇠는 **정규화한** 라벨이다(아래 `normalize`).
     private var table: [String: String]
+    /// 각주 정의(`[^라벨]: 글`)의 라벨 → 그 정의 줄의 시작. 정규화한 라벨이다. 참조를 각주로
+    /// 그릴지(정의가 있는가)와 ⌘클릭으로 어디로 갈지를 이것이 답한다.
+    private var footnotes: [String: Int]
 
-    public static let empty = LinkDefinitions(table: [:])
+    public static let empty = LinkDefinitions(table: [:], footnotes: [:])
 
-    private init(table: [String: String]) {
+    private init(table: [String: String], footnotes: [String: Int]) {
         self.table = table
+        self.footnotes = footnotes
     }
 
     /// 문서를 훑어 정의를 모은다. 코드 블록 안의 `[a]: b`는 코드이므로 세지 않는다 —
     /// 줄 종류를 이미 가려 둔 `lines`를 받는 이유가 그것이다.
     public init(scanning text: NSString, lines: [LineToken]) {
         var table: [String: String] = [:]
+        var footnotes: [String: Int] = [:]
+        for line in lines where line.kind == .footnoteDefinition {
+            guard let label = MarkdownSyntax.footnoteLabel(ofDefinition: line, in: text) else { continue }
+            let key = Self.normalize(label)
+            if footnotes[key] == nil { footnotes[key] = line.range.location }
+        }
+        self.footnotes = footnotes
         for line in lines where line.kind == .linkDefinition {
             guard line.range.length > 0,
                   let parts = MarkdownSyntax.linkDefinition(in: text.substring(with: line.range))
@@ -44,6 +55,16 @@ public struct LinkDefinitions: Equatable, Sendable {
     /// 라벨이 가리키는 주소. 정의가 없으면 nil.
     public func url(for label: String) -> String? {
         table[Self.normalize(label)]
+    }
+
+    /// 이 라벨의 각주 정의가 있는가.
+    public func hasFootnote(_ label: String) -> Bool {
+        footnotes[Self.normalize(label)] != nil
+    }
+
+    /// 각주 정의 줄의 시작. 없으면 nil.
+    public func footnoteDefinitionLocation(_ label: String) -> Int? {
+        footnotes[Self.normalize(label)]
     }
 
     /// 라벨 정규화 — CommonMark의 규칙이다. 대소문자를 무시하고, 앞뒤 공백을 떼고,

@@ -18,6 +18,10 @@ public enum BlockKind: Equatable, Sendable {
     /// 삼켜 아무것도 그리지 않지만, 편집기는 **보여야 한다** — 숨기면 빈 줄이 남고
     /// 사용자가 친 글자가 어디로 갔는지 알 수 없다(펜스의 언어 이름에서 겪은 일이다).
     case linkDefinition
+    /// 각주 정의 줄(`[^1]: 각주 글`). 라벨의 괄호와 콜론은 마커이고 라벨과 글은 보인다.
+    /// 링크 정의보다 먼저 판정한다 — `[^1]: https://…`는 링크 정의 꼴이기도 하지만 GFM에서는
+    /// 각주다.
+    case footnoteDefinition
     case paragraph
     case blank
 }
@@ -59,6 +63,8 @@ public enum InlineKind: Equatable, Sendable {
     case link(url: String)
     case image(url: String)
     case autolink(url: String)
+    /// 각주 참조 `[^라벨]`. 정의가 있을 때만 나온다(GFM) — 없으면 평범한 대괄호 글이다.
+    case footnoteReference(label: String)
 }
 
 public struct InlineToken: Equatable, Sendable {
@@ -400,6 +406,23 @@ public struct MarkdownSyntax: Sendable {
     ///
     /// 범위는 **그 줄 안의** 오프셋이다(문서 전체가 아니다) — 부르는 쪽이 줄의 시작을
     /// 더한다.
+    /// 각주 정의 줄의 라벨(`[^1]: …`의 `1`)과 그 범위. 줄 판정이 남긴 두 마커 사이다 —
+    /// 정규식을 다시 돌리지 않는다.
+    public static func footnoteLabelRange(ofDefinition line: LineToken) -> NSRange? {
+        guard line.kind == .footnoteDefinition, line.markerRanges.count == 2 else { return nil }
+        let start = NSMaxRange(line.markerRanges[0])
+        let end = line.markerRanges[1].location
+        guard end > start else { return nil }
+        return NSRange(location: start, length: end - start)
+    }
+
+    public static func footnoteLabel(ofDefinition line: LineToken, in text: NSString) -> String? {
+        guard let range = footnoteLabelRange(ofDefinition: line), NSMaxRange(range) <= text.length else {
+            return nil
+        }
+        return text.substring(with: range)
+    }
+
     public static func linkDefinition(in line: String) -> (label: NSRange, url: NSRange)? {
         let ns = line as NSString
         guard let m = linkDefinitionPattern.firstMatch(in: line,
@@ -497,6 +520,17 @@ public struct MarkdownSyntax: Sendable {
                          markers: markers,
                          content: shift(m.range(at: 4), by: range.location))
         }
+        if let m = Self.footnoteDefinition.firstMatch(in: line, range: NSRange(location: 0, length: ns.length)) {
+            // 라벨은 남긴다 — 어느 각주인지가 이 줄의 머리다. 감싼 `[^`와 `]:`만 접힌다.
+            let label = m.range(at: 1)
+            let content = m.range(at: 2)
+            return token(.footnoteDefinition,
+                         markers: [shift(NSRange(location: 0, length: label.location), by: range.location),
+                                   shift(NSRange(location: NSMaxRange(label),
+                                                 length: content.location - NSMaxRange(label)),
+                                         by: range.location)],
+                         content: shift(content, by: range.location))
+        }
         if let parts = Self.linkDefinition(in: line) {
             // 라벨과 콜론은 마커다(캐럿이 없는 줄에서는 접힌다). 주소는 남겨 둔다 —
             // 어디로 가는 링크인지가 이 줄의 내용이다.
@@ -559,6 +593,13 @@ public struct MarkdownSyntax: Sendable {
         for m in Self.autolink.matches(in: line, range: whole) {
             let url = (line as NSString).substring(with: m.range(at: 1))
             add(.autolink(url: url), m, content: 1, markers: markerPair(m, contentIndex: 1))
+        }
+
+        // 각주 참조. 참조 링크의 축약 꼴(`[참조]`)보다 먼저 — 그쪽 패턴도 `[^1]`에 맞는다.
+        for m in Self.footnoteReference.matches(in: line, range: whole) {
+            let label = (line as NSString).substring(with: m.range(at: 1))
+            guard definitions.hasFootnote(label) else { continue }
+            add(.footnoteReference(label: label), m, content: 1, markers: markerPair(m, contentIndex: 1))
         }
 
         // 참조 꼴. **인라인 꼴 다음이어야 한다** — `[a](b)`를 먼저 잡게 두지 않으면
@@ -641,6 +682,11 @@ public struct MarkdownSyntax: Sendable {
     /// 모두 받는다(CommonMark). 들여쓰기는 세 칸까지.
     private static let linkDefinitionPattern =
         regex(#"^\s{0,3}\[([^\]\n]+)\]:[ \t]*(<[^>\n]*>|[^\s\n]+)(?:[ \t]+("[^"\n]*"|'[^'\n]*'|\([^)\n]*\)))?[ \t]*$"#)
+
+    /// 각주 정의 줄. 라벨에는 공백과 `]`가 올 수 없다(GFM). 들여쓰기는 세 칸까지.
+    private static let footnoteDefinition = regex(#"^\s{0,3}\[\^([^\]\s]+)\]:[ \t]*(.*)$"#)
+    /// 각주 참조. 뒤에 `:`가 오면 정의의 머리이고, `(`가 오면 인라인 링크다.
+    private static let footnoteReference = regex(#"\[\^([^\]\s]+)\](?![:(])"#)
 
     private static let code = regex(#"`([^`\n]+)`"#)
     private static let image = regex(#"!\[([^\]\n]*)\]\(([^)\s]+)[^)]*\)"#)

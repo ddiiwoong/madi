@@ -223,6 +223,10 @@ public struct MarkdownTranslationPlan: Equatable {
         var builder = Builder(text: ns)
         var cursor = 0
         let lines = syntax.scanLines(in: ns)
+        // 정의를 알아야 참조 링크(`[글][참조]`)와 각주 참조(`[^1]`)를 인라인 토큰으로 받는다.
+        // 모르면 둘 다 평범한 글로 번역기에 넘어가 라벨이 번역되고, 정의 줄은 번역하지 않으므로
+        // (아래 `.linkDefinition`) 참조가 끊어진다.
+        builder.definitions = LinkDefinitions(scanning: ns, lines: lines)
         // `$$` 수식 블록의 줄은 줄 판정으로는 **문단**이다(펜스가 아니므로). 그대로 두면
         // 번역기가 `\int_0^1`을 글로 받아 옮기고, `_`·`*`를 기울임 표시로 보호하면서 수식을
         // 망가뜨린다. 펜스 수식(```` ```math ````)은 코드 줄이라 이미 건너뛴다 — 같은 수식이
@@ -269,7 +273,8 @@ public struct MarkdownTranslationPlan: Equatable {
         case .tableRow:
             appendTableRow(line.range, to: &builder, text: text, syntax: syntax)
 
-        case .heading, .quote, .listItem, .paragraph:
+        case .heading, .quote, .listItem, .paragraph, .footnoteDefinition:
+            // 각주 정의는 머리(`[^1]: `)가 앞머리로 남고 각주 글만 번역된다 — 목록 표지와 같다.
             // 내용 앞뒤의 공백은 번역기에 넘기지 않는다(실측). 목록 항목의 이어지는 줄
             // `   링크는 파란 밑줄.`은 문단 줄이라 내용이 줄 전체인데, 앞 공백까지 넘기면
             // 번역기가 버리고 그 줄이 **목록 밖으로 떨어진다** — 저장소 문서 다섯 중 셋이
@@ -375,6 +380,7 @@ public struct MarkdownTranslationPlan: Equatable {
 
     private struct Builder {
         let text: NSString
+        var definitions = LinkDefinitions.empty
         private var segments: [Segment] = []
 
         init(text: NSString) { self.text = text }
@@ -437,12 +443,12 @@ public struct MarkdownTranslationPlan: Equatable {
             let end = NSMaxRange(range)
             var tokenRanges: [NSRange] = []
 
-            for token in syntax.scanInline(in: text, range: range) {
+            for token in syntax.scanInline(in: text, range: range, definitions: definitions) {
                 guard token.range.location >= range.location,
                       NSMaxRange(token.range) <= end else { continue }
                 tokenRanges.append(token.range)
                 switch token.kind {
-                case .code, .autolink:
+                case .code, .autolink, .footnoteReference:
                     steps.append(.guard_(token.range, .standalone))
                 case .link, .image, .strong, .emphasis, .strikethrough:
                     let content = token.contentRange

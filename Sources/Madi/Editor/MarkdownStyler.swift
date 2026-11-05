@@ -9,6 +9,9 @@ extension NSAttributedString.Key {
     /// 체크박스 `[ ]`의 세 글자. 값은 여는 대괄호의 위치(`Int`)다 — 누르면 편집기가 그 칸을
     /// 뒤집는다(`MarkdownEditorView.handleClick`).
     static let mdTaskBox = NSAttributedString.Key("mdTaskBox")
+    /// 각주의 오갈 곳. `definition:<라벨>`(참조 → 정의) 또는 `reference:<라벨>`(정의 → 첫 참조).
+    /// ⌘클릭하면 편집기가 그리로 캐럿을 옮긴다.
+    static let mdFootnoteJump = NSAttributedString.Key("mdFootnoteJump")
 }
 
 /// Applies rendered-looking attributes to the markdown source in place.
@@ -702,6 +705,20 @@ public final class MarkdownStyler {
                 ], range: line.contentRange)
             }
 
+        case .footnoteDefinition:
+            // `[^1]: 글` → 위첨자 `1`과 글. 괄호와 콜론은 마커로 접히고, 라벨 뒤에 글자 간격을
+            // 조금 주어 글과 붙지 않게 한다(접힌 콜론 뒤 공백도 마커라 사라진다).
+            styleInline(in: storage, text: text, content: line.contentRange, onCaretLine: onCaretLine)
+            if let label = MarkdownSyntax.footnoteLabelRange(ofDefinition: line), NSMaxRange(label) <= text.length {
+                var attributes = footnoteAttributes(at: label.location, in: storage)
+                attributes[.mdFootnoteJump] = "reference:" + text.substring(with: label)
+                storage.addAttributes(attributes, range: label)
+                if !onCaretLine {
+                    storage.addAttribute(.kern, value: theme.bodyPointSize * 0.4,
+                                         range: NSRange(location: NSMaxRange(label) - 1, length: 1))
+                }
+            }
+
         case .thematicBreak:
             storage.addAttributes([.foregroundColor: theme.rule], range: line.range)
 
@@ -750,6 +767,8 @@ public final class MarkdownStyler {
         // 정의 줄의 라벨(`[참조]: `)은 렌더러가 삼키는 markup이라 접는다. 주소는
         // 마커가 아니므로 남는다 — 줄 전체가 사라지면 사용자가 친 글자가 없어진다.
         case .linkDefinition: return true
+        // 각주 정의의 `[^`와 `]: `. 라벨과 글은 마커가 아니라 남는다.
+        case .footnoteDefinition: return true
         case .quote, .listItem, .thematicBreak, .tableRow, .tableDelimiter,
              .codeBody, .paragraph, .blank: return false
         }
@@ -798,6 +817,10 @@ public final class MarkdownStyler {
                     .underlineStyle: NSUnderlineStyle.single.rawValue,
                     .mdLinkTarget: url,
                 ], range: token.contentRange)
+            case let .footnoteReference(label):
+                var attributes = footnoteAttributes(at: token.contentRange.location, in: storage)
+                attributes[.mdFootnoteJump] = "definition:" + label
+                storage.addAttributes(attributes, range: token.contentRange)
             }
 
             for marker in token.markerRanges where marker.length > 0 {
@@ -805,6 +828,18 @@ public final class MarkdownStyler {
                 if !onCaretLine { hide(marker, in: storage) }
             }
         }
+    }
+
+    /// 각주 라벨의 모양 — 그 자리 글꼴의 작은 위첨자, 링크 색. 제목 안의 각주는 제목 크기를 따른다.
+    private func footnoteAttributes(at location: Int, in storage: NSTextStorage) -> [NSAttributedString.Key: Any] {
+        let base = storage.attribute(.font, at: location, effectiveRange: nil) as? NSFont ?? theme.bodyFont
+        let size = base.pointSize * 0.72
+        let font = NSFontManager.shared.convert(base, toSize: size)
+        return [
+            .font: font,
+            .baselineOffset: base.pointSize * 0.36,
+            .foregroundColor: theme.link,
+        ]
     }
 
     private func hide(_ range: NSRange, in storage: NSTextStorage) {

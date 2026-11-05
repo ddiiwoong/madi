@@ -619,11 +619,65 @@ extension MarkdownEditorView {
             return toggleTask(atBox: box)
         }
         guard flags == .command else { return false }
+        if let jump = storage.attribute(.mdFootnoteJump, at: index, effectiveRange: nil) as? String {
+            return followFootnote(jump)
+        }
         if let url = storage.attribute(.mdLinkTarget, at: index, effectiveRange: nil) as? String {
             editorDelegate?.markdownEditor(self, didClickLink: url)
             return true
         }
         return false
+    }
+
+    // MARK: 각주
+
+    /// 각주 참조 ⌘클릭 → 정의 줄의 글 앞, 정의의 라벨 ⌘클릭 → 그 각주의 첫 참조 뒤.
+    /// 값은 스타일러가 단 `.mdFootnoteJump`다.
+    @discardableResult
+    func followFootnote(_ jump: String) -> Bool {
+        let text = storage.string as NSString
+        let lines = currentLines()
+        let definitions = LinkDefinitions(scanning: text, lines: lines)
+        let target: Int?
+        if jump.hasPrefix("definition:") {
+            let label = String(jump.dropFirst("definition:".count))
+            target = definitions.footnoteDefinitionLocation(label).flatMap { location in
+                lines.first { $0.range.location == location }?.contentRange.location
+            }
+        } else if jump.hasPrefix("reference:") {
+            target = Self.firstFootnoteReference(String(jump.dropFirst("reference:".count)),
+                                                 in: text, lines: lines, definitions: definitions)
+        } else {
+            target = nil
+        }
+        guard let target, target <= storage.length else { return false }
+        let range = NSRange(location: target, length: 0)
+        textView.setSelectedRange(range)
+        textView.scrollRangeToVisible(range)
+        return true
+    }
+
+    /// 각주 `label`을 가리키는 첫 참조의 끝. 문서 순서로 찾는다(코드 블록 안은 보지 않는다 —
+    /// 줄 판정이 이미 가렸다).
+    static func firstFootnoteReference(_ label: String, in text: NSString, lines: [LineToken],
+                                       definitions: LinkDefinitions) -> Int? {
+        let wanted = LinkDefinitions.normalize(label)
+        let syntax = MarkdownSyntax()
+        for line in lines where line.contentRange.length > 0 {
+            switch line.kind {
+            case .codeFence, .codeBody, .linkDefinition, .thematicBreak, .tableDelimiter,
+                 .setextUnderline, .blank:
+                continue
+            default:
+                break
+            }
+            for token in syntax.scanInline(in: text, range: line.contentRange, definitions: definitions) {
+                if case let .footnoteReference(found) = token.kind, LinkDefinitions.normalize(found) == wanted {
+                    return NSMaxRange(token.range)
+                }
+            }
+        }
+        return nil
     }
 
     // MARK: 줄 편집 (메뉴의 편집 ▸ 줄)

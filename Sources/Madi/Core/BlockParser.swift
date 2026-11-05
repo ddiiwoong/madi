@@ -123,6 +123,12 @@ public struct BlockParser: Sendable {
                 append(.paragraph, index, end)
                 index = end
 
+            case .footnoteDefinition:
+                // 각주 정의는 글줄이다(각주 글이 내용이다). 링크 정의처럼 따로 묶지 않는다 —
+                // 정의마다 글이 있어 하나씩 고치는 단위다.
+                append(.paragraph, index, index + 1)
+                index += 1
+
             case .paragraph, .codeBody:
                 // `.codeBody`는 펜스 안에서만 나오고 위에서 이미 먹혔다. 여기 오는 것은
                 // 있을 수 없는 경우이므로 글줄로 다룬다 — 떨어뜨리면 그 줄이 사라진다.
