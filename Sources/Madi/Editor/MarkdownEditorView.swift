@@ -69,6 +69,7 @@ public final class MarkdownEditorView: NSView {
         layout.allowsNonContiguousLayout = true
         styler.theme = theme
         styler.imageStore = imageStore
+        styler.drawsTaskBoxes = true
         // 원격 그림은 나중에 도착한다. 도착하면 자리를 잡아야 하므로 다시 칠한다.
         imageStore.onRemoteImageLoaded = { [weak self] in self?.restyleAll() }
         useDiagramRenderer(DiagramRenderer.shared)
@@ -462,6 +463,7 @@ public final class MarkdownEditorView: NSView {
         textView.codeBlockColor = theme.codeBackground
         textView.codeBlockRanges = styler.codeBlockRanges
         textView.imagePlacements = styler.imagePlacements
+        textView.taskBoxes = styler.taskBoxes
     }
 
     /// 문서 위치를 알려 준다. 그림의 상대 경로를 푸는 기준이다.

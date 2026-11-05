@@ -74,6 +74,21 @@ public final class MarkdownStyler {
     public private(set) var renderedBlocks: [RenderedBlock] = []
     /// 상대 경로의 기준이 되는 문서 위치. 저장하지 않은 문서는 nil이다.
     public var documentURL: URL?
+
+    /// 상자로 그릴 체크박스 하나 — 캐럿이 없는 줄의 `[ ]` · `[x]`.
+    public struct TaskBox: Equatable {
+        /// `[ ]` 세 글자.
+        public let range: NSRange
+        public let checked: Bool
+    }
+
+    /// 체크박스를 **상자로 그릴지.** 켜면 캐럿이 없는 줄의 `[ ]` 세 글자를 투명하게 하고 그 자리를
+    /// `taskBoxes`로 알린다 — 텍스트 뷰가 거기에 상자를 그린다(`DecoratedTextView`). 글자는 문서에
+    /// 그대로 있어 폭도 클릭도 같다. 기본 편집기만 켠다: 블록 편집기는 상자를 그리는 쪽을 잇지
+    /// 않았으므로, 켜면 글자만 사라진다.
+    public var drawsTaskBoxes = false
+    /// 이번 패스에서 상자로 그릴 체크박스(위치 순).
+    public private(set) var taskBoxes: [TaskBox] = []
     /// 그림을 줄일 때 쓰는 글 넓이.
     public var contentWidth: Double = 700
 
@@ -130,6 +145,7 @@ public final class MarkdownStyler {
             // 코드 보기에서는 문서 전체가 날 글자다 — 블록도 그림도 그릴 근거가 없다.
             codeBlockRanges = []
             imagePlacements = []
+            taskBoxes = []
             let style = NSMutableParagraphStyle()
             style.lineSpacing = theme.lineSpacing * 0.5
             storage.setAttributes([
@@ -164,6 +180,7 @@ public final class MarkdownStyler {
         ], range: writeRange)
 
         codeBlockRanges = codeBlocks(in: lines)
+        taskBoxes = drawsTaskBoxes ? Self.taskBoxes(in: lines, caretLine: caretLine) : []
         definitions = LinkDefinitions(scanning: text, lines: lines)
         // `> [!NOTE]`로 시작하는 인용 덩이는 색이 있는 안내 상자다. 줄 하나만 보고는
         // 알 수 없어서(덩이의 첫 줄이 종류를 말한다) 미리 한 번 훑는다.
@@ -655,11 +672,8 @@ public final class MarkdownStyler {
         case let .listItem(_, checked):
             styleInline(in: storage, text: text, content: line.contentRange, onCaretLine: onCaretLine)
             // 체크박스는 표지의 두 번째 조각이다(`MarkdownSyntax`). 누를 수 있게 표시한다.
-            if checked != nil, line.markerRanges.count > 1 {
-                let box = line.markerRanges[1]
-                if box.length == 3, NSMaxRange(box) <= text.length {
-                    storage.addAttribute(.mdTaskBox, value: box.location, range: box)
-                }
+            if checked != nil, let box = Self.taskBoxRange(of: line), NSMaxRange(box) <= text.length {
+                storage.addAttribute(.mdTaskBox, value: box.location, range: box)
             }
 
         case .codeFence:
@@ -758,6 +772,27 @@ public final class MarkdownStyler {
             if !onCaretLine, shouldHideMarker(for: line.kind) {
                 hide(marker, in: storage)
             }
+        }
+
+        // 상자로 그리는 체크박스는 글자를 투명하게 한다 — 숨기면(폭 0) 상자를 그릴 자리가 없다.
+        if drawsTaskBoxes, !onCaretLine, let box = Self.taskBoxRange(of: line), NSMaxRange(box) <= text.length {
+            storage.addAttribute(.foregroundColor, value: NSColor.clear, range: box)
+        }
+    }
+
+    /// 체크박스 줄의 `[ ]` 범위. 줄 판정의 두 번째 마커다(`MarkdownSyntax`).
+    static func taskBoxRange(of line: LineToken) -> NSRange? {
+        guard case .listItem(_, .some) = line.kind, line.markerRanges.count > 1 else { return nil }
+        let box = line.markerRanges[1]
+        return box.length == 3 ? box : nil
+    }
+
+    /// 캐럿이 없는 줄의 체크박스들. 캐럿이 있는 줄은 원문(`[ ]`)으로 둔다 — 다른 마커와 같다.
+    static func taskBoxes(in lines: [LineToken], caretLine: Int?) -> [TaskBox] {
+        lines.compactMap { line in
+            guard line.lineNumber != caretLine, let box = taskBoxRange(of: line),
+                  case let .listItem(_, checked?) = line.kind else { return nil }
+            return TaskBox(range: box, checked: checked)
         }
     }
 

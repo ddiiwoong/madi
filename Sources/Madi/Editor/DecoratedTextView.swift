@@ -1,6 +1,6 @@
 import AppKit
 
-/// 글자 속성으로는 그릴 수 없는 것을 그리는 텍스트 뷰 — 코드 블록 배경과 인라인 그림.
+/// 글자 속성으로는 그릴 수 없는 것을 그리는 텍스트 뷰 — 코드 블록 배경, 체크박스, 인라인 그림.
 ///
 /// 왜 그리기로 넘겼는가: 전에는 코드 줄의 글자마다 `.backgroundColor`를 줬다. 그러면
 /// 글자가 있는 만큼만 칠해져서 줄마다 오른쪽 끝이 다르고, 블록이 하나의 덩이로 보이지
@@ -37,10 +37,19 @@ public class DecoratedTextView: NSTextView {
         }
     }
 
+    /// 상자로 그릴 체크박스. `MarkdownStyler`가 계산해 넘긴다(그 글자는 투명하게 칠해 두었다).
+    public var taskBoxes: [MarkdownStyler.TaskBox] = [] {
+        didSet {
+            guard taskBoxes != oldValue else { return }
+            needsDisplay = true
+        }
+    }
+
     public override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
         guard let visible = visibleCharacterRange(in: rect) else { return }
         drawCodeBlocks(in: rect, visible: visible)
+        drawTaskBoxes(in: rect, visible: visible)
         drawImages(in: rect, visible: visible)
     }
 
@@ -110,6 +119,79 @@ public class DecoratedTextView: NSTextView {
                          xRadius: codeBlockCornerRadius,
                          yRadius: codeBlockCornerRadius).fill()
         }
+    }
+
+    // MARK: 체크박스
+
+    /// `boxes`(위치 순) 가운데 `visible`에 닿는 것. `ranges(_:touching:)`과 같은 이분 탐색이다.
+    static func taskBoxes(_ boxes: [MarkdownStyler.TaskBox],
+                          touching visible: NSRange) -> ArraySlice<MarkdownStyler.TaskBox> {
+        var lo = 0, hi = boxes.count
+        while lo < hi {
+            let mid = (lo + hi) / 2
+            if NSMaxRange(boxes[mid].range) < visible.location { lo = mid + 1 } else { hi = mid }
+        }
+        var end = lo
+        while end < boxes.count, boxes[end].range.location <= NSMaxRange(visible) { end += 1 }
+        return boxes[lo ..< end]
+    }
+
+    /// 상자의 자리 — `[ ]` 세 글자의 가운데, 글자의 대문자 높이에 맞춘 정사각형. 줄 높이가 아니라
+    /// **글자**에 맞춘다: 줄 간격까지 넣은 줄 조각의 가운데에 두면 글보다 아래로 처진다.
+    /// 세 글자의 폭을 넘지 않는다 — 넘으면 뒤의 공백을 덮어 상자가 글에 붙는다(실측: `[ ] new`).
+    ///
+    /// - Parameters:
+    ///   - glyphs: 세 글자를 감싼 사각형(뷰 좌표).
+    ///   - baseline: 그 줄의 기준선(뷰 좌표, 아래로 갈수록 크다).
+    static func taskBoxFrame(glyphs: NSRect, baseline: CGFloat, capHeight: CGFloat) -> NSRect {
+        let side = max(8, min((capHeight * 1.3).rounded(), glyphs.width.rounded(.down)))
+        let centerY = baseline - capHeight / 2
+        return NSRect(x: (glyphs.midX - side / 2).rounded(), y: (centerY - side / 2).rounded(),
+                      width: side, height: side)
+    }
+
+    private func drawTaskBoxes(in rect: NSRect, visible: NSRange) {
+        guard !taskBoxes.isEmpty, let layoutManager, let textContainer, let storage = textStorage else { return }
+        let origin = textContainerOrigin
+        for box in Self.taskBoxes(taskBoxes, touching: visible) where NSMaxRange(box.range) <= storage.length {
+            let glyphs = layoutManager.glyphRange(forCharacterRange: box.range, actualCharacterRange: nil)
+            guard glyphs.length > 0 else { continue }
+            var bounds = layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer)
+            bounds.origin.x += origin.x
+            bounds.origin.y += origin.y
+            let fragment = layoutManager.lineFragmentRect(forGlyphAt: glyphs.location, effectiveRange: nil)
+            let baseline = fragment.minY + layoutManager.location(forGlyphAt: glyphs.location).y + origin.y
+            let font = storage.attribute(.font, at: box.range.location, effectiveRange: nil) as? NSFont
+                ?? NSFont.systemFont(ofSize: NSFont.systemFontSize)
+            let frame = Self.taskBoxFrame(glyphs: bounds, baseline: baseline, capHeight: font.capHeight)
+            guard frame.intersects(rect) else { continue }
+            Self.drawTaskBox(in: frame, checked: box.checked)
+        }
+    }
+
+    /// 상자 하나. 빈 칸은 테두리, 한 일은 강조색으로 채우고 흰 체크 표시 — macOS 체크박스의 모양이다.
+    static func drawTaskBox(in frame: NSRect, checked: Bool) {
+        let side = frame.width
+        let shape = NSBezierPath(roundedRect: frame.insetBy(dx: 0.5, dy: 0.5),
+                                 xRadius: side * 0.24, yRadius: side * 0.24)
+        guard checked else {
+            NSColor.secondaryLabelColor.setStroke()
+            shape.lineWidth = 1.2
+            shape.stroke()
+            return
+        }
+        NSColor.controlAccentColor.setFill()
+        shape.fill()
+        // 뒤집힌 좌표(아래로 갈수록 y가 크다)의 체크 표시.
+        let mark = NSBezierPath()
+        mark.move(to: NSPoint(x: frame.minX + side * 0.26, y: frame.minY + side * 0.52))
+        mark.line(to: NSPoint(x: frame.minX + side * 0.43, y: frame.minY + side * 0.69))
+        mark.line(to: NSPoint(x: frame.minX + side * 0.75, y: frame.minY + side * 0.33))
+        mark.lineWidth = max(1.4, side * 0.13)
+        mark.lineCapStyle = .round
+        mark.lineJoinStyle = .round
+        NSColor.white.setStroke()
+        mark.stroke()
     }
 
     /// 비워 둔 줄 안에서 그림이 놓일 자리. 보통은 왼쪽 맞춤이고, `centered`면 **글 넓이**의
