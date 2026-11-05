@@ -147,6 +147,20 @@ final class MarkdownTranslationPlanTests: XCTestCase {
                        ["앞 문단", "뒤 문단"])
     }
 
+    /// `$$` 수식 블록은 번역하지 않는다 — 펜스 수식(```` ```math ````)과 같다. 줄 판정으로는
+    /// 문단이라, 전에는 `\int_0^1 x\,dx`가 번역기로 갔다.
+    func testDollarMathBlockIsNeverAUnit() {
+        let source = "앞 문단\n\n$$\n\\int_0^1 x\\,dx = \\frac12\n$$\n\n$$ E = mc^2 $$\n\n```math\na^2\n```\n\n뒤 문단\n"
+        XCTAssertEqual(plan(source).translatableTexts, ["앞 문단", "뒤 문단"])
+        assertRoundTrips(source)
+    }
+
+    /// 짝 없는 `$$`는 수식이 아니다(그리기와 같은 규칙) — 그 줄의 글은 그대로 번역한다.
+    func testUnpairedDollarsStillTranslate() {
+        XCTAssertEqual(plan("$$ 로 시작하는 문장\n\n다음 문단\n").translatableTexts,
+                       ["$$ 로 시작하는 문장", "다음 문단"])
+    }
+
     func testLineMarkersStayOutsideTheUnit() {
         XCTAssertEqual(plan("## 검색 기능\n").translatableTexts, ["검색 기능"])
         XCTAssertEqual(plan("- 항목 하나\n").translatableTexts, ["항목 하나"])

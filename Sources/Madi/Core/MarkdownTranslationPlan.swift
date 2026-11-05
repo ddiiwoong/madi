@@ -222,11 +222,23 @@ public struct MarkdownTranslationPlan: Equatable {
 
         var builder = Builder(text: ns)
         var cursor = 0
-        for line in syntax.scanLines(in: ns) {
+        let lines = syntax.scanLines(in: ns)
+        // `$$` 수식 블록의 줄은 줄 판정으로는 **문단**이다(펜스가 아니므로). 그대로 두면
+        // 번역기가 `\int_0^1`을 글로 받아 옮기고, `_`·`*`를 기울임 표시로 보호하면서 수식을
+        // 망가뜨린다. 펜스 수식(```` ```math ````)은 코드 줄이라 이미 건너뛴다 — 같은 수식이
+        // 쓰는 꼴에 따라 번역되고 안 되면 안 된다. 블록을 찾는 규칙은 그리기와 같은 것을 쓴다.
+        let mathLines = Set(RenderedBlock.blocks(in: ns, lines: lines)
+            .filter { $0.delimiter == .dollars }
+            .flatMap { $0.firstLine ... $0.lastLine })
+        for line in lines {
             if line.range.location > cursor {
                 builder.literal(NSRange(location: cursor, length: line.range.location - cursor))
             }
-            append(line: line, to: &builder, text: ns, syntax: syntax)
+            if mathLines.contains(line.lineNumber) {
+                if line.range.length > 0 { builder.literal(line.range) }
+            } else {
+                append(line: line, to: &builder, text: ns, syntax: syntax)
+            }
             cursor = max(cursor, NSMaxRange(line.range))
         }
         if cursor < ns.length {
