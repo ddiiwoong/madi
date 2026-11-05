@@ -15,7 +15,7 @@ public final class MarkdownEditorView: NSView {
 
     public weak var editorDelegate: MarkdownEditorDelegate?
 
-    public let textView: DecoratedTextView
+    public let textView: MarkdownTextView
     private let scrollView = NSScrollView()
     /// 속성을 미루지 않고 고치는 저장소(`EagerTextStorage` — 큰 문서 앞쪽의 타이핑 비용).
     private let storage = EagerTextStorage()
@@ -45,7 +45,7 @@ public final class MarkdownEditorView: NSView {
         container.widthTracksTextView = true
         layout.addTextContainer(container)
         storage.addLayoutManager(layout)
-        textView = DecoratedTextView(frame: frameRect, textContainer: container)
+        textView = MarkdownTextView(frame: frameRect, textContainer: container)
         super.init(frame: frameRect)
         configure()
     }
@@ -95,6 +95,9 @@ public final class MarkdownEditorView: NSView {
         textView.autoresizingMask = [.width]
         textView.delegate = self
         textView.linkTextAttributes = [:]
+        textView.clickHandler = { [weak self] index, modifiers in
+            self?.handleClick(at: index, modifiers: modifiers) ?? false
+        }
 
         scrollView.documentView = textView
         scrollView.hasVerticalScroller = true
@@ -566,6 +569,91 @@ public final class MarkdownEditorView: NSView {
     }
 }
 
+// MARK: - Editing commands
+
+extension MarkdownEditorView {
+
+    /// 편집 규칙이 계산한 편집을 적용한다. **모든 규칙 편집이 이 길을 지난다** — 그래야
+    /// 실행 취소에 하나씩 실리고, 문서가 바뀐 것을 창(저장 표시·목차)이 안다.
+    ///
+    /// `shouldChangeText` → 바꾸기 → `didChangeText`는 `NSTextView`가 타이핑에 쓰는 순서와
+    /// 같다. 앞의 것이 실행 취소를 등록하고, 뒤의 것이 `textDidChange`를 불러 편집기 대리자에게
+    /// 알린다. 그 알림은 선택 근처만 다시 칠하므로, 편집이 여러 줄에 걸치면 그 범위를 더 칠한다.
+    @discardableResult
+    func perform(_ edit: TextEdit, actionName: String? = nil) -> Bool {
+        guard NSMaxRange(edit.range) <= storage.length,
+              textView.shouldChangeText(in: edit.range, replacementString: edit.replacement)
+        else { return false }
+        if actionName != nil { textView.breakUndoCoalescing() }
+        storage.replaceCharacters(in: edit.range, with: edit.replacement)
+        let length = storage.length
+        let selection = NSRange(location: min(edit.selection.location, length),
+                                length: min(edit.selection.length, length - min(edit.selection.location, length)))
+        textView.setSelectedRange(selection)
+        textView.didChangeText()
+        let start = min(edit.range.location, length)
+        restyle(dirty: NSRange(location: start,
+                               length: min((edit.replacement as NSString).length, length - start)))
+        if let actionName {
+            textView.undoManager?.setActionName(actionName)
+            textView.breakUndoCoalescing()
+        }
+        textView.scrollRangeToVisible(selection)
+        return true
+    }
+
+    /// 체크박스(`[ ]` · `[x]`)를 뒤집는다. `box`는 여는 대괄호의 위치다.
+    @discardableResult
+    func toggleTask(atBox box: Int) -> Bool {
+        guard let edit = ListEditing.toggleTask(in: storage.string as NSString, box: box,
+                                                selection: textView.selectedRange()) else { return false }
+        return perform(edit, actionName: String(localized: "할 일 표시"))
+    }
+
+    /// 글자 위의 클릭. 보조 키 없는 클릭이 체크박스 위면 뒤집고, ⌘클릭이 링크 위면 연다.
+    /// 나머지는 텍스트 뷰에 맡긴다(캐럿 놓기).
+    func handleClick(at index: Int, modifiers: NSEvent.ModifierFlags) -> Bool {
+        guard index < storage.length, !styler.codeView else { return false }
+        let flags = modifiers.intersection([.command, .shift, .option, .control])
+        if flags.isEmpty, let box = storage.attribute(.mdTaskBox, at: index, effectiveRange: nil) as? Int {
+            return toggleTask(atBox: box)
+        }
+        guard flags == .command else { return false }
+        if let url = storage.attribute(.mdLinkTarget, at: index, effectiveRange: nil) as? String {
+            editorDelegate?.markdownEditor(self, didClickLink: url)
+            return true
+        }
+        return false
+    }
+
+    // MARK: 줄 편집 (메뉴의 편집 ▸ 줄)
+
+    @objc func moveLinesUpAction(_ sender: Any?) {
+        runLineEdit(LineEditing.moveUp, name: String(localized: "줄 옮기기"))
+    }
+
+    @objc func moveLinesDownAction(_ sender: Any?) {
+        runLineEdit(LineEditing.moveDown, name: String(localized: "줄 옮기기"))
+    }
+
+    @objc func duplicateLinesAction(_ sender: Any?) {
+        runLineEdit(LineEditing.duplicate, name: String(localized: "줄 복제"))
+    }
+
+    @objc func deleteLinesAction(_ sender: Any?) {
+        runLineEdit(LineEditing.delete, name: String(localized: "줄 지우기"))
+    }
+
+    private func runLineEdit(_ rule: (NSString, NSRange) -> TextEdit?, name: String) {
+        guard !textView.hasMarkedText(),
+              let edit = rule(storage.string as NSString, textView.selectedRange()) else {
+            NSSound.beep()
+            return
+        }
+        perform(edit, actionName: name)
+    }
+}
+
 // MARK: - Text storage delegate
 
 extension MarkdownEditorView: @preconcurrency NSTextStorageDelegate {
@@ -603,6 +691,31 @@ extension MarkdownEditorView: NSTextViewDelegate {
         let new = caretLine()
         restyleCaretTransition(from: lastCaretLine, to: new)
         lastCaretLine = new
+    }
+
+    /// Enter · Tab · ⇧Tab을 목록 규칙에 먼저 묻는다(`ListEditing`). 한글을 조합하는 중에는
+    /// 묻지 않는다 — 그 Enter는 조합을 끝내는 키다.
+    public func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        guard !textView.hasMarkedText() else { return false }
+        let text = storage.string as NSString
+        let selection = textView.selectedRange()
+        switch commandSelector {
+        case #selector(NSResponder.insertNewline(_:)):
+            guard let edit = ListEditing.newline(in: text, selection: selection, lines: currentLines())
+            else { return false }
+            return perform(edit)
+        case #selector(NSResponder.insertTab(_:)), #selector(NSResponder.insertBacktab(_:)):
+            let outdent = commandSelector == #selector(NSResponder.insertBacktab(_:))
+            let result = ListEditing.indentation(in: text, selection: selection, lines: currentLines(),
+                                                 outdent: outdent)
+            guard result.handled else { return false }
+            if let edit = result.edit {
+                perform(edit, actionName: outdent ? String(localized: "내어쓰기") : String(localized: "들여쓰기"))
+            }
+            return true
+        default:
+            return false
+        }
     }
 
     public func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {

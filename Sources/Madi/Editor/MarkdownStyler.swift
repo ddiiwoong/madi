@@ -6,6 +6,9 @@ import AppKit
 extension NSAttributedString.Key {
     static let mdHiddenMarker = NSAttributedString.Key("mdHiddenMarker")
     static let mdLinkTarget = NSAttributedString.Key("mdLinkTarget")
+    /// 체크박스 `[ ]`의 세 글자. 값은 여는 대괄호의 위치(`Int`)다 — 누르면 편집기가 그 칸을
+    /// 뒤집는다(`MarkdownEditorView.handleClick`).
+    static let mdTaskBox = NSAttributedString.Key("mdTaskBox")
 }
 
 /// Applies rendered-looking attributes to the markdown source in place.
@@ -646,8 +649,15 @@ public final class MarkdownStyler {
             }
             styleInline(in: storage, text: text, content: line.contentRange, onCaretLine: onCaretLine)
 
-        case .listItem:
+        case let .listItem(_, checked):
             styleInline(in: storage, text: text, content: line.contentRange, onCaretLine: onCaretLine)
+            // 체크박스는 표지의 두 번째 조각이다(`MarkdownSyntax`). 누를 수 있게 표시한다.
+            if checked != nil, line.markerRanges.count > 1 {
+                let box = line.markerRanges[1]
+                if box.length == 3, NSMaxRange(box) <= text.length {
+                    storage.addAttribute(.mdTaskBox, value: box.location, range: box)
+                }
+            }
 
         case .codeFence:
             // 펜스 줄에 남아 보이는 것은 **언어 이름**이다(백틱은 마커로 숨는다).

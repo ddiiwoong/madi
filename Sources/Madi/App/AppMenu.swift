@@ -75,6 +75,16 @@ enum AppMenu {
                     .command, windowTarget: true),
             Command(String(localized: "이전 찾기"), #selector(DocumentWindowController.findPrevious(_:)), "g",
                     [.command, .shift], windowTarget: true),
+            nil,
+            // 줄 편집. 대상 없이 보내 응답자 연쇄로 편집기(`MarkdownEditorView`)에 닿는다 — 검색
+            // 칸에 캐럿이 있으면 닿지 않아 회색이 된다. 옮기기는 Xcode의 단축키, 지우기는 VS Code의 것.
+            Command(String(localized: "줄 위로 옮기기"), #selector(MarkdownEditorView.moveLinesUpAction(_:)), "[",
+                    [.command, .option]),
+            Command(String(localized: "줄 아래로 옮기기"), #selector(MarkdownEditorView.moveLinesDownAction(_:)), "]",
+                    [.command, .option]),
+            Command(String(localized: "줄 복제"), #selector(MarkdownEditorView.duplicateLinesAction(_:)), "d"),
+            Command(String(localized: "줄 지우기"), #selector(MarkdownEditorView.deleteLinesAction(_:)), "k",
+                    [.command, .shift]),
         ]
     }
 
