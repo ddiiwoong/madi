@@ -45,10 +45,17 @@ final class InlineImageStore {
     private var inFlight: Set<String> = []
 
     /// 받아 두는 크기의 상한. 문서에 걸린 주소가 몇 백 MB 파일을 가리킬 수도 있다.
-    private static let maxRemoteBytes = 20 * 1024 * 1024
+    static let maxRemoteBytes = 20 * 1024 * 1024
 
     /// 원격 그림이 도착했을 때 부를 것. 편집기가 넣어 주고, 다시 칠하게 한다.
     var onRemoteImageLoaded: (() -> Void)?
+
+    /// 요청 하나를 보내고 끝나면 부른다. 앱은 아래 세션이고, 테스트가 바꾼다 — 바깥으로 요청을
+    /// 내지 않고 받기 정책(https만, 크기 상한, 실패는 다시 안 함)을 시험한다.
+    typealias Fetch = (URLRequest, @escaping @Sendable (Data?, URLResponse?, Error?) -> Void) -> Void
+    lazy var fetch: Fetch = { [unowned self] request, completion in
+        self.session.dataTask(with: request, completionHandler: completion).resume()
+    }
 
     /// 받기에 쓰는 세션. 리다이렉트는 대리자가 가려 **https만** 따라간다.
     private lazy var session: URLSession = {
@@ -100,7 +107,7 @@ final class InlineImageStore {
         }
 
         inFlight.insert(key)
-        let task = session.dataTask(with: URLRequest(url: url)) { [weak self] data, response, error in
+        fetch(URLRequest(url: url)) { [weak self] data, response, error in
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.inFlight.remove(key)
@@ -119,7 +126,6 @@ final class InlineImageStore {
                 self.onRemoteImageLoaded?()
             }
         }
-        task.resume()
         return nil
     }
 
@@ -132,11 +138,11 @@ final class InlineImageStore {
 
     /// 리다이렉트를 가린다. `https` → `http` 강등을 막는다 — 그 한 걸음에서 요청이
     /// 평문으로 나가고, 중간에 있는 누구나 어떤 문서를 열었는지 볼 수 있다.
-    private final class RedirectGuard: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    final class RedirectGuard: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
         static let shared = RedirectGuard()
 
         /// 따라갈 리다이렉트 수의 상한. 끝없는 리다이렉트 사슬을 막는다.
-        private static let maxHops = 3
+        static let maxHops = 3
         private let lock = NSLock()
         private var hops: [Int: Int] = [:]
 

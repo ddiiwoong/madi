@@ -198,4 +198,91 @@ final class ImageInsertTests: XCTestCase {
         XCTAssertEqual(view.markdown, "글")
         XCTAssertNotNil(view.window?.attachedSheet, "저장하라고 알린다")
     }
+
+    // MARK: 끌어놓기 — 텍스트 뷰의 끌어놓기 길
+
+    /// Finder에서 끌어 온 것처럼 보이는 끌기. 텍스트 뷰가 묻는 것만 답한다.
+    @MainActor
+    private final class FakeDrag: NSObject, @preconcurrency NSDraggingInfo {
+        let draggingPasteboard: NSPasteboard
+        let draggingLocation: NSPoint
+        let draggingSource: Any?
+        weak var draggingDestinationWindow: NSWindow?
+        @MainActor
+        init(pasteboard: NSPasteboard, location: NSPoint, source: Any?, window: NSWindow?) {
+            draggingPasteboard = pasteboard
+            draggingLocation = location
+            draggingSource = source
+            draggingDestinationWindow = window
+        }
+        var draggingSourceOperationMask: NSDragOperation { .copy }
+        var draggedImageLocation: NSPoint { draggingLocation }
+        var draggedImage: NSImage? { nil }
+        var draggingSequenceNumber: Int { 1 }
+        func slideDraggedImage(to screenPoint: NSPoint) {}
+        var draggingFormation: NSDraggingFormation = .default
+        var animatesToDestination = false
+        var numberOfValidItemsForDrop = 1
+        func enumerateDraggingItems(options enumOpts: NSDraggingItemEnumerationOptions = [],
+                                    for view: NSView?, classes classArray: [AnyClass],
+                                    searchOptions: [NSPasteboard.ReadingOptionKey: Any] = [:],
+                                    using block: (NSDraggingItem, Int, UnsafeMutablePointer<ObjCBool>) -> Void) {}
+        var springLoadingHighlight: NSSpringLoadingHighlight { .none }
+        func resetSpringLoading() {}
+    }
+
+    /// 창 좌표의 점 — 문서 끝 글자 뒤.
+    private func pointAfterLastCharacter(_ view: MarkdownEditorView) throws -> NSPoint {
+        let tv = view.textView
+        tv.window?.displayIfNeeded()
+        let layout = try XCTUnwrap(tv.layoutManager)
+        let container = try XCTUnwrap(tv.textContainer)
+        let used = layout.usedRect(for: container)
+        let local = NSPoint(x: tv.textContainerOrigin.x + used.maxX - 1,
+                            y: tv.textContainerOrigin.y + used.maxY - 2)
+        return tv.convert(local, to: nil)
+    }
+
+    func testDroppingAFileOnTheEditorGoesThroughTheTextView() throws {
+        let picture = folder.appendingPathComponent("밖에 있는 사진.png")
+        try png().write(to: picture)
+        let document = folder.appendingPathComponent("글/노트.md")
+        try FileManager.default.createDirectory(at: document.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        let view = editor("위 문단\n", document: document)
+        let board = pasteboard { $0.writeObjects([picture as NSURL]) }
+        let drag = FakeDrag(pasteboard: board, location: try pointAfterLastCharacter(view),
+                            source: nil, window: view.window)
+
+        XCTAssertTrue(view.textView.acceptableDragTypes.contains(.fileURL), "파일을 받겠다고 알린다")
+        XCTAssertEqual(view.textView.dragOperation(for: drag, type: .fileURL), .copy, "끄는 동안 '복사' 표시")
+        XCTAssertTrue(view.textView.performDragOperation(drag))
+        XCTAssertEqual(view.markdown, "위 문단\n![밖에 있는 사진](노트.assets/밖에%20있는%20사진.png)")
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: folder.appendingPathComponent("글/노트.assets/밖에 있는 사진.png").path))
+    }
+
+    func testDraggingWithinTheEditorIsNotAnImageDrop() throws {
+        let picture = folder.appendingPathComponent("a.png")
+        try png().write(to: picture)
+        let view = editor("글\n", document: folder.appendingPathComponent("노트.md"))
+        var asked = 0
+        view.textView.imageInsertHandler = { _, _ in asked += 1; return true }
+        let board = pasteboard { $0.writeObjects([picture as NSURL]) }
+        let drag = FakeDrag(pasteboard: board, location: try pointAfterLastCharacter(view),
+                            source: view.textView, window: view.window)
+        _ = view.textView.dragOperation(for: drag, type: .fileURL)
+        _ = view.textView.performDragOperation(drag)
+        XCTAssertEqual(asked, 0, "이 뷰에서 시작한 끌기(글 옮기기)는 그림 넣기로 받지 않는다")
+    }
+
+    func testDroppingANonImageFileFallsBackToTheTextView() throws {
+        let file = folder.appendingPathComponent("표.csv")
+        try Data("a,b".utf8).write(to: file)
+        let view = editor("글\n", document: folder.appendingPathComponent("노트.md"))
+        let board = pasteboard { $0.writeObjects([file as NSURL]) }
+        XCTAssertFalse(ImagePasteboard.holdsImages(board), "그림이 아닌 파일은 그림 넣기가 받지 않는다")
+        XCTAssertFalse(view.insertImages(from: board, replacing: nil))
+        XCTAssertEqual(view.markdown, "글\n")
+    }
 }

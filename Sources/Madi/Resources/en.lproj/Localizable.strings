@@ -123,7 +123,6 @@
 "번역이 이미 진행 중입니다." = "A translation is already in progress.";
 "번역했습니다 (%@)" = "Translated (%@)";
 "이 Mac에서 한국어와 번역할 수 있는 언어를 찾지 못했습니다." = "Couldn’t find a language this Mac can translate to and from Korean.";
-"번역 결과를 새 문서로 열지 못했습니다." = "Couldn’t open the translation as a new document.";
 "번역본을 새 문서로 열었습니다 (%@)" = "Opened the translation as a new document (%@)";
 "번역본에서 고친 내용이 사라집니다" = "Your edits to the translation will be lost";
 "다시 번역하면 번역본 전체를 새 번역으로 바꿉니다. 바꾼 뒤에도 ⌘Z로 되돌릴 수 있습니다." = "Translating again replaces the whole translation with a new one. You can still undo it with ⌘Z.";

@@ -456,7 +456,7 @@ final class DocumentWindowController: NSWindowController {
 
     /// 프린트와 PDF 내보내기가 **같은 설정**을 쓴다. 설정 하나가 양쪽에 걸리는 것이
     /// 맞다 — 화면에 보이는 것을 종이에 내든 파일에 내든 같은 쪽이어야 한다.
-    private func printInfo(forPDF pdfURL: URL?) -> NSPrintInfo {
+    func printInfo(forPDF pdfURL: URL?) -> NSPrintInfo {
         let info = NSPrintInfo.shared.copy() as! NSPrintInfo
         let settings = preferences.current
 
@@ -487,7 +487,15 @@ final class DocumentWindowController: NSWindowController {
     @objc func printDocumentAction(_ sender: Any?) {
         let operation = NSPrintOperation(view: editor.printableView, printInfo: printInfo(forPDF: nil))
         operation.jobTitle = markdownDocument?.displayName ?? String(localized: "문서")
-        operation.runModal(for: window!, delegate: nil, didRun: nil, contextInfo: nil)
+        // 프린트 패널이 떠 있는 동안과 찍는 동안 캐럿 줄의 마커도 숨긴다. 끝나면(취소해도) 되돌린다.
+        editor.isRenderingForOutput = true
+        operation.runModal(for: window!, delegate: self,
+                           didRun: #selector(printOperationDidRun(_:success:contextInfo:)), contextInfo: nil)
+    }
+
+    @objc private func printOperationDidRun(_ operation: NSPrintOperation, success: Bool,
+                                            contextInfo: UnsafeMutableRawPointer?) {
+        editor.isRenderingForOutput = false
     }
 
     /// PDF 내보내기 — prints to a file instead of a printer, so the PDF matches
@@ -502,16 +510,9 @@ final class DocumentWindowController: NSWindowController {
 
         panel.beginSheetModal(for: window!) { [weak self] response in
             guard let self, response == .OK, let url = panel.url else { return }
-            let operation = NSPrintOperation(view: self.editor.printableView,
-                                             printInfo: self.printInfo(forPDF: url))
-            operation.jobTitle = self.markdownDocument?.displayName ?? String(localized: "문서")
-            operation.showsPrintPanel = false
-            operation.showsProgressPanel = true
-            if operation.run() {
-                AppLog.info(String(localized: "PDF로 내보냈습니다"), detail: url.path)
-                NSWorkspace.shared.activateFileViewerSelecting([url])
+            if self.exportPDF(to: url) {
+                self.revealExportedFile(url)
             } else {
-                AppLog.error(String(localized: "PDF 내보내기에 실패했습니다"), detail: url.path)
                 let alert = NSAlert()
                 alert.messageText = String(localized: "PDF 내보내기에 실패했습니다")
                 alert.informativeText = url.path
@@ -520,9 +521,41 @@ final class DocumentWindowController: NSWindowController {
         }
     }
 
+    /// PDF를 `url`에 쓴다 — 저장 패널 뒤의 일. 프린트와 같은 설정(`printInfo`)이다.
+    @discardableResult
+    func exportPDF(to url: URL, showsProgress: Bool = true) -> Bool {
+        let operation = NSPrintOperation(view: editor.printableView, printInfo: printInfo(forPDF: url))
+        operation.jobTitle = markdownDocument?.displayName ?? String(localized: "문서")
+        operation.showsPrintPanel = false
+        operation.showsProgressPanel = showsProgress
+        editor.isRenderingForOutput = true
+        defer { editor.isRenderingForOutput = false }
+        guard operation.run() else {
+            AppLog.error(String(localized: "PDF 내보내기에 실패했습니다"), detail: url.path)
+            return false
+        }
+        AppLog.info(String(localized: "PDF로 내보냈습니다"), detail: url.path)
+        return true
+    }
+
+    /// 내보낸 파일을 보여 준다. 앱은 Finder에서 그 파일을 띄우고, 테스트는 끈다.
+    var revealExportedFile: (URL) -> Void = { url in
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
     // MARK: Translation
 
-    private var translationTask: Task<Void, Never>?
+    private(set) var translationTask: Task<Void, Never>?
+
+    /// 번역기 대역. nil이면 Apple 번역이다. 테스트가 넣는다 — 시스템의 언어 팩과 번역기에 기대지
+    /// 않고 창의 번역 흐름(제자리·새 문서·나란히·실패)을 시험한다.
+    struct TranslatorStub {
+        /// 언어 팩이 받아져 있는 것으로 볼지.
+        var installed = true
+        var translate: @Sendable (String) async throws -> String
+    }
+
+    var translatorStub: TranslatorStub?
 
     /// 번역. 선택이 있으면 **그 자리에서** 바꾸고(되돌리기로 취소 가능), 선택이 없으면
     /// 문서 전체를 번역해 **새 문서**로 연다 — 원본을 건드리지 않는 쪽이 안전하다.
@@ -591,7 +624,8 @@ final class DocumentWindowController: NSWindowController {
             // 사용자가 읽을 틈이 없다. 재는 일은 싸다(계획 만들기 + 가용성 조회 한 번).
             let preflight = await AppleTranslator.preflight(
                 markdown: source, direction: requested,
-                preferredTarget: self?.preferences.current.translationTarget ?? "en")
+                preferredTarget: self?.preferences.current.translationTarget ?? "en",
+                installed: self?.translatorStub?.installed)
             guard let self else { return }
             guard preflight.state == .ready else {
                 self.translationTask = nil
@@ -617,7 +651,8 @@ final class DocumentWindowController: NSWindowController {
             }
             do {
                 let result = try await AppleTranslator.translate(
-                    preflight, extras: frontValues.map(\.text), progress: onProgress)
+                    preflight, extras: frontValues.map(\.text), progress: onProgress,
+                    translator: self.translatorStub?.translate)
                 Self.logRepairs(result.repairs)
                 let composed = Self.composed(result.text, frontMatter: sourceFrontMatter,
                                              values: frontValues, translations: result.extras)
@@ -721,27 +756,32 @@ final class DocumentWindowController: NSWindowController {
         return frontMatter.joined(withBody: body, translatedValues: byLine)
     }
 
-    private func openTranslatedCopy(composed: String, direction: TranslationDirection) {
-        let controller = NSDocumentController.shared
-        do {
-            guard let document = try controller.openUntitledDocumentAndDisplay(true) as? MarkdownDocument else {
-                report(String(localized: "번역 결과를 새 문서로 열지 못했습니다."))
-                return
-            }
-            document.markdown = composed
-            document.updateChangeCount(.changeDone)
-            // 이름을 제안한다 — 저장하지 않은 '무제'로 두면 사용자가 다른 이름으로
-            // 저장에서 직접 적어야 한다. `displayName`을 주면 창 제목과 저장 대화상자의
-            // 기본 이름이 그 값이 된다(저장 위치는 여전히 사용자가 고른다 — 원본 옆에
-            // 말없이 파일을 만들지 않는다).
-            if let suggested = direction.translatedFileName(for: markdownDocument?.fileURL) {
-                document.displayName = suggested
-            }
-            (document.windowControllers.first as? DocumentWindowController)?.load(markdown: composed)
-            report(String(localized: "번역본을 새 문서로 열었습니다 (\(direction.label))"))
-        } catch {
-            NSApp.presentError(error)
+    /// 번역본을 새 문서로 연다.
+    ///
+    /// 문서를 직접 만든다. `openUntitledDocumentAndDisplay`는 문서 종류에서 클래스를 찾는데, 찾다
+    /// 실패하면 오류 대화상자가 앱을 막는다(나란히 보기의 번역본에서 겪었다).
+    func openTranslatedCopy(composed: String, direction: TranslationDirection) {
+        let document = MarkdownDocument()
+        document.fileType = MarkdownDocument.writableTypes.first
+        document.markdown = composed
+        // 이름을 제안한다 — 저장하지 않은 '무제'로 두면 사용자가 다른 이름으로
+        // 저장에서 직접 적어야 한다. `displayName`을 주면 창 제목과 저장 대화상자의
+        // 기본 이름이 그 값이 된다(저장 위치는 여전히 사용자가 고른다 — 원본 옆에
+        // 말없이 파일을 만들지 않는다).
+        if let suggested = direction.translatedFileName(for: markdownDocument?.fileURL) {
+            document.displayName = suggested
         }
+        NSDocumentController.shared.addDocument(document)
+        document.updateChangeCount(.changeDone)
+        presentTranslatedCopy(document)
+        report(String(localized: "번역본을 새 문서로 열었습니다 (\(direction.label))"))
+    }
+
+    /// 새 문서가 된 번역본을 보인다. 앱은 창을 열고, 테스트가 바꾼다 — 사용자 화면에 창을 띄우지 않고
+    /// 창 자리를 설정 파일에 쓰지 않게.
+    var presentTranslatedCopy: (MarkdownDocument) -> Void = { document in
+        document.makeWindowControllers()
+        document.showWindows()
     }
 
     // MARK: 원문·번역 나란히 보기
@@ -944,13 +984,24 @@ final class DocumentWindowController: NSWindowController {
         alert.informativeText = recovery
         alert.alertStyle = isInformational ? .informational : .warning
 
-        guard offersSettings else {
-            alert.runModal()
-            return
+        if offersSettings {
+            alert.addButton(withTitle: String(localized: "언어 설정 열기"))
+            alert.addButton(withTitle: String(localized: "닫기"))
         }
-        alert.addButton(withTitle: String(localized: "언어 설정 열기"))
-        alert.addButton(withTitle: String(localized: "닫기"))
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        // 이 창에 붙는 시트로 띄운다. 앱 전체를 막는 대화상자로 띄우면 다른 문서도 못 쓰고, 어느 문서의
+        // 번역이 실패했는지도 알 수 없다.
+        let handle: (NSApplication.ModalResponse) -> Void = { response in
+            guard offersSettings, response == .alertFirstButtonReturn else { return }
+            Self.openLanguageSettings()
+        }
+        if let window {
+            alert.beginSheetModal(for: window, completionHandler: handle)
+        } else {
+            handle(alert.runModal())
+        }
+    }
+
+    private static func openLanguageSettings() {
         // '언어 및 지역' 화면. 이 식별자는 이 Mac의
         // `/System/Library/ExtensionKit/Extensions/Localization.appex`와 같은 값이다.
         guard let url = URL(string: "x-apple.systempreferences:com.apple.Localization-Settings.extension")

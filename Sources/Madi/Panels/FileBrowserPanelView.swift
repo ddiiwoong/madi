@@ -12,9 +12,9 @@ final class FileBrowserPanelView: NSView {
 
     weak var delegate: FileBrowserPanelDelegate?
 
-    private let outlineView = NSOutlineView()
+    let outlineView = NSOutlineView()
     private let scrollView = NSScrollView()
-    private let pathButton = NSButton(title: String(localized: "폴더 선택…"), target: nil, action: nil)
+    let pathButton = NSButton(title: String(localized: "폴더 선택…"), target: nil, action: nil)
     private var rootURL: URL?
     /// 지금 보이는 폴더. 빠른 열기가 이 폴더의 문서를 훑는다 — 사용자가 고른 폴더가 있으면 그쪽.
     var currentRoot: URL? { rootURL }
@@ -97,15 +97,19 @@ final class FileBrowserPanelView: NSView {
         setRoot(url)
     }
 
-    @objc private func rowClicked() {
-        let row = outlineView.clickedRow
+    @objc private func rowClicked() { click(row: outlineView.clickedRow) }
+
+    @objc private func rowDoubleClicked() { doubleClick(row: outlineView.clickedRow) }
+
+    /// 한 번 누르기 — 파일이면 연다. 폴더는 열지 않는다(두 번 눌러 펼친다).
+    func click(row: Int) {
         guard row >= 0, let url = outlineView.item(atRow: row) as? URL else { return }
         guard !isDirectory(url) else { return }
         delegate?.fileBrowserPanel(self, didOpen: url)
     }
 
-    @objc private func rowDoubleClicked() {
-        let row = outlineView.clickedRow
+    /// 두 번 누르기 — 폴더는 펼치거나 접고, 파일은 연다.
+    func doubleClick(row: Int) {
         guard row >= 0, let url = outlineView.item(atRow: row) as? URL else { return }
         if isDirectory(url) {
             if outlineView.isItemExpanded(url) {

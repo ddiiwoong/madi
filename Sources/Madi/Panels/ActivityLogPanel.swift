@@ -8,13 +8,20 @@ import AppKit
 final class ActivityLogPanel: NSWindowController {
 
     private let log: ActivityLog
-    private let table = NSTableView()
+    let table = NSTableView()
+    /// 거르는 단추(전체 · 주의 이상 · 실패만).
+    private(set) var filter: NSSegmentedControl!
+    /// '모두 복사'가 쓰는 대지. 테스트가 사용자의 대지를 덮지 않게 바꾼다.
+    private let pasteboard: NSPasteboard
     private let formatter = ActivityLog.timeFormatter()
-    private var shown: [ActivityLog.Entry] = []
+    private(set) var shown: [ActivityLog.Entry] = []
     private var floor: ActivityLog.Level = .info
 
-    init(log: ActivityLog) {
+    /// - Parameter autosavesFrame: 창 자리를 저장할지. 테스트는 끈다 — 켜 두면 테스트 프로세스의 설정
+    ///   파일에 창 자리가 써진다.
+    init(log: ActivityLog, autosavesFrame: Bool = true, pasteboard: NSPasteboard = .general) {
         self.log = log
+        self.pasteboard = pasteboard
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 560, height: 320),
             styleMask: [.titled, .closable, .resizable, .utilityWindow],
@@ -28,7 +35,7 @@ final class ActivityLogPanel: NSWindowController {
         // 보이려 들게 된다. 실제 버그다 — 끄는 것이 맞다.
         panel.isReleasedWhenClosed = false
         // 저장된 창 위치를 찾는 열쇠다. 앱 이름이 바뀌어도 그대로 둔다.
-        panel.setFrameAutosaveName("MdActivityLogPanel")
+        if autosavesFrame { panel.setFrameAutosaveName("MdActivityLogPanel") }
         super.init(window: panel)
         panel.contentViewController = makeContentController()
         // contentViewController를 넣으면 창이 콘텐츠 맞춤 크기로 줄어든다. 그 뒤에
@@ -49,6 +56,7 @@ final class ActivityLogPanel: NSWindowController {
                                         target: self, action: #selector(filterChanged(_:)))
         filter.selectedSegment = 0
         filter.translatesAutoresizingMaskIntoConstraints = false
+        self.filter = filter
 
         let copyButton = NSButton(title: String(localized: "모두 복사"), target: self, action: #selector(copyAll))
         let clearButton = NSButton(title: String(localized: "지우기"), target: self, action: #selector(clearLog))
@@ -102,20 +110,20 @@ final class ActivityLogPanel: NSWindowController {
         table.reloadData()
     }
 
-    @objc private func filterChanged(_ sender: NSSegmentedControl) {
+    @objc func filterChanged(_ sender: NSSegmentedControl) {
         floor = [ActivityLog.Level.info, .warning, .error][max(0, min(2, sender.selectedSegment))]
         reload()
     }
 
-    @objc private func copyAll() {
+    @objc func copyAll() {
         let text = shown.map { ActivityLog.line(for: $0, formatter: formatter) }
             .joined(separator: "\n")
         guard !text.isEmpty else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
     }
 
-    @objc private func clearLog() {
+    @objc func clearLog() {
         log.clear()
         reload()
     }

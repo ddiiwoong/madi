@@ -220,6 +220,16 @@ public final class MarkdownEditorView: NSView {
     /// document" should produce.
     public var printableView: NSView { textView }
 
+    /// 프린트·PDF처럼 **캐럿 없는 그림**을 낼 동안 켠다. 켜 있으면 캐럿이 있는 줄도 다른 줄처럼 마커를
+    /// 숨긴다 — 안 그러면 내보낸 PDF에 캐럿이 있던 줄의 `#`·`**`가 찍힌다(실측: 캐럿을 제목에 두고
+    /// 내보내면 `# 제목`).
+    public var isRenderingForOutput = false {
+        didSet {
+            guard isRenderingForOutput != oldValue else { return }
+            restyleAll()
+        }
+    }
+
     // MARK: Search
 
     @discardableResult
@@ -381,6 +391,7 @@ public final class MarkdownEditorView: NSView {
     /// 끝에 줄바꿈이 없는 문서에서 캐럿이 맨 끝에 있으면 **마지막 줄**이다. 전에 세던
     /// 방식은 여기서 없는 줄(마지막 + 1)을 돌려줘, 그 줄의 마커가 캐럿이 있는데도 숨었다.
     func caretLine() -> Int? {
+        guard !isRenderingForOutput else { return nil }
         let selection = textView.selectedRange()
         guard selection.location <= storage.length else { return nil }
         return Self.lineNumber(at: selection.location, in: currentLines())

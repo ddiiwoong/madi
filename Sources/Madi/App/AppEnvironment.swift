@@ -37,8 +37,13 @@ enum FileAssociation {
     /// 사람이 읽을 상태 한 줄. Mark이 하는 방식을 따랐다 — 상태를 문장으로 말하고
     /// 버튼 하나로 바꾼다.
     static var statusLine: String {
+        statusLine(isMadiDefault: isMadiDefault, handlerName: currentHandlerName)
+    }
+
+    /// 상태 한 줄을 짓는다. 시스템에 묻는 부분과 갈라 두어 문장을 시험할 수 있다.
+    static func statusLine(isMadiDefault: Bool, handlerName: String?) -> String {
         if isMadiDefault { return String(localized: "Markdown 파일은 현재 마디에서 열립니다.") }
-        if let name = currentHandlerName {
+        if let name = handlerName {
             return String(localized: "Markdown 파일은 현재 ‘\(name)’에서 열립니다.")
         }
         return String(localized: "Markdown 파일을 여는 기본 앱이 정해져 있지 않습니다.")

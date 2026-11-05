@@ -184,9 +184,12 @@ enum AppleTranslator {
     ///     사용자가 메뉴에서 고른 경우에는 그 값이 들어온다 — 짐작이 틀렸을 때
     ///     사용자가 고칠 수 있어야 하고, 그것이 문자 기반 짐작을 받아들일 수 있는 이유다.
     ///   - preferredTarget: 짐작할 때 쓸 기본 대상 언어(원문이 한국어일 때).
+    ///   - installed: 언어 팩이 받아져 있는가를 묻지 않고 정한다. 테스트가 쓴다(시스템에 묻지 않고
+    ///     번역기 대역으로 창의 번역 흐름을 시험한다). nil이면 시스템에 묻는다.
     static func preflight(markdown: String,
                           direction requested: TranslationDirection? = nil,
-                          preferredTarget: String = "en") async -> Preflight {
+                          preferredTarget: String = "en",
+                          installed: Bool? = nil) async -> Preflight {
         let plan = MarkdownTranslationPlan.make(markdown)
         let units = plan.units
         guard !units.isEmpty else {
@@ -205,6 +208,9 @@ enum AppleTranslator {
             return Preflight(plan: plan, direction: direction, state: .sameLanguage)
         }
 
+        if let installed {
+            return Preflight(plan: plan, direction: direction, state: installed ? .ready : .needsLanguagePack)
+        }
         let state: Preflight.State
         switch await availability(for: direction) {
         case .installed: state = .ready
@@ -235,7 +241,8 @@ enum AppleTranslator {
         _ preflight: Preflight,
         extras: [String] = [],
         cache: TranslationCache = .shared,
-        progress: (@Sendable (Progress) -> Void)? = nil
+        progress: (@Sendable (Progress) -> Void)? = nil,
+        translator: (@Sendable (String) async throws -> String)? = nil
     ) async throws -> (text: String, direction: TranslationDirection, extras: [String], repairs: Repairs) {
         let plan = preflight.plan
         let units = plan.units
@@ -249,22 +256,29 @@ enum AppleTranslator {
         case .unsupported: throw Failure.unsupported(direction: direction)
         }
 
-        let session = TranslationSession(
-            installedSource: Locale.Language(identifier: direction.sourceIdentifier),
-            target: Locale.Language(identifier: direction.targetIdentifier)
-        )
-
         let jobs = jobs(for: units, extras: extras)
 
         /// 번역기 호출 하나 — 번역기의 실패를 마디의 실패로 바꾼다. 캐시는 아래 `cached`가
-        /// 먼저 본다.
-        let translateOne: (String) async throws -> String = { text in
-            try Task.checkCancellation()
-            do {
-                return try await session.translate(text).targetText
-            } catch {
-                if error is CancellationError || Task.isCancelled { throw CancellationError() }
-                throw map(error, direction: direction)
+        /// 먼저 본다. 대역(`translator`)이 들어오면 Apple 번역 세션을 만들지 않는다.
+        let translateOne: (String) async throws -> String
+        if let translator {
+            translateOne = { text in
+                try Task.checkCancellation()
+                return try await translator(text)
+            }
+        } else {
+            let session = TranslationSession(
+                installedSource: Locale.Language(identifier: direction.sourceIdentifier),
+                target: Locale.Language(identifier: direction.targetIdentifier)
+            )
+            translateOne = { text in
+                try Task.checkCancellation()
+                do {
+                    return try await session.translate(text).targetText
+                } catch {
+                    if error is CancellationError || Task.isCancelled { throw CancellationError() }
+                    throw map(error, direction: direction)
+                }
             }
         }
         let cached = cachedTranslator(cache, direction: direction, translate: translateOne)

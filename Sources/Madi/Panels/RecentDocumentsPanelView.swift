@@ -14,11 +14,16 @@ final class RecentDocumentsPanelView: NSView {
 
     weak var delegate: RecentDocumentsPanelDelegate?
 
-    private let tableView = NSTableView()
+    let tableView = NSTableView()
     private let scrollView = NSScrollView()
-    private let emptyLabel = NSTextField(labelWithString: String(localized: "최근 문서 없음"))
-    private let clearButton = NSButton(title: String(localized: "메뉴 지우기"), target: nil, action: nil)
-    private var urls: [URL] = []
+    let emptyLabel = NSTextField(labelWithString: String(localized: "최근 문서 없음"))
+    let clearButton = NSButton(title: String(localized: "메뉴 지우기"), target: nil, action: nil)
+    private(set) var urls: [URL] = []
+
+    /// 목록을 어디서 읽고 어떻게 지우는가. 앱은 `NSDocumentController`의 것이고(파일 ▸ 최근 문서
+    /// 열기와 늘 같은 목록), 테스트가 바꾼다 — 테스트 프로세스의 최근 문서를 건드리지 않게.
+    var source: () -> [URL] = { NSDocumentController.shared.recentDocumentURLs }
+    var clearSource: () -> Void = { NSDocumentController.shared.clearRecentDocuments(nil) }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -73,20 +78,24 @@ final class RecentDocumentsPanelView: NSView {
     }
 
     func reload() {
-        urls = NSDocumentController.shared.recentDocumentURLs
+        urls = source()
         emptyLabel.isHidden = !urls.isEmpty
         clearButton.isHidden = urls.isEmpty
         tableView.reloadData()
     }
 
     @objc private func rowClicked() {
-        let row = tableView.clickedRow >= 0 ? tableView.clickedRow : tableView.selectedRow
+        open(row: tableView.clickedRow >= 0 ? tableView.clickedRow : tableView.selectedRow)
+    }
+
+    /// 줄 하나를 연다(누르기).
+    func open(row: Int) {
         guard urls.indices.contains(row) else { return }
         delegate?.recentDocumentsPanel(self, didOpen: urls[row])
     }
 
     @objc private func clearList() {
-        NSDocumentController.shared.clearRecentDocuments(nil)
+        clearSource()
         reload()
     }
 }
