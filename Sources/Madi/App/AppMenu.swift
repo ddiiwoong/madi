@@ -99,6 +99,14 @@ enum AppMenu {
                     #selector(DocumentWindowController.showBlockEditor(_:)), "b",
                     [.command, .option], windowTarget: true),
             nil,
+            Command(String(localized: "글자 크게"), #selector(DocumentWindowController.makeTextLargerAction(_:)), "=",
+                    .command, windowTarget: true),
+            Command(String(localized: "글자 작게"), #selector(DocumentWindowController.makeTextSmallerAction(_:)), "-",
+                    .command, windowTarget: true),
+            Command(String(localized: "글자 기본 크기"),
+                    #selector(DocumentWindowController.makeTextStandardSizeAction(_:)), "0",
+                    .command, windowTarget: true),
+            nil,
             Command(String(localized: "전체 화면 시작"), #selector(NSWindow.toggleFullScreen(_:))),
         ]
     }
@@ -153,7 +161,9 @@ enum AppMenu {
 
         main.addItem(submenu(String(localized: "파일"), fileCommands, insertRecentAfter: String(localized: "문서 열기…")))
         main.addItem(submenu(String(localized: "편집"), editCommands))
-        main.addItem(submenu(String(localized: "보기"), viewCommands))
+        let view = submenu(String(localized: "보기"), viewCommands)
+        if let menu = view.submenu { addHiddenPlusShortcut(to: menu) }
+        main.addItem(view)
         main.addItem(submenu(String(localized: "도구"), toolCommands))
 
         let windowItem = NSMenuItem()
@@ -170,6 +180,19 @@ enum AppMenu {
         NSApp.windowsMenu = windowMenu
 
         return main
+    }
+
+    /// `⌘+`도 글자를 키우게 한다. 단축키 표시는 `⌘=` 하나지만, 미국 자판에서 `+`는 ⇧를 함께
+    /// 눌러야 나오고 `⌘+`로 누르는 사람도 많다. 키 대조는 글자로 하므로 `=` 항목은 `⌘⇧=`에
+    /// 답하지 않는다. 숨긴 항목을 하나 두어 받는다(Safari가 같은 방식이다).
+    private static func addHiddenPlusShortcut(to menu: NSMenu) {
+        let action = #selector(DocumentWindowController.makeTextLargerAction(_:))
+        guard let index = menu.items.firstIndex(where: { $0.action == action }) else { return }
+        let plus = NSMenuItem(title: menu.items[index].title, action: action, keyEquivalent: "+")
+        plus.keyEquivalentModifierMask = [.command]
+        plus.isHidden = true
+        plus.allowsKeyEquivalentWhenHidden = true
+        menu.insertItem(plus, at: index + 1)
     }
 
     private static func submenu(_ title: String, _ commands: [Command?],

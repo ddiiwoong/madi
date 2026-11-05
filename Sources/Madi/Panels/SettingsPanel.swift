@@ -115,6 +115,15 @@ final class SettingsPanel: NSWindowController {
         panel.setContentSize(Self.panelSize)
         panel.center()
         load()
+        // 설정은 이 창 밖에서도 바뀐다(⌘= · ⌘-). 열린 채로 낡은 값을 들고 있으면 다음에 다른
+        // 항목을 고칠 때 **낡은 글자 크기를 다시 저장한다** — 모든 항목을 한 번에 저장하기 때문이다.
+        NotificationCenter.default.addObserver(self, selector: #selector(preferencesChangedElsewhere(_:)),
+                                               name: PreferenceStore.didChange, object: nil)
+    }
+
+    @objc private func preferencesChangedElsewhere(_ note: Notification) {
+        guard (note.object as AnyObject?) !== self else { return }
+        load()
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -641,7 +650,7 @@ final class SettingsPanel: NSWindowController {
         )
         updateSizeLabel()
         store.save(preferences)
-        NotificationCenter.default.post(name: PreferenceStore.didChange, object: nil)
+        NotificationCenter.default.post(name: PreferenceStore.didChange, object: self)
     }
 
     @objc private func claimAssociation() {
@@ -663,6 +672,6 @@ final class SettingsPanel: NSWindowController {
     @objc private func resetAll() {
         store.reset()
         load()
-        NotificationCenter.default.post(name: PreferenceStore.didChange, object: nil)
+        NotificationCenter.default.post(name: PreferenceStore.didChange, object: self)
     }
 }

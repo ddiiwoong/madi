@@ -75,6 +75,10 @@
 "PDF 내보내기" = "Export as PDF";
 "프린트하기" = "Print";
 
+"글자 크게" = "Make Text Bigger";
+"글자 작게" = "Make Text Smaller";
+"글자 기본 크기" = "Default Text Size";
+
 /* AppleTranslator.swift */
 "%@ 번역 언어가 이 Mac에 받아져 있지 않습니다." = "The languages for %@ haven’t been downloaded to this Mac.";
 "Apple 번역이 %@을 지원하지 않습니다." = "Apple Translation doesn’t support %@.";
@@ -152,6 +156,8 @@
 "나란히 보기" = "Side by Side";
 "문서 열기 (⌘O)" = "Open (⌘O)";
 "더 많은 작업" = "More Actions";
+
+"글자 크기 %lldpt" = "Text size %lldpt";
 
 /* DiagramRenderer.swift */
 "수식을 그리지 못했습니다" = "Couldn’t render a math block";

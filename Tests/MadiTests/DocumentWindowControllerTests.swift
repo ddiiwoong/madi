@@ -184,4 +184,38 @@ final class DocumentWindowControllerTests: XCTestCase {
         document.markdown = "다른 앱이 고친 글\n"
         XCTAssertEqual(controller.editor.markdown, "다른 앱이 고친 글\n")
     }
+
+    // MARK: 글자 크기
+
+    /// ⌘= · ⌘- · ⌘0이 **설정의 글자 크기**를 바꾸고 편집기가 그 크기로 다시 칠한다.
+    func testTextSizeCommandsChangeTheEditor() throws {
+        let (_, controller) = open("본문\n")
+        func size() -> CGFloat? {
+            (controller.editor.textView.textStorage?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)?.pointSize
+        }
+        let standard = try XCTUnwrap(size())
+        XCTAssertEqual(Double(standard), EditorPreferences.standard.bodyPointSize, accuracy: 0.01)
+
+        controller.makeTextLargerAction(nil)
+        controller.makeTextLargerAction(nil)
+        XCTAssertEqual(try XCTUnwrap(size()), standard + 2, accuracy: 0.01)
+        controller.makeTextSmallerAction(nil)
+        XCTAssertEqual(try XCTUnwrap(size()), standard + 1, accuracy: 0.01)
+        controller.makeTextStandardSizeAction(nil)
+        XCTAssertEqual(try XCTUnwrap(size()), standard, accuracy: 0.01)
+    }
+
+    func testTextSizeCommandsAreInTheViewMenuWithTheirShortcuts() throws {
+        let larger = try XCTUnwrap(menuItem(for: #selector(DocumentWindowController.makeTextLargerAction(_:))))
+        XCTAssertEqual(larger.keyEquivalent, "=")
+        XCTAssertEqual(menuItem(for: #selector(DocumentWindowController.makeTextSmallerAction(_:)))?.keyEquivalent, "-")
+        XCTAssertEqual(menuItem(for: #selector(DocumentWindowController.makeTextStandardSizeAction(_:)))?
+            .keyEquivalent, "0")
+        let hiddenPlus = larger.menu?.items.first {
+            $0.action == larger.action && $0.keyEquivalent == "+"
+        }
+        XCTAssertNotNil(hiddenPlus, "⌘+도 받는다")
+        XCTAssertEqual(hiddenPlus?.isHidden, true)
+        XCTAssertEqual(hiddenPlus?.allowsKeyEquivalentWhenHidden, true)
+    }
 }

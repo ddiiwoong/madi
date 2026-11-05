@@ -96,4 +96,34 @@ final class EditorPreferencesTests: XCTestCase {
         XCTAssertEqual(current.bodyPointSize, 20)
         XCTAssertEqual(current.alignTables, EditorPreferences.standard.alignTables)
     }
+
+    // MARK: 글자 크기 한 단계 (⌘= · ⌘- · ⌘0)
+
+    func testSteppingMovesOnePointAndStopsAtTheEnds() {
+        var preferences = EditorPreferences.standard
+        XCTAssertEqual(preferences.steppingBodyPointSize(by: 1).bodyPointSize, 16)
+        XCTAssertEqual(preferences.steppingBodyPointSize(by: -1).bodyPointSize, 14)
+
+        preferences.bodyPointSize = EditorPreferences.pointSizeRange.upperBound
+        XCTAssertEqual(preferences.steppingBodyPointSize(by: 1).bodyPointSize,
+                       EditorPreferences.pointSizeRange.upperBound, "끝에서는 그대로 — 부르는 쪽이 멈춘 것을 안다")
+        preferences.bodyPointSize = EditorPreferences.pointSizeRange.lowerBound
+        XCTAssertEqual(preferences.steppingBodyPointSize(by: -1).bodyPointSize,
+                       EditorPreferences.pointSizeRange.lowerBound)
+    }
+
+    func testSteppingRoundsASliderValueFirst() {
+        var preferences = EditorPreferences.standard
+        preferences.bodyPointSize = 15.4         // 설정 창의 막대는 사이 값을 낼 수 있다
+        XCTAssertEqual(preferences.steppingBodyPointSize(by: 1).bodyPointSize, 16)
+    }
+
+    func testStandardSizeLeavesOtherSettingsAlone() {
+        var preferences = EditorPreferences.standard
+        preferences.bodyPointSize = 22
+        preferences.highlightCode = false
+        let reset = preferences.withStandardBodyPointSize
+        XCTAssertEqual(reset.bodyPointSize, EditorPreferences.standard.bodyPointSize)
+        XCTAssertFalse(reset.highlightCode)
+    }
 }

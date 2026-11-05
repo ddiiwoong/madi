@@ -235,6 +235,24 @@ public struct EditorPreferences: Equatable, Sendable {
         return trimmed
     }
 
+    /// 글자 크기 한 단계(⌘= · ⌘-). 설정 창의 막대 눈금과 같은 1pt다.
+    public static let pointSizeStep: Double = 1
+
+    /// 글자 크기를 `steps` 단계 바꾼 설정. 범위 끝에서는 그대로다 — 부르는 쪽이 같은 값을
+    /// 받으면 더 갈 수 없다는 뜻이다. 설정 창의 막대로 고른 15.4pt 같은 값은 먼저 반올림한다.
+    public func steppingBodyPointSize(by steps: Int) -> EditorPreferences {
+        var next = self
+        next.bodyPointSize = Self.clamp(bodyPointSize.rounded() + Double(steps) * Self.pointSizeStep)
+        return next
+    }
+
+    /// 글자 크기만 기본값으로(⌘0). 다른 설정은 건드리지 않는다.
+    public var withStandardBodyPointSize: EditorPreferences {
+        var next = self
+        next.bodyPointSize = Self.standard.bodyPointSize
+        return next
+    }
+
     /// 범위를 벗어난 값을 가둔다. 저장소에 손으로 쓴 값이나 옛 버전의 값이 들어와도
     /// 읽을 수 없는 화면이 되지 않아야 한다.
     public static func clamp(_ size: Double) -> Double {

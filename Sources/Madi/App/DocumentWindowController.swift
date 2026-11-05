@@ -298,6 +298,27 @@ final class DocumentWindowController: NSWindowController {
         NSDocumentController.shared.openDocument(sender)
     }
 
+    // MARK: 글자 크기 (보기 ▸ 글자 크게 · 작게 · 기본 크기)
+
+    @objc func makeTextLargerAction(_ sender: Any?) { changeTextSize { $0.steppingBodyPointSize(by: 1) } }
+    @objc func makeTextSmallerAction(_ sender: Any?) { changeTextSize { $0.steppingBodyPointSize(by: -1) } }
+    @objc func makeTextStandardSizeAction(_ sender: Any?) { changeTextSize { $0.withStandardBodyPointSize } }
+
+    /// 설정 창의 `본문 글자 크기`와 **같은 값**을 바꾼다. 창마다 따로 두지 않는 이유: 설정의 값과
+    /// 화면이 어긋나면 사용자는 어느 쪽이 맞는지 알 수 없고, 다음 창은 설정 값으로 열린다.
+    /// 그래서 저장하고 알린다 — 열린 창 모두와 설정 창이 따라온다.
+    private func changeTextSize(_ change: (EditorPreferences) -> EditorPreferences) {
+        let current = preferences.current
+        let next = change(current)
+        guard next.bodyPointSize != current.bodyPointSize else {
+            NSSound.beep()       // 범위 끝
+            return
+        }
+        preferences.save(next)
+        NotificationCenter.default.post(name: PreferenceStore.didChange, object: nil)
+        statusOverlay.show(String(localized: "글자 크기 \(Int(next.bodyPointSize))pt"), duration: 1.2)
+    }
+
     /// 코드 보기 (⌘E) — 렌더된 문서와 마크다운 원본을 **오가는 토글**이다.
     ///
     /// 세 곳이 같은 상태를 보여야 한다: 도구 막대 토글(눌린 모양), 메뉴 항목(체크 표시),

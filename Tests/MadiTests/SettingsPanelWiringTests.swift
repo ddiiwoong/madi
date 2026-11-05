@@ -501,4 +501,25 @@ final class SettingsPanelWiringTests: XCTestCase {
         }) else { return XCTFail("\(raw) 항목이 없다") }
         picker.selectItem(at: index)
     }
+
+    // MARK: 창 밖에서 바뀐 설정
+
+    /// ⌘= · ⌘-가 글자 크기를 바꾸면 열린 설정 창이 따라온다. 안 따라오면 다음에 다른 항목을
+    /// 고칠 때 설정 창이 **낡은 크기를 다시 저장한다**(모든 항목을 한 번에 저장한다).
+    func testOpenPanelFollowsAChangeMadeElsewhere() throws {
+        panel = makePanel()
+        let slider = try XCTUnwrap(descendants(of: root).compactMap { $0 as? NSSlider }.first)
+        XCTAssertEqual(slider.doubleValue, store.current.bodyPointSize)
+
+        store.save(store.current.steppingBodyPointSize(by: 3))
+        NotificationCenter.default.post(name: PreferenceStore.didChange, object: nil)
+        XCTAssertEqual(slider.doubleValue, store.current.bodyPointSize, "설정 창이 새 값을 싣는다")
+
+        // 그 뒤 다른 항목을 고쳐도 새 크기가 남는다.
+        let size = store.current.bodyPointSize
+        let check = try XCTUnwrap(descendants(of: root).compactMap { $0 as? NSButton }
+            .first { $0.title == String(localized: "표 열 맞추기") })
+        check.performClick(nil)
+        XCTAssertEqual(store.current.bodyPointSize, size)
+    }
 }
