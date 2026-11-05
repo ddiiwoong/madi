@@ -38,6 +38,14 @@ public struct TranslationDirection: Equatable, Hashable, Sendable {
     /// 원문과 대상이 같으면 번역할 것이 없다.
     public var isTrivial: Bool { source == target }
 
+    /// 대상 언어가 낱말 사이를 띄어 쓰는가. 일본어·중국어·타이어·라오어·크메르어·버마어는
+    /// 띄우지 않는다. 자리표를 잃은 문장을 조각마다 따로 번역해 다시 이을 때 쓴다
+    /// (`MarkdownTranslationPlan.Unit.reassembled`).
+    public var targetUsesWordSpaces: Bool {
+        let base = target.split(separator: "-").first.map(String.init) ?? target
+        return !["ja", "zh", "th", "lo", "km", "my"].contains(base)
+    }
+
     public var reversed: TranslationDirection {
         TranslationDirection(source: target, target: source)
     }

@@ -171,6 +171,11 @@
 "번역본" = "Translation";
 "편집됨" = "Edited";
 
+"번역기가 링크·강조·각주 표시를 잃은 문장을 다시 번역했습니다" = "Retranslated sentences where the translator lost link, emphasis or footnote marks";
+"다른 자리표로 다시 번역 %lld곳" = "%lld retranslated with another placeholder";
+"조각마다 따로 번역 %lld곳(문맥 없음 — 어색할 수 있음)" = "%lld translated piece by piece (no context — may read awkwardly)";
+"표 행을 칸마다 다시 번역 %lld곳" = "%lld table rows retranslated cell by cell";
+
 /* DiagramRenderer.swift */
 "수식을 그리지 못했습니다" = "Couldn’t render a math block";
 "다이어그램을 그리지 못했습니다" = "Couldn’t render a diagram";

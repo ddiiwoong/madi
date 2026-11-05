@@ -3,8 +3,13 @@ import XCTest
 
 final class TranslationChunkerTests: XCTestCase {
 
-    private let open = "\u{E000}"
-    private let close = "\u{E001}"
+    /// 자리표의 기본 꼴(`TokenForm.braces`) — `{{0}}`.
+    private let open = "{{"
+    private let close = "}}"
+
+    private func occurrences(_ marker: String, in text: String) -> Int {
+        text.components(separatedBy: marker).count - 1
+    }
 
     // MARK: 불변식 1 — 글자를 잃거나 더하지 않는다
 
@@ -45,8 +50,8 @@ final class TranslationChunkerTests: XCTestCase {
         let chunks = TranslationChunker.split(text, limit: 100)
         XCTAssertEqual(chunks.joined(), text)
         for chunk in chunks {
-            let opens = chunk.filter { $0 == "\u{E000}" }.count
-            let closes = chunk.filter { $0 == "\u{E001}" }.count
+            let opens = occurrences(open, in: chunk)
+            let closes = occurrences(close, in: chunk)
             XCTAssertEqual(opens, closes, "자리표가 조각 경계에서 갈렸다: \(chunk.debugDescription)")
         }
     }
@@ -60,8 +65,7 @@ final class TranslationChunkerTests: XCTestCase {
         let chunks = TranslationChunker.split(text, limit: 150)
         XCTAssertEqual(chunks.joined(), text)
         for chunk in chunks {
-            XCTAssertEqual(chunk.filter { $0 == "\u{E000}" }.count,
-                           chunk.filter { $0 == "\u{E001}" }.count)
+            XCTAssertEqual(occurrences(open, in: chunk), occurrences(close, in: chunk))
         }
     }
 

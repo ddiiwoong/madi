@@ -562,11 +562,35 @@ public struct MarkdownSyntax: Sendable {
         let whole = NSRange(location: 0, length: (line as NSString).length)
         var tokens: [InlineToken] = []
         var claimed = IndexSet()
+        /// 인라인 코드가 차지한 자리. 강조·링크의 **내용**에는 코드가 들어갈 수 있다 —
+        /// `**문서 레벨 `NSUndoManager` 하나**`, `[`설정` 열기](…)`. 코드가 먼저 자리를 차지하므로
+        /// 전에는 그런 강조와 링크가 통째로 빠져, 편집기에서 굵게 보이지 않았고 번역에서는 `**`가
+        /// 보호받지 못해 번역기가 지웠다(실측, 저장소 설계 문서).
+        var codeClaimed = IndexSet()
 
         func add(_ kind: InlineKind, _ m: NSTextCheckingResult, content: Int, markers: [NSRange]) {
             let full = m.range
-            guard !claimed.intersects(integersIn: full.location ..< NSMaxRange(full)) else { return }
-            claimed.insert(integersIn: full.location ..< NSMaxRange(full))
+            let fullRange = full.location ..< NSMaxRange(full)
+            let inner = m.range(at: content)
+            let containsCode: Bool
+            switch kind {
+            case .strong, .emphasis, .strikethrough, .link, .image:
+                containsCode = inner.location != NSNotFound
+            default:
+                containsCode = false
+            }
+            if containsCode {
+                // 내용 밖(표시)은 비어 있어야 하고, 내용 안에서 차지된 자리는 코드뿐이어야 한다.
+                var outside = IndexSet(integersIn: fullRange)
+                outside.remove(integersIn: inner.location ..< NSMaxRange(inner))
+                guard claimed.intersection(outside).isEmpty else { return }
+                var insideClaimed = claimed
+                insideClaimed.formIntersection(IndexSet(integersIn: inner.location ..< NSMaxRange(inner)))
+                guard insideClaimed.isSubset(of: codeClaimed) else { return }
+            } else {
+                guard !claimed.intersects(integersIn: fullRange) else { return }
+            }
+            claimed.insert(integersIn: fullRange)
             tokens.append(InlineToken(kind: kind,
                                       range: shift(full, by: range.location),
                                       contentRange: shift(m.range(at: content), by: range.location),
@@ -581,6 +605,7 @@ public struct MarkdownSyntax: Sendable {
                 NSRange(location: full.location, length: inner.location - full.location),
                 NSRange(location: NSMaxRange(inner), length: NSMaxRange(full) - NSMaxRange(inner)),
             ])
+            codeClaimed.insert(integersIn: full.location ..< NSMaxRange(full))
         }
         for m in Self.image.matches(in: line, range: whole) {
             let url = (line as NSString).substring(with: m.range(at: 2))

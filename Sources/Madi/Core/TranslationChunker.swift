@@ -14,8 +14,8 @@ import Foundation
 ///
 /// 불변식 둘:
 /// 1. **글자를 잃거나 더하지 않는다** — 모든 조각을 이으면 입력과 같다.
-/// 2. **자리표를 가르지 않는다** — `MarkdownTranslationPlan`의 자리표는 쪼개지면 복원할 수
-///    없으므로, 글자 경계까지 내려가도 자리표 안에서는 자르지 않는다.
+/// 2. **자리표를 가르지 않는다** — `MarkdownTranslationPlan`의 자리표(`{{12}}`)는 쪼개지면 복원할
+///    수 없으므로, 글자 경계까지 내려가도 자리표 안에서는 자르지 않는다.
 public enum TranslationChunker {
 
     /// 한 조각의 목표 글자 수. 이 Mac에서 초당 110~260자이므로 800자면 조각 하나가 3~9초다.
@@ -83,22 +83,29 @@ public enum TranslationChunker {
 
     /// 낱말 하나가 한계를 넘을 때(URL·base64·공백 없는 긴 글)만 쓴다.
     ///
-    /// **자리표 안에서는 자르지 않는다.** 자리표는 `U+E000` … `U+E001`로 닫히는 구간이고,
-    /// 쪼개지면 `MarkdownTranslationPlan`이 되살릴 수 없다.
+    /// **자리표 안에서는 자르지 않는다.** 자리표(`{{12}}` 등, `MarkdownTranslationPlan.TokenForm`)가
+    /// 쪼개지면 되살릴 수 없다.
     static func characterUnits(_ text: String, limit: Int) -> [String] {
         let characters = Array(text)
+        // 자리표의 **안쪽** 글자 위치(첫 글자 뒤부터 끝 글자까지) — 여기 앞에서는 자르지 않는다.
+        var inside = Set<Int>()
+        let ns = text as NSString
+        for match in MarkdownTranslationPlan.TokenForm.anyToken.matches(
+            in: text, range: NSRange(location: 0, length: ns.length)) {
+            guard let range = Range(match.range, in: text) else { continue }
+            let start = text.distance(from: text.startIndex, to: range.lowerBound)
+            let count = text.distance(from: range.lowerBound, to: range.upperBound)
+            for offset in 1 ..< max(1, count) { inside.insert(start + offset) }
+        }
+
         var pieces: [String] = []
         var current: [Character] = []
-        var insidePlaceholder = false
-
-        for character in characters {
-            if character == MarkdownTranslationPlan.open { insidePlaceholder = true }
-            if current.count >= limit, !insidePlaceholder {
+        for (index, character) in characters.enumerated() {
+            if current.count >= limit, !inside.contains(index) {
                 pieces.append(String(current))
                 current = []
             }
             current.append(character)
-            if character == MarkdownTranslationPlan.close { insidePlaceholder = false }
         }
         if !current.isEmpty { pieces.append(String(current)) }
         return pieces.isEmpty ? [text] : pieces

@@ -26,8 +26,9 @@ final class TranslationDirectionTests: XCTestCase {
 
 final class MarkdownTranslationPlanTests: XCTestCase {
 
-    private let open = "\u{E000}"
-    private let close = "\u{E001}"
+    /// 자리표의 기본 꼴(`TokenForm.braces`) — `{{0}}`.
+    private let open = "{{"
+    private let close = "}}"
 
     private func plan(_ text: String) -> MarkdownTranslationPlan {
         MarkdownTranslationPlan.make(text)

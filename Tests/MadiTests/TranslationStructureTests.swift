@@ -6,8 +6,9 @@ import XCTest
 /// 다섯을 돌려 찾은 두 결함을 번역기 없이 못박는다.
 final class TranslationStructureTests: XCTestCase {
 
-    private let open = "\u{E000}"
-    private let close = "\u{E001}"
+    /// 자리표의 기본 꼴(`TokenForm.braces`) — `{{0}}`.
+    private let open = "{{"
+    private let close = "}}"
     private func token(_ index: Int) -> String { "\(open)\(index)\(close)" }
 
     private func kinds(_ text: String) -> [BlockAlignment.Key] {

@@ -12,11 +12,14 @@ import Foundation
 ///     → The main text is**Boldly**Wow`인라인 코드`,[Document link](…)Includes.
 ///
 /// 13조각이 각각 문맥 없이 번역돼 말이 되지 않았다. 그래서 **문장을 통째로 넘기고 보호할
-/// 구간만 자리표로 바꾼다.** 자리표는 사용자 영역 문자(`U+E000`/`U+E001`)로 감싼 번호다 —
-/// 문서 내용과 충돌하지 않고, Apple 번역이 그대로 통과시키는 것을 실측했다(대괄호·중괄호·
-/// 태그 모양도 통과했지만 그것들은 문서에 실제로 나타날 수 있다).
+/// 구간만 자리표로 바꾼다.** 자리표는 번호를 감싼 짧은 표시다(`TokenForm`, 기본 `{{0}}`).
 ///
-/// 자리표로 바꾸는 것: 인라인 코드, 자동 링크, 링크·이미지의 `[`와 `](URL)` 부분,
+/// 번역기는 자리표를 **가끔 잃는다** — 꼴이 무엇이든 그렇다(실측, `TokenForm`). 그래서 번역 뒤에
+/// 자리표가 온전한지 보고(`Unit.isIntact`), 아니면 다른 꼴로 다시 번역하고, 그래도 안 되면 자리표
+/// 없이 글 조각마다 따로 번역한다(`Unit.runTexts`). 마지막 길은 문맥을 잃지만 **링크와 각주가
+/// 깨지지 않는다** — 깨진 문장보다 어색한 문장이 낫다.
+///
+/// 자리표로 바꾸는 것: 인라인 코드, 자동 링크, 각주 참조, 링크·이미지의 `[`와 `](URL)` 부분,
 /// 굵게·기울임·취소선의 마커.
 /// 번역에서 아예 빼는 것(단위 밖의 리터럴): 펜스 코드 블록, 제목의 `#`, 인용의 `>`,
 /// 목록 불릿·번호·체크박스, 수평선, 표 구분선, 표의 `|`와 칸 정렬 공백.
@@ -25,9 +28,76 @@ import Foundation
 /// 않아도 문서가 그대로 복원된다.
 public struct MarkdownTranslationPlan: Equatable {
 
-    /// 자리표를 감싸는 문자. 사용자 영역이라 실제 문서에 나타나지 않는다.
-    static let open: Character = "\u{E000}"
-    static let close: Character = "\u{E001}"
+    /// 자리표의 꼴. 번호를 감싸는 표시가 다르다.
+    ///
+    /// 실측(Apple 번역, 이 Mac, macOS 27.0.1, 2026-11-05). 링크·강조·각주가 든 문장마다 자리표가
+    /// **모두 정확히 한 번, 여는 것이 닫는 것보다 앞에** 돌아왔는지 셌다:
+    ///
+    ///     꼴            ko→en   ko→ja   en→ko
+    ///     {{0}}         13/14   14/14   6/6
+    ///     ⟦0⟧           13/14   14/14   6/6
+    ///     §0§           13/14   14/14   6/6
+    ///     U+E000 0 U+E001  11/14   14/14   6/6   ← 전에 쓰던 꼴. 감싼 문자를 버리고 숫자만 남긴다
+    ///     <g0>…</g0>     9/14   10/14   3/6
+    ///
+    /// 전에 쓰던 사용자 영역 문자(U+E000)는 2026-10-25에는 통과했지만 지금은 **감싼 문자를 버리고
+    /// 숫자만** 돌려준다 — `본문에 각주[^1]가 있고 [링크](…)도 있다.`가 `There are footnotes 0 and 1
+    /// in the text and a link 2.`가 됐다. 어느 꼴도 늘 통과하지는 않고, **잃는 문장이 꼴마다 다르다**
+    /// (`{{0}}`가 잃은 문장을 `⟦0⟧`가 지키고 그 반대도 있었다). 그래서 다시 번역할 때 꼴을 바꾼다.
+    ///
+    /// 끝 표시가 있어야 한다 — `X1` 같은 꼴은 뒤에 숫자가 오면(`X12026년`) 어디까지가 자리표인지
+    /// 알 수 없다.
+    public enum TokenForm: CaseIterable, Sendable {
+        case braces     // {{0}}
+        case brackets   // ⟦0⟧
+        case section    // §0§
+
+        /// 써 볼 순서.
+        public static let preference: [TokenForm] = [.braces, .brackets, .section]
+
+        public func token(_ index: Int) -> String {
+            switch self {
+            case .braces: "{{\(index)}}"
+            case .brackets: "⟦\(index)⟧"
+            case .section: "§\(index)§"
+            }
+        }
+
+        /// 이 꼴의 표시. 단위의 글에 이것이 있으면 그 꼴은 쓰지 않는다 — 문서에 원래 있던 `{{0}}`를
+        /// 자리표로 잘못 되돌리게 된다.
+        var markers: [String] {
+            switch self {
+            case .braces: ["{{", "}}"]
+            case .brackets: ["⟦", "⟧"]
+            case .section: ["§"]
+            }
+        }
+
+        /// 번역기가 자리표 안에 넣은 공백을 걷는다(`{{ 0 }}` → `{{0}}`).
+        func normalized(_ text: String) -> String {
+            guard let pattern = loosePattern else { return text }
+            let range = NSRange(location: 0, length: (text as NSString).length)
+            return pattern.stringByReplacingMatches(in: text, options: [], range: range,
+                                                    withTemplate: token(0).replacingOccurrences(of: "0", with: "$1"))
+        }
+
+        private var loosePattern: NSRegularExpression? {
+            let source: String = switch self {
+            case .braces: #"\{\{\s*(\d+)\s*\}\}"#
+            case .brackets: #"⟦\s*(\d+)\s*⟧"#
+            case .section: #"§\s*(\d+)\s*§"#
+            }
+            return try? NSRegularExpression(pattern: source)
+        }
+
+        /// 어느 꼴이든 자리표 하나에 맞는 정규식. 조각기가 이 안에서 자르지 않는다.
+        static let anyToken: NSRegularExpression = {
+            guard let expression = try? NSRegularExpression(pattern: #"\{\{\d+\}\}|⟦\d+⟧|§\d+§"#) else {
+                preconditionFailure("invalid built-in pattern")
+            }
+            return expression
+        }()
+    }
 
     /// 보호 구간 하나.
     ///
@@ -68,24 +138,110 @@ public struct MarkdownTranslationPlan: Equatable {
         }
     }
 
-    /// 자리표 `index`가 번역기에 넘어가는 모양.
-    static func token(_ index: Int) -> String { "\(open)\(index)\(close)" }
-
-    /// 번역기에 넘기는 단위 하나. 보통 한 줄의 본문 또는 표의 한 칸이다.
+    /// 번역기에 넘기는 단위 하나. 보통 한 줄의 본문 또는 표의 한 행이다.
     public struct Unit: Equatable {
-        /// 번역기에 넘기는 글. 보호 구간은 자리표로 바뀌어 있다.
-        public let text: String
+        /// 단위를 이루는 조각 — 글, 또는 보호 구간 번호.
+        public enum Piece: Equatable {
+            case text(String)
+            case token(Int)
+        }
+
+        public let pieces: [Piece]
         /// 자리표 번호 순서대로의 보호 구간.
         public let protected: [ProtectedSpan]
         /// 표의 행일 때만: 같은 행을 **칸마다** 나눈 계획. 행 번역이 칸 구조를 지키지
         /// 못했을 때(`keepsStructure`가 거짓) 그 행만 이것으로 다시 번역한다.
         public let cellFallback: MarkdownTranslationPlan?
+        /// 처음 쓸 자리표 꼴 — 이 단위의 글과 부딪히지 않는 첫 꼴.
+        public let form: TokenForm
 
-        public init(text: String, protected: [ProtectedSpan],
+        public init(pieces: [Piece], protected: [ProtectedSpan],
                     cellFallback: MarkdownTranslationPlan? = nil) {
-            self.text = text
+            self.pieces = pieces
             self.protected = protected
             self.cellFallback = cellFallback
+            let usable = Self.usableForms(pieces)
+            self.form = usable.first ?? .braces
+        }
+
+        /// 글에 표시가 나오지 않는 꼴들(선호 순).
+        private static func usableForms(_ pieces: [Piece]) -> [TokenForm] {
+            let text = pieces.map { if case let .text(value) = $0 { value } else { "" } }.joined()
+            return TokenForm.preference.filter { form in !form.markers.contains { text.contains($0) } }
+        }
+
+        /// 다시 번역할 때 써 볼 다른 꼴들.
+        public var alternateForms: [TokenForm] {
+            Self.usableForms(pieces).filter { $0 != form }
+        }
+
+        /// 번역기에 넘기는 글. 보호 구간은 자리표로 바뀌어 있다.
+        public var text: String { text(in: form) }
+
+        public func text(in form: TokenForm) -> String {
+            pieces.map { piece in
+                switch piece {
+                case let .text(value): value
+                case let .token(index): form.token(index)
+                }
+            }.joined()
+        }
+
+        /// 여는 구간 → 그것을 닫는 구간(번호). 인라인 토큰은 서로 겹치지 않으므로(`scanInline`이
+        /// 차지한 자리를 다시 내주지 않는다) 짝은 스택으로 찾으면 된다.
+        var pairs: [(open: Int, close: Int)] {
+            var stack: [Int] = []
+            var out: [(Int, Int)] = []
+            for (index, span) in protected.enumerated() {
+                switch span.role {
+                case .opening: stack.append(index)
+                case .closing: if let open = stack.popLast() { out.append((open, index)) }
+                case .standalone: break
+                }
+            }
+            return out
+        }
+
+        /// 번역문의 자리표가 온전한가 — 자리표마다 **정확히 한 번** 나오고, 여는 것이 닫는 것보다
+        /// 앞이다. 거짓이면 그대로 되돌리면 링크·강조·각주가 깨진다(잃은 구간은 단위 끝에 붙는다).
+        public func isIntact(_ translated: String, form: TokenForm? = nil) -> Bool {
+            guard !protected.isEmpty else { return true }
+            let form = form ?? self.form
+            let text = form.normalized(translated)
+            var positions: [String.Index] = []
+            for index in protected.indices {
+                let token = form.token(index)
+                guard let found = text.range(of: token),
+                      text.range(of: token, range: found.upperBound ..< text.endIndex) == nil
+                else { return false }
+                positions.append(found.lowerBound)
+            }
+            for pair in pairs {
+                guard positions[pair.open] < positions[pair.close] else { return false }
+                // 감싼 글이 있었으면 번역문에도 있어야 한다. 번역기가 글을 밖으로 빼고 표시만 남기면
+                // `with ****`가 된다(실측).
+                guard hasContent(between: pair) else { continue }
+                let from = text.range(of: form.token(pair.open))!.upperBound
+                let to = text.range(of: form.token(pair.close))!.lowerBound
+                var inner = String(text[from ..< to])
+                for index in protected.indices { inner = inner.replacingOccurrences(of: form.token(index), with: "") }
+                if inner.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return false }
+            }
+            return true
+        }
+
+        /// 원문에서 이 짝이 감싼 글에 글자가 있는가.
+        private func hasContent(between pair: (open: Int, close: Int)) -> Bool {
+            var inside = false
+            for piece in pieces {
+                switch piece {
+                case let .token(index):
+                    if index == pair.open { inside = true } else if index == pair.close { return false }
+                case let .text(value):
+                    if inside, Self.isTranslatable(value) { return true }
+                }
+            }
+            return false
         }
 
         /// 번역문이 표의 칸 구조를 지키는가. 칸 구분자가 없는 단위는 늘 참이다.
@@ -93,20 +249,20 @@ public struct MarkdownTranslationPlan: Equatable {
         /// 왜 있는가(실측): 행을 통째로 넘기면 문맥이 살아 번역이 나아지지만, 번역기가
         /// 자리표를 **옮기거나 복제한다.** 저장소 문서 다섯을 번역했더니 표 두 개의 열
         /// 수가 바뀌었다 — 닫는 `**`가 마지막 `|` 뒤로 가 칸이 하나 늘었고, 다른 행에서는
-        /// 구분자 하나가 두 번 나와 `|`가 다섯 개가 됐다. 이전 주석은 "칸의 개수와 자리는
-        /// 보존된다"고 적었는데 그렇지 않았다.
+        /// 구분자 하나가 두 번 나와 `|`가 다섯 개가 됐다.
         ///
-        /// 검사하는 것: 자리표가 **각각 정확히 한 번** 나온다(빠진 것은 `restored`가 행
-        /// 끝, 즉 마지막 `|` 뒤에 붙이고, 복제는 모두 바뀐다), 구분자가 **순서대로** 나온다,
+        /// 검사하는 것: 자리표가 **각각 정확히 한 번** 나온다, 구분자가 **순서대로** 나온다,
         /// 인라인 자리표가 원문과 **같은 칸**에 있다, 원문에서 구분자 앞뒤에 글이 없었으면
         /// 번역문에도 없다(있으면 칸이 생긴다).
         public func keepsStructure(_ translated: String) -> Bool {
             let separators = protected.indices.filter { protected[$0].isCellSeparator }
             guard !separators.isEmpty else { return true }
+            let source = text
+            let translated = form.normalized(translated)
 
             var positions: [String.Index] = []
             for index in protected.indices {
-                let token = MarkdownTranslationPlan.token(index)
+                let token = form.token(index)
                 guard let found = translated.range(of: token),
                       translated.range(of: token, range: found.upperBound..<translated.endIndex) == nil
                 else { return false }
@@ -126,14 +282,14 @@ public struct MarkdownTranslationPlan: Equatable {
             func isBlank(_ text: Substring) -> Bool {
                 text.allSatisfy { $0 == " " || $0 == "\t" }
             }
-            let firstToken = MarkdownTranslationPlan.token(separators[0])
-            let lastToken = MarkdownTranslationPlan.token(separators[separators.count - 1])
-            if let sourceFirst = text.range(of: firstToken), isBlank(text[..<sourceFirst.lowerBound]),
+            let firstToken = form.token(separators[0])
+            let lastToken = form.token(separators[separators.count - 1])
+            if let sourceFirst = source.range(of: firstToken), isBlank(source[..<sourceFirst.lowerBound]),
                let translatedFirst = translated.range(of: firstToken),
                !isBlank(translated[..<translatedFirst.lowerBound]) {
                 return false
             }
-            if let sourceLast = text.range(of: lastToken), isBlank(text[sourceLast.upperBound...]),
+            if let sourceLast = source.range(of: lastToken), isBlank(source[sourceLast.upperBound...]),
                let translatedLast = translated.range(of: lastToken),
                !isBlank(translated[translatedLast.upperBound...]) {
                 return false
@@ -144,13 +300,15 @@ public struct MarkdownTranslationPlan: Equatable {
         /// 번역문의 자리표를 원문 조각으로 되돌린다.
         ///
         /// 번역기가 자리표를 잃었으면 그 조각은 되살릴 자리가 없다 — 끝에 붙인다.
-        /// 잃는 쪽이 지우는 쪽보다 낫다(코드나 링크가 조용히 사라지지 않는다).
-        public func restored(from translated: String) -> String {
-            var out = translated
+        /// 잃는 쪽이 지우는 쪽보다 낫다(코드나 링크가 조용히 사라지지 않는다). 번역기에서 온 글은
+        /// `isIntact`로 먼저 걸러 이 길에 거의 오지 않는다(`AppleTranslator.repairs`).
+        public func restored(from translated: String, form: TokenForm? = nil) -> String {
+            let form = form ?? self.form
+            var out = form.normalized(translated)
             var missing: [String] = []
 
             for (index, span) in protected.enumerated() {
-                let token = "\(MarkdownTranslationPlan.open)\(index)\(MarkdownTranslationPlan.close)"
+                let token = form.token(index)
                 guard out.contains(token) else {
                     missing.append(span.text)
                     continue
@@ -183,6 +341,68 @@ public struct MarkdownTranslationPlan: Equatable {
             var result = text
             result.remove(at: beforeToken)
             return result
+        }
+
+        // MARK: 마지막 길 — 글 조각마다 따로
+
+        /// 자리표 없이 따로 번역할 글 조각들(글자가 있는 것만, 앞뒤 공백을 뗀 것). 꼴을 바꿔도
+        /// 자리표가 온전하지 않을 때 쓴다 — 문맥을 잃지만 보호 구간은 번역기를 거치지 않으므로
+        /// **깨질 수가 없다.**
+        public var runTexts: [String] {
+            pieces.compactMap { piece in
+                guard case let .text(value) = piece else { return nil }
+                let core = Self.core(of: value)
+                return Self.isTranslatable(core) ? core : nil
+            }
+        }
+
+        /// `runTexts`를 번역한 것으로 단위를 다시 짓는다. 원문의 공백은 그대로 둔다.
+        ///
+        /// - Parameter wordSpacing: 대상 언어가 낱말 사이를 띄우는가. 한국어는 조사가 붙어
+        ///   `**굵게**와`처럼 공백이 없지만, 따로 번역한 `and`는 `**bold** and`로 띄워야 한다 —
+        ///   닫는 구간 뒤, 여는 구간 앞에서 글자끼리 붙으면 띄운다. 일본어·중국어는 띄우지 않는다.
+        public func reassembled(runs translations: [String], wordSpacing: Bool) -> String {
+            var out = ""
+            var next = translations.makeIterator()
+            /// 바로 앞에 놓은 것이 닫는(또는 독립) 구간인가.
+            var afterClosing = false
+            for piece in pieces {
+                switch piece {
+                case let .token(index):
+                    let span = protected[index]
+                    if wordSpacing, span.role == .opening, !span.hadAdjacentSpace,
+                       let last = out.last, last.isLetter || last.isNumber {
+                        out += " "
+                    }
+                    out += span.text
+                    afterClosing = span.role != .opening
+                case let .text(value):
+                    let core = Self.core(of: value)
+                    let leading = String(value.prefix { $0 == " " || $0 == "\t" })
+                    let trailing = String(value.dropFirst(leading.count).reversed()
+                        .prefix { $0 == " " || $0 == "\t" }.reversed())
+                    var body = core
+                    if Self.isTranslatable(core) {
+                        body = (next.next() ?? core).trimmingCharacters(in: .whitespaces)
+                    }
+                    if wordSpacing, afterClosing, leading.isEmpty,
+                       let first = body.first, first.isLetter || first.isNumber {
+                        out += " "
+                    }
+                    out += leading + body + trailing
+                    afterClosing = false
+                }
+            }
+            return out
+        }
+
+        private static func core(of value: String) -> String {
+            value.trimmingCharacters(in: CharacterSet(charactersIn: " \t"))
+        }
+
+        /// 글자가 하나라도 있는가. 문장부호·공백·숫자뿐인 조각은 번역기에 넘기지 않는다.
+        static func isTranslatable(_ text: String) -> Bool {
+            text.contains { $0.isLetter }
         }
     }
 
@@ -395,8 +615,17 @@ public struct MarkdownTranslationPlan: Equatable {
                            protecting extra: [NSRange] = [],
                            cellFallback: MarkdownTranslationPlan? = nil) {
             guard range.length > 0 else { return }
-            var body = ""
+            var pieces: [Unit.Piece] = []
             var protected: [ProtectedSpan] = []
+
+            func appendText(_ value: String) {
+                guard !value.isEmpty else { return }
+                if case let .text(previous) = pieces.last {
+                    pieces[pieces.count - 1] = .text(previous + value)
+                } else {
+                    pieces.append(.text(value))
+                }
+            }
 
             /// 원문에서 `index` 위치의 글자가 공백인가. 줄 밖이면 true로 본다 —
             /// 경계에는 지울 공백이 없다.
@@ -408,7 +637,7 @@ public struct MarkdownTranslationPlan: Equatable {
 
             func protect(_ protectedRange: NSRange, role: ProtectedSpan.Role, separator: Bool) {
                 guard protectedRange.length > 0 else { return }
-                body += "\(MarkdownTranslationPlan.open)\(protected.count)\(MarkdownTranslationPlan.close)"
+                pieces.append(.token(protected.count))
                 // 지울 쪽의 공백만 본다 — 여는 구간은 뒤, 닫는 구간은 앞.
                 let adjacent: Bool = switch role {
                 case .opening: isSpace(at: NSMaxRange(protectedRange))
@@ -426,17 +655,12 @@ public struct MarkdownTranslationPlan: Equatable {
             // 지킬 자리를 한 목록으로 모아 **위치 순으로** 적용한다. 인라인 토큰과
             // 바깥에서 들어온 구간(표의 `|`)을 따로 돌면 순서가 섞여 자리표 번호와
             // 실제 위치가 어긋난다.
-            enum Step {
-                case guard_(NSRange, ProtectedSpan.Role, separator: Bool = false)
-                /// 번역기에 그대로 넘어가는 조각(강조의 내용 등).
-                case through(NSRange)
-
-                var location: Int {
-                    switch self {
-                    case let .guard_(range, _, _): return range.location
-                    case let .through(range): return range.location
-                    }
-                }
+            /// 지킬 구간 하나. 구간 사이의 글(강조의 내용 등)은 그대로 번역기에 넘어간다.
+            struct Step {
+                let range: NSRange
+                let role: ProtectedSpan.Role
+                var separator = false
+                var location: Int { range.location }
             }
 
             var steps: [Step] = []
@@ -449,21 +673,22 @@ public struct MarkdownTranslationPlan: Equatable {
                 tokenRanges.append(token.range)
                 switch token.kind {
                 case .code, .autolink, .footnoteReference:
-                    steps.append(.guard_(token.range, .standalone))
+                    steps.append(Step(range: token.range, role: .standalone))
                 case .link, .image, .strong, .emphasis, .strikethrough:
                     let content = token.contentRange
                     if content.location != NSNotFound, content.length > 0,
                        content.location >= token.range.location,
                        NSMaxRange(content) <= NSMaxRange(token.range) {
-                        steps.append(.guard_(NSRange(location: token.range.location,
-                                                     length: content.location - token.range.location),
-                                             .opening))
-                        steps.append(.through(content))
-                        steps.append(.guard_(NSRange(location: NSMaxRange(content),
-                                                     length: NSMaxRange(token.range) - NSMaxRange(content)),
-                                             .closing))
+                        // 내용은 따로 넣지 않는다 — 구간 사이의 글은 그대로 이어 붙는다. 그래야 내용 안의
+                        // 인라인 코드(`**문서 `x` 하나**`)도 제 자리에서 지켜진다.
+                        steps.append(Step(range: NSRange(location: token.range.location,
+                                                         length: content.location - token.range.location),
+                                          role: .opening))
+                        steps.append(Step(range: NSRange(location: NSMaxRange(content),
+                                                         length: NSMaxRange(token.range) - NSMaxRange(content)),
+                                          role: .closing))
                     } else {
-                        steps.append(.guard_(token.range, .standalone))
+                        steps.append(Step(range: token.range, role: .standalone))
                     }
                 }
             }
@@ -474,44 +699,31 @@ public struct MarkdownTranslationPlan: Equatable {
                 // 인라인 토큰과 겹치면 넘긴다 — 코드 구간 안의 `|`는 칸을 나누지 않는다.
                 let overlaps = tokenRanges.contains { NSIntersectionRange($0, candidate).length > 0 }
                 guard !overlaps else { continue }
-                steps.append(.guard_(candidate, .standalone, separator: true))
+                steps.append(Step(range: candidate, role: .standalone, separator: true))
             }
 
             steps.sort { $0.location < $1.location }
 
             var cursor = range.location
             for step in steps {
-                switch step {
-                case let .guard_(guarded, role, separator):
-                    guard guarded.location >= cursor else { continue }
-                    if guarded.location > cursor {
-                        body += text.substring(with: NSRange(location: cursor,
-                                                             length: guarded.location - cursor))
-                    }
-                    protect(guarded, role: role, separator: separator)
-                    cursor = NSMaxRange(guarded)
-                case let .through(passed):
-                    guard passed.location >= cursor else { continue }
-                    if passed.location > cursor {
-                        body += text.substring(with: NSRange(location: cursor,
-                                                             length: passed.location - cursor))
-                    }
-                    body += text.substring(with: passed)
-                    cursor = NSMaxRange(passed)
+                guard step.location >= cursor else { continue }
+                if step.location > cursor {
+                    appendText(text.substring(with: NSRange(location: cursor, length: step.location - cursor)))
                 }
+                protect(step.range, role: step.role, separator: step.separator)
+                cursor = NSMaxRange(step.range)
             }
             if cursor < end {
-                body += text.substring(with: NSRange(location: cursor, length: end - cursor))
+                appendText(text.substring(with: NSRange(location: cursor, length: end - cursor)))
             }
 
-            // 번역할 글자가 하나도 없으면(자리표와 공백뿐) 번역기를 부르지 않는다.
-            let bare = body.filter { $0 != MarkdownTranslationPlan.open && $0 != MarkdownTranslationPlan.close }
-                .filter { !$0.isNumber }
-            if bare.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            // 번역할 글자가 하나도 없으면(보호 구간·공백·숫자·문장부호뿐) 번역기를 부르지 않는다.
+            let bare = pieces.map { if case let .text(value) = $0 { value } else { "" } }.joined()
+            guard Unit.isTranslatable(bare) else {
                 addLiteral(text.substring(with: range))
                 return
             }
-            segments.append(.unit(Unit(text: body, protected: protected, cellFallback: cellFallback)))
+            segments.append(.unit(Unit(pieces: pieces, protected: protected, cellFallback: cellFallback)))
         }
 
         private mutating func addLiteral(_ value: String) {

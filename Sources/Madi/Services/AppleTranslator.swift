@@ -236,7 +236,7 @@ enum AppleTranslator {
         extras: [String] = [],
         cache: TranslationCache = .shared,
         progress: (@Sendable (Progress) -> Void)? = nil
-    ) async throws -> (text: String, direction: TranslationDirection, extras: [String]) {
+    ) async throws -> (text: String, direction: TranslationDirection, extras: [String], repairs: Repairs) {
         let plan = preflight.plan
         let units = plan.units
         let direction = preflight.direction
@@ -274,11 +274,12 @@ enum AppleTranslator {
         let translatedExtras = Array(perUnit[units.count...])
         perUnit.removeLast(extras.count)
 
-        // 칸 구조를 지키지 못한 표 행은 그 행만 칸마다 다시 번역한다(`keepsStructure`).
-        // 문맥을 잃는 대신 표가 깨지지 않는다.
-        let replacing = try await structureRepairs(plan: plan, translations: perUnit, translate: cached)
+        // 자리표를 잃은 단위와 칸 구조를 지키지 못한 표 행을 다시 번역한다(`repairs`).
+        let repairs = try await self.repairs(plan: plan, translations: perUnit,
+                                             wordSpacing: direction.targetUsesWordSpaces, translate: cached)
 
-        return (try plan.assembled(with: perUnit, replacing: replacing), direction, translatedExtras)
+        return (try plan.assembled(with: perUnit, replacing: repairs.replacing), direction,
+                translatedExtras, repairs)
     }
 
     /// 단위를 조각으로 펼친다. 조각 하나가 번역기 호출 하나이고 진행 보고 한 번이다.
@@ -340,25 +341,98 @@ enum AppleTranslator {
         return perSlot
     }
 
-    /// 칸 구조를 지키지 못한 표 행을 칸마다 다시 번역한 결과(단위 번호 → 복원된 행).
-    /// 번역기를 받아 쓰므로 Apple 번역 없이도 시험할 수 있다.
+    /// 다시 번역한 결과.
+    struct Repairs: Equatable, Sendable {
+        /// 단위 번호 → **이미 복원된** 글.
+        var replacing: [Int: String] = [:]
+        /// 자리표를 잃어 다른 꼴로 다시 번역한 단위 수.
+        var reformed = 0
+        /// 다른 꼴로도 안 돼 글 조각마다 따로 번역한 단위 수(문맥을 잃었다).
+        var split = 0
+        /// 칸마다 다시 번역한 표 행 수.
+        var tableRows = 0
+
+        var isEmpty: Bool { replacing.isEmpty }
+    }
+
+    /// 번역문이 온전하지 않은 단위를 다시 번역한다. 번역기를 받아 쓰므로 Apple 번역 없이도 시험할 수 있다.
+    ///
+    /// - 자리표를 잃었거나 여는 것과 닫는 것의 순서가 뒤집힌 단위(`Unit.isIntact`): **다른 꼴의
+    ///   자리표**로 다시 번역한다 — 잃는 문장이 꼴마다 다르다(실측, `TokenForm`). 그래도 안 되면 자리표
+    ///   없이 글 조각마다 따로 번역한다(`Unit.runTexts`). 그대로 두면 링크 글이 사라지고 `[^1][](url)`
+    ///   같은 조각이 문장 끝에 붙는다.
+    /// - 칸 구조를 지키지 못한 표 행(`keepsStructure`): 그 행만 칸마다 다시 번역한다. 칸도 같은 검사를
+    ///   거친다.
+    static func repairs(
+        plan: MarkdownTranslationPlan,
+        translations: [String],
+        wordSpacing: Bool = true,
+        translate: (String) async throws -> String
+    ) async throws -> Repairs {
+        var result = Repairs()
+        for (index, unit) in plan.units.enumerated() where index < translations.count {
+            let translated = translations[index]
+            if let fallback = unit.cellFallback {
+                guard !(unit.keepsStructure(translated) && unit.isIntact(translated)) else { continue }
+                var cells: [String] = []
+                var cellRepairs: [Int: String] = [:]
+                for (cellIndex, cell) in fallback.units.enumerated() {
+                    let cellText = try await chunked(cell.text, translate: translate)
+                    cells.append(cellText)
+                    if !cell.isIntact(cellText) {
+                        let fixed = try await repaired(cell, wordSpacing: wordSpacing, translate: translate)
+                        cellRepairs[cellIndex] = fixed.text
+                        if fixed.split { result.split += 1 } else { result.reformed += 1 }
+                    }
+                }
+                result.replacing[index] = try fallback.assembled(with: cells, replacing: cellRepairs)
+                result.tableRows += 1
+                continue
+            }
+            guard !unit.isIntact(translated) else { continue }
+            let fixed = try await repaired(unit, wordSpacing: wordSpacing, translate: translate)
+            result.replacing[index] = fixed.text
+            if fixed.split { result.split += 1 } else { result.reformed += 1 }
+        }
+        return result
+    }
+
+    /// 표 행의 칸 구조만 고친 결과(단위 번호 → 복원된 행). `repairs`의 한 부분이다.
     static func structureRepairs(
         plan: MarkdownTranslationPlan,
         translations: [String],
         translate: (String) async throws -> String
     ) async throws -> [Int: String] {
-        var replacing: [Int: String] = [:]
-        for (index, unit) in plan.units.enumerated() where index < translations.count {
-            guard let fallback = unit.cellFallback, !unit.keepsStructure(translations[index]) else {
-                continue
+        try await repairs(plan: plan, translations: translations, translate: translate).replacing
+    }
+
+    /// 자리표를 잃은 단위 하나 — 다른 꼴로 다시, 그래도 안 되면 조각마다.
+    static func repaired(
+        _ unit: MarkdownTranslationPlan.Unit,
+        wordSpacing: Bool,
+        translate: (String) async throws -> String
+    ) async throws -> (text: String, split: Bool) {
+        for form in unit.alternateForms {
+            let translated = try await chunked(unit.text(in: form), translate: translate)
+            if unit.isIntact(translated, form: form) {
+                return (unit.restored(from: translated, form: form), false)
             }
-            var cells: [String] = []
-            for cell in fallback.units {
-                cells.append(try await translate(cell.text))
-            }
-            replacing[index] = try fallback.assembled(with: cells)
         }
-        return replacing
+        var runs: [String] = []
+        for run in unit.runTexts {
+            runs.append(try await chunked(run, translate: translate))
+        }
+        return (unit.reassembled(runs: runs, wordSpacing: wordSpacing), true)
+    }
+
+    /// 긴 글은 조각으로 나눠 번역하고 잇는다(`TranslationChunker`).
+    static func chunked(_ text: String, translate: (String) async throws -> String) async throws -> String {
+        var out = ""
+        for chunk in TranslationChunker.split(text) {
+            try Task.checkCancellation()
+            out += try await translate(chunk)
+        }
+        return out
     }
 
     static func map(_ error: Error, direction: TranslationDirection) -> Error {

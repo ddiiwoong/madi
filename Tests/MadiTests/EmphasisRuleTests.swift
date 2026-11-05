@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 // Core sources are compiled into this bundle directly; no module import needed.
 
@@ -71,5 +72,35 @@ final class EmphasisRuleTests: XCTestCase {
 
     func testEmptyEmphasisIsNotMatched() {
         XCTAssertTrue(emphasised("** 와 __ 는 내용이 없다").isEmpty)
+    }
+
+    // MARK: 강조·링크 안의 인라인 코드
+
+    private func kinds(_ line: String) -> [InlineKind] {
+        let ns = line as NSString
+        return MarkdownSyntax().scanInline(in: ns, range: NSRange(location: 0, length: ns.length)).map(\.kind)
+    }
+
+    func testStrongMayContainInlineCode() {
+        XCTAssertEqual(kinds("**문서 레벨 `NSUndoManager` 하나**에"), [.strong, .code],
+                       "코드가 먼저 자리를 차지해도 강조는 그 바깥에서 산다")
+        XCTAssertEqual(kinds("*기울임 `x` 안*"), [.emphasis, .code])
+        XCTAssertEqual(kinds("~~취소 `x`~~"), [.strikethrough, .code])
+    }
+
+    func testLinkTextMayContainInlineCode() {
+        XCTAssertEqual(kinds("[`설정` 열기](https://example.com)"), [.link(url: "https://example.com"), .code])
+    }
+
+    func testEmphasisMarkersInsideCodeStillDoNotCount() {
+        XCTAssertEqual(kinds("`a **b` c**"), [.code], "표시가 코드 안에 있으면 강조가 아니다")
+    }
+
+    @MainActor
+    func testStrongAroundCodeIsDrawnBold() throws {
+        let storage = NSTextStorage(string: "**문서 `x` 하나**\n")
+        MarkdownStyler().style(storage, caretLine: nil, search: MarkdownStyler.SearchState())
+        let font = try XCTUnwrap(storage.attribute(.font, at: 2, effectiveRange: nil) as? NSFont)
+        XCTAssertTrue(NSFontManager.shared.traits(of: font).contains(.boldFontMask), "전에는 굵게 그려지지 않았다")
     }
 }

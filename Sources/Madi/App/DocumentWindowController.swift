@@ -618,6 +618,7 @@ final class DocumentWindowController: NSWindowController {
             do {
                 let result = try await AppleTranslator.translate(
                     preflight, extras: frontValues.map(\.text), progress: onProgress)
+                Self.logRepairs(result.repairs)
                 let composed = Self.composed(result.text, frontMatter: sourceFrontMatter,
                                              values: frontValues, translations: result.extras)
                 switch destination {
@@ -639,6 +640,19 @@ final class DocumentWindowController: NSWindowController {
                 self.presentTranslationFailure(error)
             }
         }
+    }
+
+    /// 번역기가 자리표를 잃어 다시 번역한 것을 기록에 남긴다. 조각마다 따로 번역한 문장은 문맥을
+    /// 잃어 어색할 수 있다 — 그 사실을 사용자가 알 수 있어야 한다.
+    @available(macOS 26.0, *)
+    static func logRepairs(_ repairs: AppleTranslator.Repairs) {
+        guard !repairs.isEmpty else { return }
+        var parts: [String] = []
+        if repairs.reformed > 0 { parts.append(String(localized: "다른 자리표로 다시 번역 \(repairs.reformed)곳")) }
+        if repairs.split > 0 { parts.append(String(localized: "조각마다 따로 번역 \(repairs.split)곳(문맥 없음 — 어색할 수 있음)")) }
+        if repairs.tableRows > 0 { parts.append(String(localized: "표 행을 칸마다 다시 번역 \(repairs.tableRows)곳")) }
+        AppLog.info(String(localized: "번역기가 링크·강조·각주 표시를 잃은 문장을 다시 번역했습니다"),
+                    detail: parts.joined(separator: " · "))
     }
 
     /// 번역할 언어를 고른다 — 짐작이 틀렸거나 한국어를 다른 언어로 내보낼 때.
