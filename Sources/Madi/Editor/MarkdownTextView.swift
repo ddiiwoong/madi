@@ -58,13 +58,26 @@ public final class MarkdownTextView: DecoratedTextView {
     }
 
     public override func mouseDown(with event: NSEvent) {
+        let stamp = ClickStamp(number: event.eventNumber, time: event.timestamp)
+        if stamp == lastHandledClick { return }
         if event.clickCount == 1, !hasMarkedText(), let clickHandler,
            let index = characterIndex(under: convert(event.locationInWindow, from: nil)),
            clickHandler(index, event.modifierFlags.intersection(.deviceIndependentFlagsMask)) {
+            lastHandledClick = stamp
             return
         }
         super.mouseDown(with: event)
     }
+
+    /// 마지막으로 먹은 클릭. **같은 누르기가 두 번 오면** 두 번째는 버린다 — 뒤에 있던 창을 누르는
+    /// 길에서 같은 이벤트(번호·시각이 같다)가 `mouseDown`에 두 번 닿는 것을 실측했다. 체크박스는
+    /// 누를 때마다 뒤집히므로, 두 번 받으면 아무 일도 없었던 것처럼 보이고 문서만 '편집됨'이 된다.
+    private struct ClickStamp: Equatable {
+        let number: Int
+        let time: TimeInterval
+    }
+
+    private var lastHandledClick: ClickStamp?
 
     /// 점이 **글자 위에** 있을 때 그 글자의 위치. 줄 끝 너머의 빈 자리나 숨은 마커(폭 0)는
     /// 아무 글자도 아니다 — `characterIndexForInsertion`은 가장 가까운 글자를 돌려주므로

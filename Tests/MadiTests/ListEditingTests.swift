@@ -386,6 +386,36 @@ final class EditorCommandWiringTests: XCTestCase {
         XCTAssertEqual(view.markdown, "- [ ] 할 일\n\n문단")
     }
 
+    /// 같은 누르기(번호·시각이 같은 이벤트)가 두 번 오면 한 번만 뒤집는다. 뒤에 있던 창을 누를 때
+    /// 실제로 두 번 왔고, 뒤집기가 두 번이라 아무 일도 없는 것처럼 보였다(문서만 '편집됨').
+    func testTheSameMouseDownDeliveredTwiceTogglesOnce() throws {
+        let view = editor("- [ ] 할 일")
+        let tv = view.textView
+        tv.window?.displayIfNeeded()
+        let layout = try XCTUnwrap(tv.layoutManager)
+        let container = try XCTUnwrap(tv.textContainer)
+        let box = (view.markdown as NSString).range(of: "[ ]")
+        let glyphs = layout.glyphRange(forCharacterRange: NSRange(location: box.location + 1, length: 1),
+                                       actualCharacterRange: nil)
+        let rect = layout.boundingRect(forGlyphRange: glyphs, in: container)
+        let local = NSPoint(x: rect.midX + tv.textContainerOrigin.x, y: rect.midY + tv.textContainerOrigin.y)
+        func press(number: Int, time: TimeInterval) throws -> NSEvent {
+            try XCTUnwrap(NSEvent.mouseEvent(with: .leftMouseDown, location: tv.convert(local, to: nil),
+                                             modifierFlags: [], timestamp: time,
+                                             windowNumber: tv.window?.windowNumber ?? 0, context: nil,
+                                             eventNumber: number, clickCount: 1, pressure: 1))
+        }
+        let first = try press(number: 7, time: 100)
+        step(view) {
+            tv.mouseDown(with: first)
+            tv.mouseDown(with: first)
+        }
+        XCTAssertEqual(view.markdown, "- [x] 할 일", "같은 이벤트는 한 번")
+        let second = try press(number: 8, time: 101)
+        step(view) { tv.mouseDown(with: second) }
+        XCTAssertEqual(view.markdown, "- [ ] 할 일", "다음 누르기는 다시 뒤집는다")
+    }
+
     func testCheckboxWithAModifierIsAPlainClick() {
         let view = editor("- [ ] 할 일")
         let box = (view.markdown as NSString).range(of: "[ ]")
