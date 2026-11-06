@@ -79,7 +79,23 @@ public struct MarkdownTheme {
     /// 거의 보이지 않았다. 지금은 약 3.9 : 1이고 본문(14 : 1)과는 여전히 뚜렷이 다르다.
     /// `MarkdownThemeContrastTests`가 3 : 1 아래로 내려가지 않게 지킨다.
     public var dim: NSColor { .secondaryLabelColor }
-    public var quote: NSColor { .secondaryLabelColor }
+    /// 인용 글 색. 본문보다 물러나되 **긴 글로 읽혀야** 한다.
+    ///
+    /// 전에는 마커와 같은 `.secondaryLabelColor`였다. 알파 0.5의 반투명 색이라 흰 바탕에서 회색
+    /// 128 정도로 보이고, 몇 줄짜리 인용(책의 머리말, 주의 글)을 읽기에는 흐렸다. 막대가 인용임을
+    /// 알려 주므로 글은 그보다 진해도 된다. 대비는 `MarkdownThemeContrastTests`가 지킨다(4.5 : 1 이상).
+    public var quote: NSColor { Self.dynamic(light: 0x55_59_5E, dark: 0xB6_BA_BF) }
+    /// 인용 막대 색. 글자가 아니라 3pt 막대라 옅어도 보인다(GitHub의 인용 막대와 같은 쪽).
+    public var quoteBar: NSColor { Self.dynamic(light: 0xC9_CF_D6, dark: 0x4D_54_5C) }
+
+    /// 막대 하나의 색 — 알림 상자의 바깥 막대는 그 종류의 색이다.
+    public func quoteBarColor(for alert: GithubAlert?) -> NSColor {
+        alert.map(alertColor(for:)) ?? quoteBar
+    }
+
+    /// 표를 격자로 그릴 때의 선과 머리 행 바탕.
+    public var tableLine: NSColor { Self.dynamic(light: 0xD5_D9_DE, dark: 0x45_4A_51) }
+    public var tableHeaderBackground: NSColor { Self.dynamic(light: 0xF3_F4_F6, dark: 0x2B_2E_33) }
     public var link: NSColor { .linkColor }
     public var codeText: NSColor { .labelColor }
     public var codeBackground: NSColor { .quaternarySystemFill }

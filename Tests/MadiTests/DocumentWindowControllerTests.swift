@@ -226,6 +226,28 @@ final class DocumentWindowControllerTests: XCTestCase {
         XCTAssertEqual(hiddenPlus?.allowsKeyEquivalentWhenHidden, true)
     }
 
+    // MARK: 문서 메타데이터 카드
+
+    /// 카드는 편집기의 텍스트 뷰 안에 있어 글과 함께 굴러간다. 글은 카드 아래에서 시작하고, 저장하는
+    /// 글은 그대로다.
+    func testFrontMatterCardScrollsWithTheText() throws {
+        let source = "---\ntitle: 제목\ntags: [a, b]\n---\n# 본문 제목\n\n본문\n"
+        let (document, controller) = open(source)
+        let editor = controller.editor
+        let card = try XCTUnwrap(editor.textView.subviews.compactMap { $0 as? FrontMatterCardView }.first,
+                                 "카드가 텍스트 뷰 안에 없다")
+        XCTAssertFalse(card.isHidden)
+        XCTAssertGreaterThan(card.frame.height, 40)
+        XCTAssertGreaterThan(editor.textView.textContainerOrigin.y, card.frame.maxY, "글이 카드 아래에서 시작한다")
+        XCTAssertEqual(editor.markdown, "# 본문 제목\n\n본문\n", "편집기에는 본문만 있다")
+        XCTAssertEqual(document.markdown, source)
+
+        // front matter가 없는 글을 실으면 카드가 숨고 자리도 사라진다.
+        controller.load(markdown: "본문만\n")
+        XCTAssertTrue(card.isHidden)
+        XCTAssertEqual(editor.textView.topAccessoryHeight, 0)
+    }
+
     // MARK: 글꼴
 
     /// 보기 ▸ 글꼴…은 글자 크기 명령 바로 앞에 있다.

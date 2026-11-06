@@ -113,22 +113,17 @@ final class DocumentWindowController: NSWindowController {
         sidebarTabs.font = .systemFont(ofSize: 11)
         sidebarTabs.delegate = self
 
-        // The card sits above the editor and is the document's header, not part
-        // of the text. A vertical NSStackView does NOT stretch a child that has
-        // its own intrinsic width — the card ended up hugging its content on
-        // the right — so both children get explicit width constraints.
-        let documentArea = NSStackView(views: [frontMatterCard, editor])
+        // 카드는 문서의 머리다 — 편집기 **안의** 맨 위에 두어 글과 함께 굴러간다(`headerView`).
+        // 전에는 편집기 위에 따로 두어 굴려도 남았고, 항목이 많으면 읽을 자리를 먹었다.
+        let documentArea = NSStackView(views: [editor])
         documentArea.orientation = .vertical
         documentArea.alignment = .leading
         documentArea.spacing = 0
-        documentArea.detachesHiddenViews = true
-        documentArea.edgeInsets = NSEdgeInsets(top: 12, left: 0, bottom: 0, right: 0)
         frontMatterCard.isHidden = true
-        frontMatterCard.onToggle = { [weak documentArea] in documentArea?.needsLayout = true }
+        editor.headerView = frontMatterCard
+        frontMatterCard.onToggle = { [weak editor] in editor?.headerDidChange() }
 
         NSLayoutConstraint.activate([
-            frontMatterCard.leadingAnchor.constraint(equalTo: documentArea.leadingAnchor, constant: 24),
-            frontMatterCard.trailingAnchor.constraint(equalTo: documentArea.trailingAnchor, constant: -24),
             editor.leadingAnchor.constraint(equalTo: documentArea.leadingAnchor),
             editor.trailingAnchor.constraint(equalTo: documentArea.trailingAnchor),
         ])
@@ -254,6 +249,7 @@ final class DocumentWindowController: NSWindowController {
         let parsed = FrontMatter.parse(markdown)
         frontMatter = parsed
         frontMatterCard.update(with: parsed)
+        editor.headerDidChange()
         // 셋이 각자 문서 전체를 칠한다. 묶어서 끝에서 한 번만 칠한다(22만 자에서 패스 하나가
         // 0.17초다). 위치와 설정이 글보다 먼저 정해져 있어야 그 한 번이 맞게 칠한다.
         editor.batchUpdates {

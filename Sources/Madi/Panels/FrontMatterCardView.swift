@@ -75,6 +75,12 @@ final class FrontMatterCardView: NSView {
         applyColors()
     }
 
+    /// 카드는 텍스트 뷰 안에 놓인다(`MarkdownEditorView.headerView`). 그대로 두면 텍스트 뷰의 글자
+    /// 커서(I자)가 카드 위에도 나와 글을 칠 수 있는 자리처럼 보인다.
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .arrow)
+    }
+
     private func applyColors() {
         layer?.backgroundColor = NSColor.quaternarySystemFill.cgColor
         layer?.borderColor = NSColor.separatorColor.cgColor

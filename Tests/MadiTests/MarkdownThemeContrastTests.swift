@@ -145,6 +145,28 @@ final class MarkdownThemeContrastTests: XCTestCase {
         }
     }
 
+    /// 인용 글은 몇 줄씩 읽는 글이다 — 글자 기준 4.5 : 1을 쓴다. 전에 쓰던 `.secondaryLabelColor`는
+    /// 반투명이라 흐렸다. 인용이 본문보다 물러나 보이는지도 본다(본문과 같으면 막대만 남는다).
+    @MainActor
+    func testQuoteTextIsReadableAndStillRecedes() {
+        for name in [NSAppearance.Name.aqua, .darkAqua] {
+            guard let appearance = NSAppearance(named: name) else { continue }
+            appearance.performAsCurrentDrawingAppearance {
+                let theme = MarkdownTheme()
+                let page = Self.composite(.textBackgroundColor, over: name == .aqua ? .white : .black)
+                let quote = Self.contrast(theme.quote, page)
+                let body = Self.contrast(Self.composite(theme.text, over: page), page)
+                XCTAssertGreaterThanOrEqual(quote, minimumTextContrast,
+                                            "\(name.rawValue)의 인용 글 대비 \(String(format: "%.2f", quote)) : 1")
+                XCTAssertLessThan(quote, body, "\(name.rawValue)에서 인용 글이 본문보다 진하다")
+                XCTAssertEqual(theme.quote.usingColorSpace(.deviceRGB)?.alphaComponent, 1, "불투명해야 한다")
+                // 막대는 글자가 아니지만 바탕과 갈려야 보인다.
+                let bar = Self.contrast(theme.quoteBar, page)
+                XCTAssertGreaterThan(bar, 1.3, "\(name.rawValue)의 인용 막대가 바탕에 묻힌다")
+            }
+        }
+    }
+
     // MARK: 재는 법
 
     /// 알파가 있는 색을 바탕색 위에 올린 결과.

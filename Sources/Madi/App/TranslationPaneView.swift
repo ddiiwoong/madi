@@ -75,16 +75,18 @@ final class TranslationPaneView: NSView, MarkdownEditorDelegate {
         header.edgeInsets = NSEdgeInsets(top: 8, left: 16, bottom: 6, right: 10)
 
         band.isHidden = true
+        // 원문 창과 같다 — 카드는 편집기 안의 머리라 글과 함께 굴러간다.
         frontMatterCard.isHidden = true
+        editor.headerView = frontMatterCard
+        frontMatterCard.onToggle = { [weak editor] in editor?.headerDidChange() }
 
-        let column = NSStackView(views: [header, band, frontMatterCard, editor])
+        let column = NSStackView(views: [header, band, editor])
         column.orientation = .vertical
         column.alignment = .leading
         column.spacing = 4
         column.detachesHiddenViews = true
         column.translatesAutoresizingMaskIntoConstraints = false
         addSubview(column)
-        frontMatterCard.onToggle = { [weak column] in column?.needsLayout = true }
         NSLayoutConstraint.activate([
             column.leadingAnchor.constraint(equalTo: leadingAnchor),
             column.trailingAnchor.constraint(equalTo: trailingAnchor),
@@ -94,8 +96,6 @@ final class TranslationPaneView: NSView, MarkdownEditorDelegate {
             header.trailingAnchor.constraint(equalTo: column.trailingAnchor),
             band.leadingAnchor.constraint(equalTo: column.leadingAnchor, constant: 16),
             band.trailingAnchor.constraint(equalTo: column.trailingAnchor, constant: -16),
-            frontMatterCard.leadingAnchor.constraint(equalTo: column.leadingAnchor, constant: 16),
-            frontMatterCard.trailingAnchor.constraint(equalTo: column.trailingAnchor, constant: -16),
             editor.leadingAnchor.constraint(equalTo: column.leadingAnchor),
             editor.trailingAnchor.constraint(equalTo: column.trailingAnchor),
         ])
@@ -109,6 +109,7 @@ final class TranslationPaneView: NSView, MarkdownEditorDelegate {
         let parsed = FrontMatter.parse(markdown)
         frontMatter = parsed
         frontMatterCard.update(with: parsed)
+        editor.headerDidChange()
         editor.markdown = parsed?.body ?? markdown
         document.markdown = markdown
         refreshStatus()

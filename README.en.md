@@ -5,7 +5,7 @@
 A native macOS Markdown editor. **You edit the screen you are reading** — there is no
 separate source pane and preview pane; the rendered document is the thing you edit.
 
-![One Madi window. Only the second line, where the caret is, shows its ** and backtick markers, dimmed; every other line is drawn as a document — a heading, a checklist, italic and strikethrough, a quote, a table with aligned columns, and a syntax-highlighted Swift code block](docs/images/live-preview.png)
+![One Madi window. Only the second line, where the caret is, shows its ** and backtick markers, dimmed; every other line is drawn as a document — a heading, a checklist drawn as boxes, italic and strikethrough, a quote with a bar, a table drawn as a grid, and a syntax-highlighted Swift code block](docs/images/live-preview.png)
 
 Only the line with the caret (the second line above) shows markers such as `**` and `` ` ``,
 dimmed; every other line is drawn like a document. Press `⌘E` and the same document appears as

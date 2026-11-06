@@ -45,10 +45,55 @@ public class DecoratedTextView: NSTextView {
         }
     }
 
+    /// 인용 막대. `MarkdownStyler`가 계산해 넘긴다(`>` 글자는 캐럿이 없는 줄에서 숨는다).
+    public var quoteBars: [MarkdownStyler.QuoteBar] = [] {
+        didSet {
+            guard quoteBars != oldValue else { return }
+            needsDisplay = true
+        }
+    }
+
+    /// 막대의 색. 알림 상자(`> [!NOTE]`)의 바깥 막대는 그 종류의 색이다.
+    public var quoteBarColor: (GithubAlert?) -> NSColor = { _ in .separatorColor }
+
+    // MARK: 글 위의 자리
+
+    /// 글 위에 비워 둘 높이 — 문서 메타데이터 카드가 그 자리에 놓인다(`MarkdownEditorView.headerView`).
+    ///
+    /// 카드를 편집기 **밖** 위에 두면 굴려도 그 자리에 남아 읽을 자리를 먹는다(실측: 항목 열두 개인
+    /// 카드가 752pt 창의 310pt). 그래서 카드를 텍스트 뷰 안에 두고 글을 이만큼 내려, 카드가 글과 함께
+    /// 굴러가게 한다.
+    ///
+    /// 위아래 여백(`textContainerInset.height`)에 반씩 더하고 글의 시작을 반만큼 더 내린다 — 텍스트
+    /// 뷰의 높이는 `글 + 여백 × 2`라, 이렇게 해야 높이가 카드만큼 늘고 아래 여백은 그대로다.
+    public private(set) var topAccessoryHeight: CGFloat = 0
+
+    /// 여백을 정한다. `base`는 카드가 없을 때의 여백이다.
+    public func setInsets(_ base: NSSize, topAccessory: CGFloat) {
+        let inset = NSSize(width: base.width, height: base.height + topAccessory / 2)
+        guard inset != textContainerInset || topAccessory != topAccessoryHeight else { return }
+        topAccessoryHeight = topAccessory
+        textContainerInset = inset
+        invalidateTextContainerOrigin()
+        needsDisplay = true
+    }
+
+    /// 카드가 없을 때의 여백 — `setInsets`에 넘긴 `base`.
+    public var baseInsets: NSSize {
+        NSSize(width: textContainerInset.width, height: textContainerInset.height - topAccessoryHeight / 2)
+    }
+
+    public override var textContainerOrigin: NSPoint {
+        var origin = super.textContainerOrigin
+        origin.y += topAccessoryHeight / 2
+        return origin
+    }
+
     public override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
         guard let visible = visibleCharacterRange(in: rect) else { return }
         drawCodeBlocks(in: rect, visible: visible)
+        drawQuoteBars(in: rect, visible: visible)
         drawTaskBoxes(in: rect, visible: visible)
         drawImages(in: rect, visible: visible)
     }
@@ -118,6 +163,40 @@ public class DecoratedTextView: NSTextView {
             NSBezierPath(roundedRect: padded,
                          xRadius: codeBlockCornerRadius,
                          yRadius: codeBlockCornerRadius).fill()
+        }
+    }
+
+    // MARK: 인용 막대
+
+    /// 막대 하나의 자리 — 걸친 줄들의 위아래, 글 칸 왼쪽에서 `level`만큼 들어간 자리.
+    ///
+    /// 위아래는 줄 조각이 아니라 **글자가 쓰인 자리**(used rect)로 잰다. 줄 조각에는 그 줄 뒤의
+    /// 문단 간격이 들어 있어, 덩이의 끝 막대가 글 아래로 늘어진다.
+    static func quoteBarFrame(level: Int, top: CGFloat, bottom: CGFloat, textLeft: CGFloat) -> NSRect {
+        let x = textLeft + MarkdownStyler.quoteIndentStep * CGFloat(level - 1) + MarkdownStyler.quoteBarInset
+        return NSRect(x: x.rounded(), y: top.rounded(), width: MarkdownStyler.quoteBarWidth,
+                      height: max(1, (bottom - top).rounded()))
+    }
+
+    private func drawQuoteBars(in rect: NSRect, visible: NSRange) {
+        guard !quoteBars.isEmpty, let layoutManager, let textContainer,
+              let length = textStorage?.length else { return }
+        let origin = textContainerOrigin
+        let textLeft = origin.x + textContainer.lineFragmentPadding
+        // 범위로만 거른다(이분 탐색을 쓰지 않는다). 겹친 인용에서는 바깥 막대가 안쪽 막대보다 먼저
+        // 시작해 늦게 끝나므로 끝 위치가 차례대로 늘지 않는다. 막대는 문서에 많아야 수백 개다.
+        for bar in quoteBars
+        where NSIntersectionRange(bar.range, visible).length > 0 || NSLocationInRange(visible.location, bar.range) {
+            guard bar.range.length > 0, NSMaxRange(bar.range) <= length else { continue }
+            let glyphs = layoutManager.glyphRange(forCharacterRange: bar.range, actualCharacterRange: nil)
+            guard glyphs.length > 0 else { continue }
+            let first = layoutManager.lineFragmentUsedRect(forGlyphAt: glyphs.location, effectiveRange: nil)
+            let last = layoutManager.lineFragmentUsedRect(forGlyphAt: NSMaxRange(glyphs) - 1, effectiveRange: nil)
+            let frame = Self.quoteBarFrame(level: bar.level, top: first.minY + origin.y,
+                                           bottom: last.maxY + origin.y, textLeft: textLeft)
+            guard frame.intersects(rect) else { continue }
+            quoteBarColor(bar.alert).setFill()
+            NSBezierPath(roundedRect: frame, xRadius: frame.width / 2, yRadius: frame.width / 2).fill()
         }
     }
 

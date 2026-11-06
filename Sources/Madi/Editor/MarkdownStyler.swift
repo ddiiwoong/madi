@@ -89,6 +89,45 @@ public final class MarkdownStyler {
     public var drawsTaskBoxes = false
     /// 이번 패스에서 상자로 그릴 체크박스(위치 순).
     public private(set) var taskBoxes: [TaskBox] = []
+
+    /// 캐럿이 없는 표를 **격자로 그릴지**(`TableGrid`). 기본 편집기만 켠다 — 블록 편집기는 그림을
+    /// 그리는 쪽을 잇지 않았고, 표를 따로 다룬다.
+    public var drawsTables = false
+    /// 이번 패스에서 격자로 그린 표의 수. 테스트가 쓴다.
+    public private(set) var drawnTableCount = 0
+    /// 격자로 그려 원문을 접은 표들. 찾기 표시를 거기에 칠하지 않는다 — 숨긴 글자의 바탕은 격자 밖에
+    /// 엉뚱하게 남는다. 지금 찾은 곳이 든 표는 원문으로 펼쳐지므로 보인다.
+    private var foldedTableRanges: [NSRange] = []
+    /// 지은 격자. 표의 원문과 글 넓이·글꼴이 같으면 다시 재지 않는다 — 글자 하나를 칠 때마다 문서의
+    /// 모든 표를 다시 재면 표가 많은 문서에서 타이핑이 느려진다.
+    private var tableGridCache: [String: (grid: TableGrid, image: NSImage)] = [:]
+
+    /// 인용 막대 하나 — 이어진 인용 줄들의 왼쪽에 세로로 긋는다.
+    ///
+    /// 전에는 줄마다 `>`가 흐린 글자로 남아 막대 노릇을 했다. 줄마다 따로 찍힌 `>`는 이어진 선으로
+    /// 읽히지 않고, 빈 인용 줄에는 `>` 하나만 덩그러니 남았다. 이제 `>`는 다른 마커처럼 캐럿이 없는
+    /// 줄에서 숨고, 그 자리에 덩이 하나에 막대 하나를 그린다(`DecoratedTextView`).
+    public struct QuoteBar: Equatable {
+        /// 걸친 줄들 — 첫 줄의 처음부터 끝 줄의 끝까지(줄바꿈 제외).
+        public let range: NSRange
+        /// 몇 겹째인가. 1이 가장 바깥이다(`>>`의 안쪽 막대는 2).
+        public let level: Int
+        /// 알림 상자(`> [!NOTE]`)면 그 종류. 바깥 막대만 갖는다.
+        public let alert: GithubAlert?
+    }
+
+    /// 이번 패스의 인용 막대(위치 순, 같은 자리에서는 바깥 막대가 먼저).
+    public private(set) var quoteBars: [QuoteBar] = []
+
+    /// 인용 한 겹의 들여쓰기, 막대가 글 칸 왼쪽에서 들어간 자리, 막대 굵기.
+    static let quoteIndentStep: CGFloat = 16
+    static let quoteBarInset: CGFloat = 2
+    static let quoteBarWidth: CGFloat = 3
+
+    /// `depth`겹 인용 줄의 글이 시작하는 자리. 한 겹이면 18pt(전과 같다).
+    static func quoteIndent(depth: Int) -> CGFloat {
+        quoteIndentStep * CGFloat(max(1, depth)) + quoteBarInset
+    }
     /// 그림을 줄일 때 쓰는 글 넓이.
     public var contentWidth: Double = 700
 
@@ -126,7 +165,8 @@ public final class MarkdownStyler {
 
         // 편집이 표에 닿으면 **표 전체**를 다시 칠한다. 한 칸을 넓히면 그 열의 너비가
         // 바뀌므로 다른 행의 글자 간격이 낡는다. 그 줄만 칠하면 표가 어긋난 채 남는다.
-        if alignsTables, writeRange.length != full.length {
+        // 격자로 그리는 표도 그렇다 — 캐럿이 표의 한 행으로 들어와도 바뀌는 것은 표 전체다.
+        if alignsTables || drawsTables, writeRange.length != full.length {
             writeRange = extendedOverTables(writeRange, in: text, limit: full, lines: lines)
         }
         // 다이어그램·수식 블록도 **통째로** 칠한다. 블록은 캐럿이 안에 있으면 원문, 밖에 있으면
@@ -146,6 +186,8 @@ public final class MarkdownStyler {
             codeBlockRanges = []
             imagePlacements = []
             taskBoxes = []
+            quoteBars = []
+            drawnTableCount = 0
             let style = NSMutableParagraphStyle()
             style.lineSpacing = theme.lineSpacing * 0.5
             storage.setAttributes([
@@ -185,10 +227,18 @@ public final class MarkdownStyler {
         // `> [!NOTE]`로 시작하는 인용 덩이는 색이 있는 안내 상자다. 줄 하나만 보고는
         // 알 수 없어서(덩이의 첫 줄이 종류를 말한다) 미리 한 번 훑는다.
         let alerts = GithubAlert.map(lines: lines, in: text)
+        quoteBars = Self.quoteBars(in: lines, alerts: alerts)
         for (index, line) in lines.enumerated() {
             guard line.range.length == 0 || NSIntersectionRange(line.range, writeRange).length > 0
                     || NSLocationInRange(line.range.location, writeRange) else { continue }
-            apply(line, in: storage, text: text, caretLine: caretLine, alert: alerts[index])
+            let quoteContinues: Bool
+            if case .quote = line.kind, index + 1 < lines.count, case .quote = lines[index + 1].kind {
+                quoteContinues = true
+            } else {
+                quoteContinues = false
+            }
+            apply(line, in: storage, text: text, caretLine: caretLine, alert: alerts[index],
+                  quoteContinues: quoteContinues)
         }
 
         placeImages(lines, in: storage, text: text, caretLine: caretLine, writeRange: writeRange)
@@ -201,6 +251,14 @@ public final class MarkdownStyler {
         if alignsTables {
             alignTables(lines, in: storage, text: text, writeRange: writeRange)
         }
+        // 맞춘 뒤에 격자로 바꾼다 — 캐럿이 든 표는 위에서 맞춘 원문으로 남는다.
+        if drawsTables {
+            placeTables(lines, in: storage, text: text, caretLine: caretLine, search: search,
+                        writeRange: writeRange)
+        } else {
+            drawnTableCount = 0
+            foldedTableRanges = []
+        }
         // 마지막이다 — 블록의 줄에 앞의 패스가 준 속성을 통째로 덮어쓴다.
         if !renderedBlocks.isEmpty {
             placeRenderedBlocks(lines, in: storage, text: text, caretLine: caretLine,
@@ -208,7 +266,8 @@ public final class MarkdownStyler {
         }
 
         for (index, range) in search.ranges.enumerated()
-        where NSMaxRange(range) <= text.length && NSIntersectionRange(range, writeRange).length > 0 {
+        where NSMaxRange(range) <= text.length && NSIntersectionRange(range, writeRange).length > 0
+            && !foldedTableRanges.contains(where: { NSIntersectionRange($0, range).length > 0 }) {
             let isCurrent = index == search.currentIndex
             storage.addAttribute(.backgroundColor,
                                  value: isCurrent ? theme.currentSearchHighlight : theme.searchHighlight,
@@ -291,7 +350,11 @@ public final class MarkdownStyler {
     /// 캐럿이 있는 줄도 원문을 보인다 — 이 편집기의 일관된 성질이다.
     private func placeImages(_ lines: [LineToken], in storage: NSTextStorage,
                              text: NSString, caretLine: Int?, writeRange: NSRange) {
-        guard let imageStore else { return }
+        // 그림을 읽을 곳이 없어도 목록은 비운다 — 뒤의 패스(표 격자)가 이 목록에 더한다.
+        guard let imageStore else {
+            imagePlacements = []
+            return
+        }
         var placements: [ImagePlacement] = []
 
         // 자리 목록은 **문서 전체**로 다시 만든다. 쓰기(숨김·줄 높이)만 `writeRange`로 좁힌다.
@@ -636,13 +699,172 @@ public final class MarkdownStyler {
         storage.addAttribute(.kern, value: amount, range: range)
     }
 
+    // MARK: 표를 격자로
+
+    /// 캐럿이 없는 표를 격자 그림으로 바꾼다 — **문서를 고치지 않고**(`placeRenderedBlocks`와 같은 길).
+    ///
+    /// 머리 행이 격자의 높이를 갖고 나머지 행은 높이 0으로 접힌다. 글자는 모두 숨는다. 캐럿이 표 안에
+    /// 있거나 지금 찾은 곳이 표 안이면 원문으로 둔다 — 고치려면, 찾은 글자를 보려면 원문이 보여야 한다.
+    /// 자리 목록은 문서 전체로 만들고 속성 쓰기만 `writeRange`로 좁힌다(`placeImages`와 같은 이유).
+    private func placeTables(_ lines: [LineToken], in storage: NSTextStorage, text: NSString,
+                             caretLine: Int?, search: SearchState, writeRange: NSRange) {
+        let currentMatch = search.currentIndex.flatMap { search.ranges.indices.contains($0) ? search.ranges[$0] : nil }
+        var placements = imagePlacements
+        var drawn = 0
+        var used: Set<String> = []
+        foldedTableRanges = []
+
+        for table in MarkdownTable.blocks(in: text, lines: lines) {
+            guard table.columnCount > 0, let first = table.rows.first else { continue }
+            let block = tableRange(table)
+            let isOpen = caretLine.map { line in table.rows.contains { $0.lineNumber == line } } == true
+                || currentMatch.map { NSIntersectionRange($0, block).length > 0 || NSLocationInRange($0.location, block) } == true
+            guard !isOpen else { continue }
+
+            let key = tableCacheKey(text.substring(with: block))
+            used.insert(key)
+            let entry: (grid: TableGrid, image: NSImage)
+            if let cached = tableGridCache[key] {
+                entry = cached
+            } else {
+                let grid = tableGrid(for: table, text: text)
+                entry = (grid, grid.image(line: theme.tableLine, headerBackground: theme.tableHeaderBackground))
+                tableGridCache[key] = entry
+            }
+            guard entry.grid.size.height > 0 else { continue }
+            drawn += 1
+            foldedTableRanges.append(block)
+            placements.append(ImagePlacement(lineRange: first.range, size: entry.grid.size, image: entry.image))
+
+            let writes = NSIntersectionRange(block, writeRange).length > 0 || NSLocationInRange(block.location, writeRange)
+            guard writes else { continue }
+            for row in table.rows {
+                if row.range.length > 0 {
+                    hide(row.range, in: storage)
+                    // 맞추기가 준 간격도 걷는다 — 숨긴 글자에 남으면 접힌 줄이 그만큼 넓어질 수 있다.
+                    // 밑줄·배경도 걷는다. 폭 0인 글자에도 밑줄은 그려진다(실측: 칸의 링크 밑줄이 표 아래에
+                    // 파란 점으로 남았다).
+                    for key in [NSAttributedString.Key.kern, .underlineStyle, .strikethroughStyle, .backgroundColor] {
+                        storage.removeAttribute(key, range: row.range)
+                    }
+                }
+                // 줄바꿈까지 덮는다. 줄바꿈은 숨기지 않는다 — 숨기면 줄이 끊기지 않아 다음 행이 붙는다.
+                let paragraph = text.lineRange(for: NSRange(location: row.range.location, length: 0))
+                let style = NSMutableParagraphStyle()
+                if row.lineNumber == first.lineNumber {
+                    style.paragraphSpacing = theme.paragraphSpacing
+                    style.minimumLineHeight = entry.grid.size.height + 2
+                    style.maximumLineHeight = entry.grid.size.height + 2
+                } else {
+                    // 접는다. 0은 "제한 없음"이라 아주 작은 값을 준다.
+                    style.minimumLineHeight = 0
+                    style.maximumLineHeight = 0.001
+                }
+                storage.addAttribute(.paragraphStyle, value: style, range: paragraph)
+            }
+        }
+        // 지금 문서에 없는 표의 격자는 버린다 — 고칠 때마다 옛 꼴이 쌓인다.
+        tableGridCache = tableGridCache.filter { used.contains($0.key) }
+        drawnTableCount = drawn
+        imagePlacements = placements.sorted { $0.lineRange.location < $1.lineRange.location }
+    }
+
+    /// 격자를 다시 쓸 수 있는지 가리는 열쇠 — 원문, 글 넓이, 글꼴, 줄 간격.
+    private func tableCacheKey(_ source: String) -> String {
+        "\(contentWidth)|\(theme.bodyPointSize)|\(theme.lineSpacingScale)|\(theme.bodyFontFamily ?? "")|"
+            + "\(theme.codeFontFamily ?? "")|\(appliesSyntheticSlant)\n" + source
+    }
+
+    /// 표 하나의 격자. 구분 행은 빼고, 칸의 인라인 마크업은 본문처럼 그린다(마커는 뺀다).
+    func tableGrid(for table: MarkdownTable, text: NSString) -> TableGrid {
+        var rows: [TableGrid.Row] = []
+        for row in table.rows where row.kind != .delimiter {
+            let isHeader = row.kind == .header
+            let cells = (0 ..< table.columnCount).map { column -> NSAttributedString in
+                guard column < row.cells.count, row.cells[column].length > 0 else { return NSAttributedString() }
+                return cellText(text.substring(with: row.cells[column]), header: isHeader,
+                                alignment: table.alignment(forColumn: column))
+            }
+            rows.append(TableGrid.Row(cells: cells, isHeader: isHeader))
+        }
+        let font = theme.bodyFont
+        let lineHeight = ceil(font.ascender - font.descender + font.leading)
+        return TableGrid(rows: rows, columnCount: table.columnCount, lineHeight: lineHeight,
+                         maxWidth: CGFloat(contentWidth), minimumColumnWidth: theme.bodyPointSize * 4)
+    }
+
+    /// 칸 하나의 글. 칸 밖과 같은 인라인 칠하기(`styleInline`)를 거친 뒤 숨긴 마커를 뺀다.
+    private func cellText(_ raw: String, header: Bool, alignment: MarkdownTable.Alignment) -> NSAttributedString {
+        // `\|`는 칸을 나누지 않는 막대 글자다(`MarkdownTable.parseRow`) — 그려진 칸에는 막대로 보인다.
+        let source = raw.replacingOccurrences(of: "\\|", with: "|") as NSString
+        let style = NSMutableParagraphStyle()
+        style.lineSpacing = theme.lineSpacing * 0.5
+        switch alignment {
+        case .center: style.alignment = .center
+        case .right: style.alignment = .right
+        case .left, .none: style.alignment = .natural
+        }
+        let cell = NSTextStorage(string: source as String, attributes: [
+            .font: header ? theme.semiboldBodyFont : theme.bodyFont,
+            .foregroundColor: theme.text,
+            .paragraphStyle: style,
+        ])
+        styleInline(in: cell, text: source, content: NSRange(location: 0, length: source.length), onCaretLine: false)
+        let visible = NSMutableAttributedString()
+        cell.enumerateAttribute(.mdHiddenMarker, in: NSRange(location: 0, length: cell.length)) { value, range, _ in
+            guard value == nil else { return }
+            visible.append(cell.attributedSubstring(from: range))
+        }
+        return visible
+    }
+
     // MARK: Blocks
 
+    /// 이어진 인용 줄들에 겹마다 막대 하나. 줄 판정만 보므로 문서 전체를 훑어도 싸다.
+    static func quoteBars(in lines: [LineToken], alerts: [Int: GithubAlert]) -> [QuoteBar] {
+        var bars: [QuoteBar] = []
+        // 겹 → (첫 줄 시작, 끝 줄 끝, 알림)
+        var open: [Int: (start: Int, end: Int, alert: GithubAlert?)] = [:]
+
+        func close(deeperThan depth: Int) {
+            for level in open.keys.sorted() where level > depth {
+                if let run = open.removeValue(forKey: level) {
+                    bars.append(QuoteBar(range: NSRange(location: run.start, length: run.end - run.start),
+                                         level: level, alert: run.alert))
+                }
+            }
+        }
+
+        for (index, line) in lines.enumerated() {
+            guard case let .quote(depth) = line.kind, depth > 0 else {
+                close(deeperThan: 0)
+                continue
+            }
+            close(deeperThan: depth)
+            for level in 1 ... depth {
+                if var run = open[level] {
+                    run.end = NSMaxRange(line.range)
+                    open[level] = run
+                } else {
+                    open[level] = (line.range.location, NSMaxRange(line.range), level == 1 ? alerts[index] : nil)
+                }
+            }
+        }
+        close(deeperThan: 0)
+        return bars.sorted { ($0.range.location, $0.level) < ($1.range.location, $1.level) }
+    }
+
     private func apply(_ line: LineToken, in storage: NSTextStorage, text: NSString,
-                       caretLine: Int?, alert: GithubAlert? = nil) {
+                       caretLine: Int?, alert: GithubAlert? = nil, quoteContinues: Bool = false) {
         guard line.range.length > 0 || line.kind == .blank else { return }
         let onCaretLine = caretLine == line.lineNumber
-        let style = paragraphStyle(for: line.kind)
+        var style = paragraphStyle(for: line.kind)
+        if quoteContinues, let mutable = style.mutableCopy() as? NSMutableParagraphStyle {
+            // 인용 덩이 안의 줄 사이는 줄 간격만 둔다 — 줄마다 문단 간격을 두면 이어진 인용이 낱줄로
+            // 흩어져 보인다. 덩이 안의 문단은 빈 인용 줄(`>`)이 가른다.
+            mutable.paragraphSpacing = 0
+            style = mutable
+        }
         if line.range.length > 0 {
             storage.addAttribute(.paragraphStyle, value: style, range: line.range)
         }
@@ -667,6 +889,7 @@ public final class MarkdownStyler {
             } else {
                 storage.addAttributes([.foregroundColor: theme.quote], range: line.range)
             }
+
             styleInline(in: storage, text: text, content: line.contentRange, onCaretLine: onCaretLine)
 
         case let .listItem(_, checked):
@@ -762,13 +985,12 @@ public final class MarkdownStyler {
             if case .thematicBreak = line.kind { continue }
             if case .tableDelimiter = line.kind { continue }
 
-            // 알림 상자의 `>` 막대는 종류 색으로 칠한다 — 상자의 종류를 한눈에
-            // 가리는 것이 그 색이다. 그래서 흐린 색으로 덮지 않는다.
+            // 알림 상자의 `>`는 종류 색으로 칠한다(캐럿이 있는 줄에서 보인다) — 막대와 같은 색이다.
             storage.addAttribute(.foregroundColor,
                                  value: alert.map(theme.alertColor(for:)) ?? theme.dim,
                                  range: marker)
-            // A list bullet and a quote bar are part of the rendered look, so
-            // they stay; only the markup that a renderer would consume is hidden.
+            // 목록의 글머리는 그려진 모양의 일부라 남긴다. 인용의 `>`는 숨기고 그 자리에 막대를
+            // 그린다(`quoteBars`). 렌더러가 삼키는 마크업은 숨긴다.
             if !onCaretLine, shouldHideMarker(for: line.kind) {
                 hide(marker, in: storage)
             }
@@ -799,12 +1021,14 @@ public final class MarkdownStyler {
     private func shouldHideMarker(for kind: BlockKind) -> Bool {
         switch kind {
         case .heading, .codeFence, .setextUnderline: return true
+        // `>`는 막대로 그린다(`quoteBars`).
+        case .quote: return true
         // 정의 줄의 라벨(`[참조]: `)은 렌더러가 삼키는 markup이라 접는다. 주소는
         // 마커가 아니므로 남는다 — 줄 전체가 사라지면 사용자가 친 글자가 없어진다.
         case .linkDefinition: return true
         // 각주 정의의 `[^`와 `]: `. 라벨과 글은 마커가 아니라 남는다.
         case .footnoteDefinition: return true
-        case .quote, .listItem, .thematicBreak, .tableRow, .tableDelimiter,
+        case .listItem, .thematicBreak, .tableRow, .tableDelimiter,
              .codeBody, .paragraph, .blank: return false
         }
     }
@@ -900,9 +1124,10 @@ public final class MarkdownStyler {
         case .heading:
             style.paragraphSpacingBefore = theme.bodyPointSize * 0.9
             style.paragraphSpacing = theme.bodyPointSize * 0.3
-        case .quote:
-            style.firstLineHeadIndent = 18
-            style.headIndent = 18
+        case let .quote(depth):
+            // 겹마다 막대 하나만큼 들어간다(`quoteBars`).
+            style.firstLineHeadIndent = Self.quoteIndent(depth: depth)
+            style.headIndent = Self.quoteIndent(depth: depth)
         case .listItem:
             style.firstLineHeadIndent = 4
             style.headIndent = 22

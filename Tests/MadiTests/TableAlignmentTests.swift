@@ -16,8 +16,9 @@ final class TableAlignmentTests: XCTestCase {
         windows = []
     }
 
-    /// 행마다 막대의 x. 캐럿은 표 밖(문서 끝)에 둔다 — 캐럿이 있는 행은 마커가 보여 일부러
-    /// 맞추지 않는다.
+    /// 행마다 막대의 x. 캐럿은 **표 안**(첫 행의 처음)에 둔다 — 표 밖에 캐럿이 있으면 표는 원문이
+    /// 아니라 격자로 그려진다(`TableGridTests`). 열 맞추기는 표를 고치는 동안 보이는 원문의 일이다.
+    /// 시험 표의 칸에는 인라인 마크업이 없어, 캐럿이 있는 행도 마커 때문에 넓어지지 않는다.
     private func barPositions(_ markdown: String) -> [[CGFloat]] {
         let window = NSWindow(contentRect: NSRect(x: -20000, y: 0, width: 720, height: 400),
                               styleMask: [.titled], backing: .buffered, defer: false)
@@ -26,7 +27,8 @@ final class TableAlignmentTests: XCTestCase {
         window.orderBack(nil)
         windows.append(window)
         editor.markdown = markdown
-        editor.textView.setSelectedRange(NSRange(location: (markdown as NSString).length, length: 0))
+        editor.textView.setSelectedRange(NSRange(location: 0, length: 0))
+        XCTAssertEqual(editor.drawnTableCount, 0, "전제: 캐럿이 든 표는 원문이다")
         let layout = editor.textView.layoutManager!
         layout.ensureLayout(for: editor.textView.textContainer!)
 

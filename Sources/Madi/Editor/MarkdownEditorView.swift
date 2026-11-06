@@ -74,6 +74,7 @@ public final class MarkdownEditorView: NSView {
         styler.theme = theme
         styler.imageStore = imageStore
         styler.drawsTaskBoxes = true
+        styler.drawsTables = true
         // 원격 그림은 나중에 도착한다. 도착하면 자리를 잡아야 하므로 다시 칠한다.
         imageStore.onRemoteImageLoaded = { [weak self] in self?.restyleAll() }
         useDiagramRenderer(DiagramRenderer.shared)
@@ -89,7 +90,7 @@ public final class MarkdownEditorView: NSView {
         textView.isGrammarCheckingEnabled = false
         textView.usesFindBar = false
         textView.importsGraphics = false
-        textView.textContainerInset = theme.textInsets
+        textView.setInsets(theme.textInsets, topAccessory: 0)
         textView.insertionPointColor = theme.insertionPoint
         textView.backgroundColor = .textBackgroundColor
         textView.minSize = NSSize(width: 0, height: 0)
@@ -226,6 +227,16 @@ public final class MarkdownEditorView: NSView {
     public var isRenderingForOutput = false {
         didSet {
             guard isRenderingForOutput != oldValue else { return }
+            // 머리(메타데이터 카드)는 내보내지 않는다 — 텍스트 뷰 안에 있어 숨기지 않으면 함께 찍힌다.
+            if let headerView {
+                if isRenderingForOutput {
+                    headerWasHidden = headerView.isHidden
+                    headerView.isHidden = true
+                } else {
+                    headerView.isHidden = headerWasHidden
+                }
+                updateTextInsets()
+            }
             restyleAll()
         }
     }
@@ -432,12 +443,78 @@ public final class MarkdownEditorView: NSView {
     }
 
     /// 글을 가운데 두는 가로 여백을 다시 잰다. 창 크기가 바뀔 때도 불려야 한다.
-    private func updateTextInsets(viewWidth: CGFloat? = nil) {
+    ///
+    /// 머리(`headerView`)가 있으면 그 자리도 함께 정한다 — 머리의 폭이 글 칸을 따르고, 글은 머리의
+    /// 높이만큼 내려간다. `layoutHeader`가 false면 머리를 다시 놓지 않고 지금 높이를 쓴다(머리의 크기
+    /// 알림 안에서 부를 때 — 그 안에서 다시 놓으면 놓는 중에 또 놓는다).
+    private func updateTextInsets(viewWidth: CGFloat? = nil, layoutHeader: Bool = true) {
         let width = viewWidth ?? bounds.width
         let insets = theme.textInsets(forViewWidth: width)
-        guard textView.textContainerInset != insets else { return }
-        textView.textContainerInset = insets
+        if let header = headerConstraints {
+            // 코드 블록 상자와 같은 가장자리 — 글 칸보다 상자 여백만큼 바깥이다.
+            let side = insets.width + container.lineFragmentPadding - textView.codeBlockPadding.left
+            header.leading.constant = side
+            header.trailing.constant = -side
+            header.top.constant = insets.height
+            if layoutHeader { textView.layoutSubtreeIfNeeded() }
+        }
+        textView.setInsets(insets, topAccessory: headerSpace)
     }
+
+    // MARK: 머리 — 글과 함께 굴러가는 카드
+
+    /// 글 위에 놓는 뷰 — 문서 창의 문서 메타데이터 카드(`FrontMatterCardView`).
+    ///
+    /// 텍스트 뷰 **안에** 넣어 글과 함께 굴러간다. 전에는 편집기 위에 따로 있어 굴려도 그 자리에
+    /// 남았고, 항목이 많은 카드가 읽을 자리를 먹었다(실측: 항목 열두 개가 752pt 창의 310pt). 글은
+    /// 머리의 높이만큼 내려간다(`DecoratedTextView.topAccessoryHeight`) — 문서의 글자는 그대로다.
+    /// 숨긴 머리는 자리를 차지하지 않는다. 프린트·PDF에는 넣지 않는다(전과 같다).
+    public var headerView: NSView? {
+        didSet {
+            guard headerView !== oldValue else { return }
+            if let headerObserver { NotificationCenter.default.removeObserver(headerObserver) }
+            headerObserver = nil
+            oldValue?.removeFromSuperview()
+            headerConstraints = nil
+            if let headerView {
+                headerView.translatesAutoresizingMaskIntoConstraints = false
+                textView.addSubview(headerView)
+                let constraints = (leading: headerView.leadingAnchor.constraint(equalTo: textView.leadingAnchor),
+                                   trailing: headerView.trailingAnchor.constraint(equalTo: textView.trailingAnchor),
+                                   top: headerView.topAnchor.constraint(equalTo: textView.topAnchor))
+                NSLayoutConstraint.activate([constraints.leading, constraints.trailing, constraints.top])
+                headerConstraints = constraints
+                // 카드를 접고 펴면 높이가 바뀐다 — 글을 그만큼 올리고 내린다.
+                headerView.postsFrameChangedNotifications = true
+                headerObserver = NotificationCenter.default.addObserver(
+                    forName: NSView.frameDidChangeNotification, object: headerView, queue: nil
+                ) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.updateTextInsets(layoutHeader: false) }
+                }
+            }
+            updateTextInsets()
+        }
+    }
+
+    /// 머리의 내용이나 보이기가 바뀌었다(다른 문서를 실었다, 접었다). 머리를 다시 놓고 글을 맞춘다.
+    public func headerDidChange() {
+        updateTextInsets()
+    }
+
+    /// 머리와 글 사이.
+    static let headerGap: CGFloat = 14
+
+    /// 머리가 차지하는 높이 — 머리와 그 아래 틈. 숨었거나 내보내는 중이면 0이다.
+    private var headerSpace: CGFloat {
+        guard let headerView, !headerView.isHidden, !isRenderingForOutput else { return 0 }
+        return ceil(headerView.frame.height) + Self.headerGap
+    }
+
+    private var headerConstraints: (leading: NSLayoutConstraint, trailing: NSLayoutConstraint,
+                                    top: NSLayoutConstraint)?
+    nonisolated(unsafe) private var headerObserver: NSObjectProtocol?
+    /// 내보내기 전에 머리가 숨어 있었는가 — 끝나면 그대로 돌린다.
+    private var headerWasHidden = false
 
     /// 창 크기가 바뀌면 여백을 다시 재고 다시 칠한다.
     ///
@@ -452,9 +529,11 @@ public final class MarkdownEditorView: NSView {
     /// (실측). 그동안 그림은 끌기 전의 폭으로 그려진다 — 놓으면 맞춰진다.
     public override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
-        let before = textView.textContainerInset
+        // 가로 여백이 바뀔 때만 다시 칠한다 — 그림과 표가 읽는 것은 글 넓이다. 머리 높이만 바뀐 것은
+        // 글을 내릴 뿐이다.
+        let before = textView.textContainerInset.width
         updateTextInsets(viewWidth: newSize.width)
-        guard textView.textContainerInset != before else { return }
+        guard textView.textContainerInset.width != before else { return }
         if isLiveResizing {
             restyleAfterLiveResize = true
         } else {
@@ -486,7 +565,12 @@ public final class MarkdownEditorView: NSView {
         textView.codeBlockRanges = styler.codeBlockRanges
         textView.imagePlacements = styler.imagePlacements
         textView.taskBoxes = styler.taskBoxes
+        textView.quoteBars = styler.quoteBars
+        textView.quoteBarColor = { [theme] alert in theme.quoteBarColor(for: alert) }
     }
+
+    /// 지금 격자로 그린 표의 수. 테스트가 쓴다.
+    var drawnTableCount: Int { styler.drawnTableCount }
 
     /// 문서 위치를 알려 준다. 그림의 상대 경로를 푸는 기준이다.
     public var documentURL: URL? {
@@ -506,6 +590,7 @@ public final class MarkdownEditorView: NSView {
 
     deinit {
         if let diagramObserver { NotificationCenter.default.removeObserver(diagramObserver) }
+        if let headerObserver { NotificationCenter.default.removeObserver(headerObserver) }
     }
 
     /// 다이어그램·수식을 그릴 곳을 바꾼다. 앱은 `DiagramRenderer.shared`를 쓰고, 테스트가
