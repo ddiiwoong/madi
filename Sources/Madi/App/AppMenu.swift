@@ -1,8 +1,11 @@
 import AppKit
 
-/// The app's commands, defined once. `mainMenu()` builds the macOS menu bar and
-/// `burgerMenu()` builds the toolbar's popup from the SAME table, so the two can
+/// The app's commands, defined once. `mainMenu()` builds the macOS menu bar from
+/// this table, and the command palette (⇧⌘P) reads that menu bar, so the two can
 /// never drift apart.
+///
+/// 도구 막대의 버거 메뉴(더 많은 작업)는 2026-11-07에 뺐다. 항목이 모두 메뉴 바에 있었고(파일 ·
+/// 보기 · 도구), 명령 팔레트가 같은 명령을 찾아 준다 — 같은 명령을 세 곳에서 고르게 할 까닭이 없었다.
 ///
 /// Shortcuts match Mark.app's where they do not fight a macOS convention:
 /// 파일 브라우저 ⌘⇧F, 최근 문서 ⌘⇧R, 목차 ⌘⇧O, 마크다운 원본 보기 ⌘E, 설정 ⌘,.
@@ -15,22 +18,21 @@ import AppKit
 @MainActor
 enum AppMenu {
 
-    /// One command: a title, what it does, and its key equivalent.
+    /// One command: a title, what it does, and its key equivalent. Menu bar items
+    /// have no target — they route through the responder chain (text view →
+    /// window controller → document).
     private struct Command {
         let title: String
         let action: Selector
         let key: String
         let modifiers: NSEvent.ModifierFlags
-        /// nil routes through the responder chain (document / text view).
-        let needsWindowTarget: Bool
 
         init(_ title: String, _ action: Selector, _ key: String = "",
-             _ modifiers: NSEvent.ModifierFlags = .command, windowTarget: Bool = false) {
+             _ modifiers: NSEvent.ModifierFlags = .command) {
             self.title = title
             self.action = action
             self.key = key
             self.modifiers = modifiers
-            self.needsWindowTarget = windowTarget
         }
     }
 
@@ -39,11 +41,11 @@ enum AppMenu {
             Command(String(localized: "새로 만들기"), #selector(NSDocumentController.newDocument(_:)), "n"),
             Command(String(localized: "문서 열기…"), #selector(NSDocumentController.openDocument(_:)), "o"),
             Command(String(localized: "빠른 열기…"), #selector(DocumentWindowController.showQuickOpenAction(_:)), "o",
-                    [.command, .option], windowTarget: true),
+                    [.command, .option]),
             Command(String(localized: "파일 브라우저"), #selector(DocumentWindowController.showBrowserAction(_:)), "f",
-                    [.command, .shift], windowTarget: true),
+                    [.command, .shift]),
             Command(String(localized: "최근 문서"), #selector(DocumentWindowController.showRecentAction(_:)), "r",
-                    [.command, .shift], windowTarget: true),
+                    [.command, .shift]),
             nil,
             Command(String(localized: "저장"), #selector(NSDocument.save(_:)), "s"),
             Command(String(localized: "다른 이름으로 저장…"), #selector(NSDocument.saveAs(_:)), "s", [.command, .shift]),
@@ -51,11 +53,11 @@ enum AppMenu {
             nil,
             Command(String(localized: "이미지 포함 내보내기…"),
                     #selector(DocumentWindowController.exportWithImagesAction(_:)),
-                    "", .command, windowTarget: true),
+                    "", .command),
             Command(String(localized: "PDF 내보내기…"), #selector(DocumentWindowController.exportPDFAction(_:)),
-                    "", .command, windowTarget: true),
+                    "", .command),
             Command(String(localized: "프린트하기…"), #selector(DocumentWindowController.printDocumentAction(_:)), "p",
-                    .command, windowTarget: true),
+                    .command),
             nil,
             Command(String(localized: "닫기"), #selector(NSWindow.performClose(_:)), "w"),
         ]
@@ -72,11 +74,11 @@ enum AppMenu {
             Command(String(localized: "모두 선택"), #selector(NSText.selectAll(_:)), "a"),
             nil,
             Command(String(localized: "검색"), #selector(DocumentWindowController.focusSearchAction(_:)), "f",
-                    .command, windowTarget: true),
+                    .command),
             Command(String(localized: "다음 찾기"), #selector(DocumentWindowController.findNext(_:)), "g",
-                    .command, windowTarget: true),
+                    .command),
             Command(String(localized: "이전 찾기"), #selector(DocumentWindowController.findPrevious(_:)), "g",
-                    [.command, .shift], windowTarget: true),
+                    [.command, .shift]),
             nil,
             // 줄 편집. 대상 없이 보내 응답자 연쇄로 편집기(`MarkdownEditorView`)에 닿는다 — 검색
             // 칸에 캐럿이 있으면 닿지 않아 회색이 된다. 옮기기는 Xcode의 단축키, 지우기는 VS Code의 것.
@@ -93,26 +95,26 @@ enum AppMenu {
     private static var viewCommands: [Command?] {
         [
             Command(String(localized: "명령 팔레트…"), #selector(DocumentWindowController.showCommandPaletteAction(_:)),
-                    "p", [.command, .shift], windowTarget: true),
+                    "p", [.command, .shift]),
             nil,
             Command(String(localized: "목차"), #selector(DocumentWindowController.showOutlineAction(_:)), "o",
-                    [.command, .shift], windowTarget: true),
+                    [.command, .shift]),
             Command(String(localized: "마크다운 원본 보기"), #selector(DocumentWindowController.toggleCodeViewAction(_:)), "e",
-                    .command, windowTarget: true),
+                    .command),
             // 설계 단계 1. 기본 편집기를 갈지 않고 평가할 수 있는 두 번째 창이다.
             Command(String(localized: "블록 편집기 (실험)"),
                     #selector(DocumentWindowController.showBlockEditor(_:)), "b",
-                    [.command, .option], windowTarget: true),
+                    [.command, .option]),
             nil,
             Command(String(localized: "글꼴…"), #selector(DocumentWindowController.showFontSettings(_:)), "",
-                    .command, windowTarget: true),
+                    .command),
             Command(String(localized: "글자 크게"), #selector(DocumentWindowController.makeTextLargerAction(_:)), "=",
-                    .command, windowTarget: true),
+                    .command),
             Command(String(localized: "글자 작게"), #selector(DocumentWindowController.makeTextSmallerAction(_:)), "-",
-                    .command, windowTarget: true),
+                    .command),
             Command(String(localized: "글자 기본 크기"),
                     #selector(DocumentWindowController.makeTextStandardSizeAction(_:)), "0",
-                    .command, windowTarget: true),
+                    .command),
             nil,
             Command(String(localized: "전체 화면 시작"), #selector(NSWindow.toggleFullScreen(_:))),
         ]
@@ -122,18 +124,18 @@ enum AppMenu {
         [
             // 선택이 있으면 그 자리에서, 없으면 문서 전체를 새 문서로.
             Command(String(localized: "Apple 번역"), #selector(DocumentWindowController.translateAction(_:)), "t",
-                    [.command, .shift], windowTarget: true),
+                    [.command, .shift]),
             // 짐작이 틀렸거나 한국어를 다른 언어로 내보낼 때.
             Command(String(localized: "번역 언어 선택…"),
                     #selector(DocumentWindowController.chooseTranslationLanguageAction(_:)),
-                    "t", [.command, .shift, .option], windowTarget: true),
+                    "t", [.command, .shift, .option]),
             // 번역본을 자기 창으로 열어 원문 창 옆에 붙이고, 두 창의 스크롤을 블록으로 맞춘다.
             Command(String(localized: "원문·번역 나란히 보기"),
                     #selector(DocumentWindowController.toggleSideBySideAction(_:)),
-                    "t", [.command, .control], windowTarget: true),
+                    "t", [.command, .control]),
             nil,
             Command(String(localized: "기록 보기"), #selector(DocumentWindowController.showActivityLog(_:)), "l",
-                    [.command, .shift], windowTarget: true),
+                    [.command, .shift]),
         ]
     }
 
@@ -261,68 +263,5 @@ enum AppMenu {
         }
         item.submenu = menu
         return item
-    }
-
-    // MARK: Burger
-
-    /// The same commands flattened into the toolbar popup, in Mark.app's order.
-    static func burgerMenu(target: DocumentWindowController) -> NSMenu {
-        let menu = NSMenu()
-        let ordered: [Command?] = [
-            Command(String(localized: "새로 만들기"), #selector(NSDocumentController.newDocument(_:)), "n"),
-            Command(String(localized: "문서 열기"), #selector(NSDocumentController.openDocument(_:)), "o"),
-            Command(String(localized: "파일 브라우저"), #selector(DocumentWindowController.showBrowserAction(_:)), "f",
-                    [.command, .shift], windowTarget: true),
-            Command(String(localized: "최근 문서"), #selector(DocumentWindowController.showRecentAction(_:)), "r",
-                    [.command, .shift], windowTarget: true),
-            nil,
-            Command(String(localized: "저장"), #selector(NSDocument.save(_:)), "s"),
-            Command(String(localized: "다른 이름으로 저장"), #selector(NSDocument.saveAs(_:)), "s", [.command, .shift]),
-            nil,
-            Command(String(localized: "목차"), #selector(DocumentWindowController.showOutlineAction(_:)), "o",
-                    [.command, .shift], windowTarget: true),
-            Command(String(localized: "마크다운 원본 보기"), #selector(DocumentWindowController.toggleCodeViewAction(_:)), "e",
-                    .command, windowTarget: true),
-            Command(String(localized: "블록 편집기 (실험)"),
-                    #selector(DocumentWindowController.showBlockEditor(_:)), "b",
-                    [.command, .option], windowTarget: true),
-            nil,
-            Command(String(localized: "Apple 번역"), #selector(DocumentWindowController.translateAction(_:)), "t",
-                    [.command, .shift], windowTarget: true),
-            // 짐작이 틀렸거나 한국어를 다른 언어로 내보낼 때.
-            Command(String(localized: "번역 언어 선택…"),
-                    #selector(DocumentWindowController.chooseTranslationLanguageAction(_:)),
-                    "t", [.command, .shift, .option], windowTarget: true),
-            Command(String(localized: "원문·번역 나란히 보기"),
-                    #selector(DocumentWindowController.toggleSideBySideAction(_:)),
-                    "t", [.command, .control], windowTarget: true),
-            Command(String(localized: "기록 보기"), #selector(DocumentWindowController.showActivityLog(_:)), "l",
-                    [.command, .shift], windowTarget: true),
-            nil,
-            Command(String(localized: "이미지 포함 내보내기"),
-                    #selector(DocumentWindowController.exportWithImagesAction(_:)),
-                    "", .command, windowTarget: true),
-            Command(String(localized: "PDF 내보내기"), #selector(DocumentWindowController.exportPDFAction(_:)),
-                    "", .command, windowTarget: true),
-            Command(String(localized: "프린트하기"), #selector(DocumentWindowController.printDocumentAction(_:)), "p",
-                    .command, windowTarget: true),
-            nil,
-            Command(String(localized: "닫기"), #selector(NSWindow.performClose(_:)), "w"),
-        ]
-
-        for command in ordered {
-            guard let command else {
-                menu.addItem(.separator())
-                continue
-            }
-            let item = NSMenuItem(title: command.title, action: command.action,
-                                  keyEquivalent: command.key)
-            item.keyEquivalentModifierMask = command.modifiers
-            // A popup menu has no responder chain of its own, so a window
-            // command needs its target set explicitly or it renders greyed out.
-            item.target = command.needsWindowTarget ? target : nil
-            menu.addItem(item)
-        }
-        return menu
     }
 }

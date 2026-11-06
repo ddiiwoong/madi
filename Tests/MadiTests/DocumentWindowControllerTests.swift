@@ -126,13 +126,15 @@ final class DocumentWindowControllerTests: XCTestCase {
         XCTAssertEqual(controller.window?.subtitle, "")
     }
 
-    /// 버거 메뉴는 열 때마다 새로 만든다 — 그때도 지금 보기로 체크를 단다.
-    func testBurgerMenuMarksTheCurrentView() {
+    /// 도구 막대에는 버거 메뉴(더 많은 작업)가 없다 — 그 항목은 모두 메뉴 바와 명령 팔레트에 있다.
+    /// 마지막 단추는 파일 브라우저다.
+    func testToolbarHasNoBurgerMenu() throws {
         let (_, controller) = open("본문\n")
-        controller.toggleCodeViewAction(nil)
-        let menu = AppMenu.burgerMenu(target: controller)
-        DocumentWindowController.markCodeView(in: menu, isOn: controller.editor.isCodeView)
-        XCTAssertEqual(menuItem(for: #selector(DocumentWindowController.toggleCodeViewAction(_:)), in: menu)?.state, .on)
+        let toolbar = try XCTUnwrap(controller.window?.toolbar)
+        let identifiers = toolbar.items.map(\.itemIdentifier.rawValue)
+        XCTAssertFalse(identifiers.contains("burger"), "\(identifiers)")
+        XCTAssertEqual(identifiers.last, "browser")
+        XCTAssertFalse(toolbar.items.contains { $0.label == "더 많은 작업" })
     }
 
     /// 체크 표시를 `validateMenuItem`으로 달면 안 된다. 한 번 그렇게 했다가 **이 객체로 오는 모든
@@ -140,10 +142,9 @@ final class DocumentWindowControllerTests: XCTestCase {
     func testControllerDoesNotTakeOverMenuValidation() {
         let (_, controller) = open("본문\n")
         XCTAssertFalse((controller as AnyObject) is NSMenuItemValidation)
-        // 버거 메뉴의 저장·닫기는 대상을 비워 응답자 연쇄(문서·창)가 받게 둔다.
-        let menu = AppMenu.burgerMenu(target: controller)
+        // 메뉴 바의 저장·닫기는 대상을 비워 응답자 연쇄(문서·창)가 받게 둔다.
         for action in [#selector(NSDocument.save(_:)), #selector(NSWindow.performClose(_:))] {
-            guard let item = menuItem(for: action, in: menu) else { return XCTFail("\(action) 항목이 없다") }
+            guard let item = menuItem(for: action) else { return XCTFail("\(action) 항목이 없다") }
             XCTAssertNil(item.target, "\(action)은 응답자 연쇄로 가야 한다")
         }
     }

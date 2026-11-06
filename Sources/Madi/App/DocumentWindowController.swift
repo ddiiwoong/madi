@@ -60,7 +60,6 @@ final class DocumentWindowController: NSWindowController {
         static let browser = NSToolbarItem.Identifier("browser")
         static let codeView = NSToolbarItem.Identifier("codeView")
         static let sideBySide = NSToolbarItem.Identifier("sideBySide")
-        static let burger = NSToolbarItem.Identifier("burger")
     }
 
     private var toggleButtons: [Tab: NSButton] = [:]
@@ -422,7 +421,7 @@ final class DocumentWindowController: NSWindowController {
     /// **`validateMenuItem`으로 하지 않는다.** 한 번 그렇게 했다가 회귀를 냈다:
     /// `NSMenuItemValidation`을 구현하면 이 객체로 **오는 모든 항목**을 내가 판정하게
     /// 되고, 내가 응답하지 않는 동작(`save:` · `performClose:`)에 false를 돌려
-    /// 버거 메뉴의 저장·다른 이름으로 저장·닫기가 비활성이 됐다. 체크 표시 하나를
+    /// 그때 있던 버거 메뉴의 저장·다른 이름으로 저장·닫기가 비활성이 됐다. 체크 표시 하나를
     /// 붙이려고 메뉴 활성화 규칙 전체를 떠안을 이유가 없다.
     static func markCodeView(in menu: NSMenu, isOn: Bool) {
         mark(#selector(DocumentWindowController.toggleCodeViewAction(_:)), in: menu, isOn: isOn)
@@ -441,18 +440,6 @@ final class DocumentWindowController: NSWindowController {
     /// 누를지 말지를 그 문장에서 알 수 없다.
     private static func codeViewTip(isOn: Bool) -> String {
         isOn ? String(localized: "마크다운 문법으로 보기 (⌘E)") : String(localized: "마크다운 원본 보기 (⌘E)")
-    }
-
-    @objc func showBurgerAction(_ sender: Any?) {
-        let menu = AppMenu.burgerMenu(target: self)
-        // 버거 메뉴는 열 때마다 새로 만들어지므로 여기서 체크 표시를 단다.
-        Self.markCodeView(in: menu, isOn: editor.isCodeView)
-        Self.mark(#selector(toggleSideBySideAction(_:)), in: menu, isOn: sideBySide != nil)
-        guard let view = (sender as? NSView) ?? (sender as? NSToolbarItem)?.view else {
-            menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
-            return
-        }
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: view.bounds.height + 4), in: view)
     }
 
     // MARK: Print and PDF
@@ -1207,7 +1194,7 @@ final class DocumentWindowController: NSWindowController {
 extension DocumentWindowController: NSToolbarDelegate {
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         [.flexibleSpace, ItemID.matches, ItemID.search, ItemID.codeView, ItemID.sideBySide, ItemID.outline,
-         ItemID.recent, ItemID.open, ItemID.browser, .space, ItemID.burger]
+         ItemID.recent, ItemID.open, ItemID.browser]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -1282,10 +1269,6 @@ extension DocumentWindowController: NSToolbarDelegate {
         case ItemID.open:
             return push(identifier, symbol: "folder", label: String(localized: "문서 열기"),
                         tip: String(localized: "문서 열기 (⌘O)"), action: #selector(openDocumentAction(_:)))
-
-        case ItemID.burger:
-            return push(identifier, symbol: "line.3.horizontal", label: String(localized: "더 많은 작업"),
-                        tip: String(localized: "더 많은 작업"), action: #selector(showBurgerAction(_:)))
 
         default:
             return nil

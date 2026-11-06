@@ -70,10 +70,6 @@
 "최근 문서 열기" = "Open Recent";
 "메뉴 지우기" = "Clear Menu";
 "문서 열기" = "Open";
-"다른 이름으로 저장" = "Save As";
-"이미지 포함 내보내기" = "Export with Embedded Images";
-"PDF 내보내기" = "Export as PDF";
-"프린트하기" = "Print";
 
 "빠른 열기…" = "Open Quickly…";
 "명령 팔레트…" = "Command Palette…";
@@ -152,7 +148,6 @@
 "파일 브라우저 (⌘⇧F)" = "File Browser (⌘⇧F)";
 "나란히 보기" = "Side by Side";
 "문서 열기 (⌘O)" = "Open (⌘O)";
-"더 많은 작업" = "More Actions";
 
 "글자 크기 %lldpt" = "Text size %lldpt";
 "문서 이름으로 찾기" = "Find a document by name";
