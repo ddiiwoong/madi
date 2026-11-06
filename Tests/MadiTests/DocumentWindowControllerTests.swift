@@ -39,9 +39,10 @@ final class DocumentWindowControllerTests: XCTestCase {
         NSApplication.shared.mainMenu = savedMainMenu
     }
 
-    private func open(_ markdown: String, preferences: EditorPreferences = .standard)
+    private func open(_ markdown: String, preferences: EditorPreferences = .standard,
+                      store given: PreferenceStore? = nil)
         -> (MarkdownDocument, DocumentWindowController) {
-        let store = PreferenceStore(defaults: MemoryDefaults())
+        let store = given ?? PreferenceStore(defaults: MemoryDefaults())
         store.save(preferences)
         let document = MarkdownDocument()
         document.markdown = markdown
@@ -246,6 +247,73 @@ final class DocumentWindowControllerTests: XCTestCase {
         controller.load(markdown: "본문만\n")
         XCTAssertTrue(card.isHidden)
         XCTAssertEqual(editor.textView.topAccessoryHeight, 0)
+    }
+
+    private func card(in controller: DocumentWindowController) throws -> FrontMatterCardView {
+        try XCTUnwrap(controller.editor.textView.subviews.compactMap { $0 as? FrontMatterCardView }.first)
+    }
+
+    private func disclosure(of card: FrontMatterCardView) throws -> NSButton {
+        func buttons(_ view: NSView) -> [NSButton] {
+            view.subviews.compactMap { $0 as? NSButton } + view.subviews.flatMap(buttons)
+        }
+        return try XCTUnwrap(buttons(card).first { $0.bezelStyle == .disclosure })
+    }
+
+    /// 카드를 접으면 기억한다 — 다음에 여는 문서의 카드도 접힌 채 열리고, 글은 접힌 카드 아래에서
+    /// 시작한다. 펴면 다시 펴진 채 열린다.
+    func testCollapsedCardIsRemembered() throws {
+        let source = "---\ntitle: 제목\nauthor: 이름\ndate: 2026-11-07\n---\n본문\n"
+        let store = PreferenceStore(defaults: MemoryDefaults())
+        let (_, first) = open(source, store: store)
+        let firstCard = try card(in: first)
+        XCTAssertFalse(firstCard.isCollapsed, "처음에는 펴져 있다")
+        let expanded = first.editor.textView.topAccessoryHeight
+
+        try disclosure(of: firstCard).performClick(nil)
+        XCTAssertTrue(firstCard.isCollapsed)
+        XCTAssertTrue(store.collapsesFrontMatter)
+        XCTAssertLessThan(first.editor.textView.topAccessoryHeight, expanded, "접은 만큼 글이 올라온다")
+
+        let (_, second) = open(source, store: store)
+        let reopened = try card(in: second)
+        XCTAssertTrue(reopened.isCollapsed, "다음 문서도 접힌 채 연다")
+        XCTAssertEqual(second.editor.textView.topAccessoryHeight, first.editor.textView.topAccessoryHeight,
+                       accuracy: 0.5)
+
+        try disclosure(of: reopened).performClick(nil)
+        XCTAssertFalse(store.collapsesFrontMatter)
+        let (_, third) = open(source, store: store)
+        XCTAssertFalse(try card(in: third).isCollapsed)
+    }
+
+    /// 나란히 보기의 번역본 칸도 기억한 접힘으로 열고, 거기서 접고 편 것도 기억한다.
+    func testTranslationPaneCardFollowsTheRememberedState() throws {
+        let store = PreferenceStore(defaults: MemoryDefaults())
+        store.collapsesFrontMatter = true
+        let (_, controller) = open("---\ntitle: 제목\n---\n# 제목\n\n본문\n", store: store)
+        controller.openSideBySide(composed: "---\ntitle: Title\n---\n# Title\n\nBody\n",
+                                  direction: TranslationDirection(source: "ko", target: "en"),
+                                  sourceBody: controller.editor.markdown)
+        let pane = try XCTUnwrap(controller.sideBySide?.pane)
+        XCTAssertTrue(pane.isCardCollapsed)
+
+        func buttons(_ view: NSView) -> [NSButton] {
+            view.subviews.compactMap { $0 as? NSButton } + view.subviews.flatMap(buttons)
+        }
+        let card = try XCTUnwrap(pane.editor.textView.subviews.compactMap { $0 as? FrontMatterCardView }.first)
+        try XCTUnwrap(buttons(card).first { $0.bezelStyle == .disclosure }).performClick(nil)
+        XCTAssertFalse(pane.isCardCollapsed)
+        XCTAssertFalse(store.collapsesFrontMatter)
+    }
+
+    /// 접힘은 화면 상태라 `기본값으로`가 되돌리지 않는다.
+    func testCollapsedCardSurvivesReset() {
+        let store = PreferenceStore(defaults: MemoryDefaults())
+        XCTAssertFalse(store.collapsesFrontMatter)
+        store.collapsesFrontMatter = true
+        store.reset()
+        XCTAssertTrue(store.collapsesFrontMatter)
     }
 
     // MARK: 글꼴

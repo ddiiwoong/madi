@@ -93,8 +93,16 @@ public final class MarkdownStyler {
     /// 캐럿이 없는 표를 **격자로 그릴지**(`TableGrid`). 기본 편집기만 켠다 — 블록 편집기는 그림을
     /// 그리는 쪽을 잇지 않았고, 표를 따로 다룬다.
     public var drawsTables = false
+    /// 이번 패스에서 격자로 그린 표 — 머리 행(격자 그림이 놓인 줄)과 그 격자. 편집기가 ⌘클릭을 받을 때
+    /// 점 아래의 링크를 이것으로 찾는다.
+    public struct DrawnTable {
+        public let headerLine: NSRange
+        let grid: TableGrid
+    }
+
+    public private(set) var drawnTables: [DrawnTable] = []
     /// 이번 패스에서 격자로 그린 표의 수. 테스트가 쓴다.
-    public private(set) var drawnTableCount = 0
+    public var drawnTableCount: Int { drawnTables.count }
     /// 격자로 그려 원문을 접은 표들. 찾기 표시를 거기에 칠하지 않는다 — 숨긴 글자의 바탕은 격자 밖에
     /// 엉뚱하게 남는다. 지금 찾은 곳이 든 표는 원문으로 펼쳐지므로 보인다.
     private var foldedTableRanges: [NSRange] = []
@@ -187,7 +195,7 @@ public final class MarkdownStyler {
             imagePlacements = []
             taskBoxes = []
             quoteBars = []
-            drawnTableCount = 0
+            drawnTables = []
             let style = NSMutableParagraphStyle()
             style.lineSpacing = theme.lineSpacing * 0.5
             storage.setAttributes([
@@ -256,7 +264,7 @@ public final class MarkdownStyler {
             placeTables(lines, in: storage, text: text, caretLine: caretLine, search: search,
                         writeRange: writeRange)
         } else {
-            drawnTableCount = 0
+            drawnTables = []
             foldedTableRanges = []
         }
         // 마지막이다 — 블록의 줄에 앞의 패스가 준 속성을 통째로 덮어쓴다.
@@ -710,7 +718,7 @@ public final class MarkdownStyler {
                              caretLine: Int?, search: SearchState, writeRange: NSRange) {
         let currentMatch = search.currentIndex.flatMap { search.ranges.indices.contains($0) ? search.ranges[$0] : nil }
         var placements = imagePlacements
-        var drawn = 0
+        var drawn: [DrawnTable] = []
         var used: Set<String> = []
         foldedTableRanges = []
 
@@ -732,7 +740,7 @@ public final class MarkdownStyler {
                 tableGridCache[key] = entry
             }
             guard entry.grid.size.height > 0 else { continue }
-            drawn += 1
+            drawn.append(DrawnTable(headerLine: first.range, grid: entry.grid))
             foldedTableRanges.append(block)
             placements.append(ImagePlacement(lineRange: first.range, size: entry.grid.size, image: entry.image))
 
@@ -765,7 +773,7 @@ public final class MarkdownStyler {
         }
         // 지금 문서에 없는 표의 격자는 버린다 — 고칠 때마다 옛 꼴이 쌓인다.
         tableGridCache = tableGridCache.filter { used.contains($0.key) }
-        drawnTableCount = drawn
+        drawnTables = drawn
         imagePlacements = placements.sorted { $0.lineRange.location < $1.lineRange.location }
     }
 

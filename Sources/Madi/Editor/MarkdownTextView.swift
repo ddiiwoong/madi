@@ -57,12 +57,21 @@ public final class MarkdownTextView: DecoratedTextView {
         (info.draggingSource as AnyObject?) !== self
     }
 
+    /// 글자가 아니라 **그린 것** 위의 클릭 — 격자로 그린 표의 칸 링크. 점(뷰 좌표)과 보조 키를 받는다.
+    /// 격자 아래의 원문 글자는 숨어 폭이 0이라 `clickHandler`에 닿지 않는다. true면 클릭을 먹는다.
+    var drawingClickHandler: ((_ point: NSPoint, _ modifiers: NSEvent.ModifierFlags) -> Bool)?
+
     public override func mouseDown(with event: NSEvent) {
         let stamp = ClickStamp(number: event.eventNumber, time: event.timestamp)
         if stamp == lastHandledClick { return }
+        let point = convert(event.locationInWindow, from: nil)
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if event.clickCount == 1, !hasMarkedText(), let drawingClickHandler, drawingClickHandler(point, modifiers) {
+            lastHandledClick = stamp
+            return
+        }
         if event.clickCount == 1, !hasMarkedText(), let clickHandler,
-           let index = characterIndex(under: convert(event.locationInWindow, from: nil)),
-           clickHandler(index, event.modifierFlags.intersection(.deviceIndependentFlagsMask)) {
+           let index = characterIndex(under: point), clickHandler(index, modifiers) {
             lastHandledClick = stamp
             return
         }

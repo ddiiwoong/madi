@@ -162,6 +162,68 @@ final class TableGridTests: XCTestCase {
         XCTAssertEqual(editor.drawnTableCount, 0)
     }
 
+    // MARK: 칸의 링크
+
+    private final class LinkSpy: MarkdownEditorDelegate {
+        var opened: [String] = []
+        func markdownEditorDidChangeText(_ editor: MarkdownEditorView) {}
+        func markdownEditor(_ editor: MarkdownEditorView, didClickLink url: String) { opened.append(url) }
+    }
+
+    /// 칸 안 글자의 링크만 찾는다 — 칸의 빈 자리나 링크가 아닌 글자는 nil이다.
+    func testGridFindsTheLinkUnderAPoint() throws {
+        let font = NSFont.systemFont(ofSize: 15)
+        let link = NSMutableAttributedString(string: "열기 ", attributes: [.font: font])
+        link.append(NSAttributedString(string: "링크", attributes: [.font: font, .mdLinkTarget: "https://example.com"]))
+        let grid = TableGrid(rows: [TableGrid.Row(cells: [NSAttributedString(string: "이름", attributes: [.font: font]),
+                                                          // 머리가 넓어 아래 칸의 글 뒤에 빈 자리가 남는다.
+                                                          NSAttributedString(string: "주소와 그 설명을 적는 넓은 칸",
+                                                                             attributes: [.font: font])],
+                                                  isHeader: true),
+                                    TableGrid.Row(cells: [NSAttributedString(string: "예", attributes: [.font: font]), link],
+                                                  isHeader: false)],
+                             columnCount: 2, lineHeight: 18, maxWidth: 600, minimumColumnWidth: 60)
+        let cell = TableGrid.textFrame(in: grid.cellFrames()[1][1])
+        let plain = NSAttributedString(string: "열기 ", attributes: [.font: font]).size().width
+        let onLink = NSPoint(x: cell.minX + plain + 4, y: cell.midY)
+        XCTAssertEqual(grid.link(at: onLink), "https://example.com")
+        XCTAssertNil(grid.link(at: NSPoint(x: cell.minX + 3, y: cell.midY)), "링크가 아닌 글자")
+        XCTAssertNil(grid.link(at: NSPoint(x: cell.maxX - 1, y: cell.midY)), "글자 뒤의 빈 자리")
+        XCTAssertNil(grid.link(at: NSPoint(x: 5, y: 5)), "머리 칸")
+    }
+
+    /// 편집기에서: 격자 위의 ⌘클릭이 칸의 링크를 연다. 보조 키 없는 클릭은 받지 않는다(캐럿이 표로 간다).
+    func testCommandClickOnAGridLinkOpensIt() throws {
+        let editor = editor(table)
+        let spy = LinkSpy()
+        editor.editorDelegate = spy
+        caret(editor, at: 0)
+        let table = try XCTUnwrap(editor.textView.imagePlacements.first { $0.lineRange.length > 0 && $0.size.width > 100 })
+        let frame = try XCTUnwrap(editor.textView.frame(of: table))
+        // 링크는 셋째 열의 둘째 본문 행(머리 행 다음 다음)이다. 오른쪽 맞춤 열이라 칸의 오른쪽 끝에 있다.
+        let grid = try XCTUnwrap(editor.drawnTableGrid(headerLine: table.lineRange))
+        let cell = TableGrid.textFrame(in: grid.cellFrames()[2][2])
+        let point = NSPoint(x: frame.minX + cell.maxX - 6, y: frame.minY + cell.midY)
+
+        XCTAssertFalse(editor.handleDrawingClick(at: point, modifiers: []), "그냥 클릭은 텍스트 뷰에 맡긴다")
+        XCTAssertTrue(spy.opened.isEmpty)
+        XCTAssertTrue(editor.handleDrawingClick(at: point, modifiers: .command))
+        XCTAssertEqual(spy.opened, ["https://example.com"])
+        // 실제 누르기의 길(`mouseDown`)로도. 먹은 클릭이라 캐럿이 표로 가지 않고 표는 격자로 남는다.
+        let textView = editor.textView
+        let press = try XCTUnwrap(NSEvent.mouseEvent(with: .leftMouseDown, location: textView.convert(point, to: nil),
+                                                     modifierFlags: .command, timestamp: 100,
+                                                     windowNumber: textView.window?.windowNumber ?? 0, context: nil,
+                                                     eventNumber: 41, clickCount: 1, pressure: 1))
+        textView.mouseDown(with: press)
+        XCTAssertEqual(spy.opened, ["https://example.com", "https://example.com"])
+        XCTAssertEqual(editor.drawnTableCount, 1)
+        // 링크가 없는 칸의 ⌘클릭은 먹지 않는다.
+        let plain = TableGrid.textFrame(in: grid.cellFrames()[1][0])
+        XCTAssertFalse(editor.handleDrawingClick(at: NSPoint(x: frame.minX + plain.minX + 4,
+                                                             y: frame.minY + plain.midY), modifiers: .command))
+    }
+
     /// 표 맞추기 설정을 꺼도 격자는 그린다 — 그 설정은 표를 고치는 동안의 원문에 닿는다.
     func testGridDoesNotDependOnTheAlignmentSetting() {
         let editor = editor(table)

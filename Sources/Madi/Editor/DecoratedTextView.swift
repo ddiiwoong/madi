@@ -293,26 +293,29 @@ public class DecoratedTextView: NSTextView {
     /// (U+FFFC를 넣은 쪽은 80pt가 됐다), 글자를 끼워 넣으면 원문이 달라진다.
     /// 그래서 스타일러가 `minimumLineHeight`로 자리를 비우고(문서 불변, 실측 80pt
     /// 확보) 여기서 그 자리에 그린다.
-    private func drawImages(in rect: NSRect, visible: NSRange) {
-        guard !imagePlacements.isEmpty,
-              let layoutManager, let textContainer else { return }
+    /// 그림 하나가 그려지는 자리(뷰 좌표). 그리기와 클릭(격자로 그린 표의 ⌘클릭)이 같은 자리를 쓴다.
+    func frame(of placement: MarkdownStyler.ImagePlacement) -> NSRect? {
+        guard placement.size.width > 0, placement.size.height > 0,
+              NSMaxRange(placement.lineRange) <= (textStorage?.length ?? 0),
+              let layoutManager, let textContainer else { return nil }
         let origin = textContainerOrigin
+        let glyphRange = layoutManager.glyphRange(forCharacterRange: placement.lineRange,
+                                                  actualCharacterRange: nil)
+        var box = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+        box.origin.x += origin.x
+        box.origin.y += origin.y
+        return Self.imageFrame(for: placement, lineBox: box, textOriginX: origin.x,
+                               containerWidth: textContainer.size.width,
+                               padding: textContainer.lineFragmentPadding)
+    }
+
+    private func drawImages(in rect: NSRect, visible: NSRange) {
+        guard !imagePlacements.isEmpty else { return }
 
         for placement in imagePlacements
         where NSIntersectionRange(placement.lineRange, visible).length > 0
             || NSLocationInRange(placement.lineRange.location, visible) {
-            guard placement.size.width > 0, placement.size.height > 0,
-                  NSMaxRange(placement.lineRange) <= (textStorage?.length ?? 0) else { continue }
-            let glyphRange = layoutManager.glyphRange(forCharacterRange: placement.lineRange,
-                                                      actualCharacterRange: nil)
-            var box = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
-            box.origin.x += origin.x
-            box.origin.y += origin.y
-
-            let frame = Self.imageFrame(for: placement, lineBox: box, textOriginX: origin.x,
-                                        containerWidth: textContainer.size.width,
-                                        padding: textContainer.lineFragmentPadding)
-            guard frame.intersects(rect) else { continue }
+            guard let frame = frame(of: placement), frame.intersects(rect) else { continue }
             placement.image.draw(in: frame, from: .zero, operation: .sourceOver, fraction: 1,
                                  respectFlipped: true, hints: [.interpolation: NSImageInterpolation.high])
         }

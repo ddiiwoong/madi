@@ -30,6 +30,16 @@ final class TranslationPaneView: NSView, MarkdownEditorDelegate {
     var onChange: (() -> Void)?
     /// 번역본에서 링크를 ⌘클릭했다.
     var onLink: ((String) -> Void)?
+    /// 메타데이터 카드를 접거나 폈다. 원문 창이 그 상태를 기억한다(`collapsesFrontMatter`).
+    var onCardToggle: ((Bool) -> Void)?
+
+    /// 메타데이터 카드의 접힘. 원문 창이 기억해 둔 상태로 연다.
+    func setCardCollapsed(_ collapsed: Bool) {
+        frontMatterCard.setCollapsed(collapsed)
+        editor.headerDidChange()
+    }
+
+    var isCardCollapsed: Bool { frontMatterCard.isCollapsed }
 
     init(document: MarkdownDocument, direction: TranslationDirection) {
         self.document = document
@@ -78,7 +88,10 @@ final class TranslationPaneView: NSView, MarkdownEditorDelegate {
         // 원문 창과 같다 — 카드는 편집기 안의 머리라 글과 함께 굴러간다.
         frontMatterCard.isHidden = true
         editor.headerView = frontMatterCard
-        frontMatterCard.onToggle = { [weak editor] in editor?.headerDidChange() }
+        frontMatterCard.onToggle = { [weak self] collapsed in
+            self?.editor.headerDidChange()
+            self?.onCardToggle?(collapsed)
+        }
 
         let column = NSStackView(views: [header, band, editor])
         column.orientation = .vertical

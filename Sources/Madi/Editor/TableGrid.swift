@@ -102,6 +102,47 @@ struct TableGrid {
         return frames
     }
 
+    /// 칸 안에서 글이 놓이는 사각형 — 칸에서 여백을 뺀 자리. 그리기와 링크 찾기가 같은 자리를 쓴다.
+    static func textFrame(in cell: NSRect) -> NSRect {
+        NSRect(x: cell.minX + padding.left, y: cell.minY + padding.top,
+               width: cell.width - padding.left - padding.right,
+               height: cell.height - padding.top - padding.bottom)
+    }
+
+    /// 점(격자 좌표, 위가 0) 아래 글자의 링크 주소. 글자 위가 아니면(칸의 빈 자리, 여백) nil이다.
+    ///
+    /// 격자는 그림이라 텍스트 뷰가 그 안의 글자를 모른다. 그래서 그 칸의 글을 그릴 때와 같은 폭으로
+    /// 다시 놓아 보고 점 아래의 글자를 찾는다. ⌘클릭을 받을 때만 부른다.
+    func link(at point: NSPoint) -> String? {
+        let frames = cellFrames()
+        for (rowIndex, row) in frames.enumerated() {
+            for (column, frame) in row.enumerated() where frame.contains(point) {
+                guard column < rows[rowIndex].cells.count else { return nil }
+                let cell = rows[rowIndex].cells[column]
+                guard cell.length > 0 else { return nil }
+                let text = Self.textFrame(in: frame)
+                let local = NSPoint(x: point.x - text.minX, y: point.y - text.minY)
+
+                let storage = NSTextStorage(attributedString: cell)
+                let layout = NSLayoutManager()
+                let container = NSTextContainer(size: NSSize(width: text.width, height: .greatestFiniteMagnitude))
+                // 문자열 그리기(`draw(with:options:)`)는 줄 조각 여백 없이 놓는다 — 같게 맞춘다.
+                container.lineFragmentPadding = 0
+                layout.addTextContainer(container)
+                storage.addLayoutManager(layout)
+                layout.ensureLayout(for: container)
+                let glyph = layout.glyphIndex(for: local, in: container, fractionOfDistanceThroughGlyph: nil)
+                guard glyph < layout.numberOfGlyphs else { return nil }
+                let box = layout.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: container)
+                guard box.contains(local) else { return nil }
+                let index = layout.characterIndexForGlyph(at: glyph)
+                guard index < storage.length else { return nil }
+                return storage.attribute(.mdLinkTarget, at: index, effectiveRange: nil) as? String
+            }
+        }
+        return nil
+    }
+
     /// 뒤집힌 좌표(위가 0)에 그린다. 색은 그리는 때의 외관으로 풀린다 — 다크로 바꿔도 다시 만들지 않는다.
     func draw(line: NSColor, headerBackground: NSColor) {
         let bounds = NSRect(origin: .zero, size: size)
@@ -139,11 +180,8 @@ struct TableGrid {
 
         for (rowIndex, row) in rows.enumerated() {
             for (column, cell) in row.cells.enumerated() where column < columnWidths.count && cell.length > 0 {
-                let frame = frames[rowIndex][column]
-                let text = NSRect(x: frame.minX + Self.padding.left, y: frame.minY + Self.padding.top,
-                                  width: frame.width - Self.padding.left - Self.padding.right,
-                                  height: frame.height - Self.padding.top - Self.padding.bottom)
-                cell.draw(with: text, options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil)
+                cell.draw(with: Self.textFrame(in: frames[rowIndex][column]),
+                          options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil)
             }
         }
     }

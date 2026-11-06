@@ -15,9 +15,18 @@ final class FrontMatterCardView: NSView {
     private let disclosure = NSButton()
     private let summary = NSTextField(labelWithString: "")
     private let grid = NSStackView()
-    private var isCollapsed = false
+    /// 접혀 있는가 — 머리 줄(`문서 메타데이터 · n개 항목`)만 남는다.
+    private(set) var isCollapsed = false
 
-    var onToggle: (() -> Void)?
+    /// 사람이 삼각형을 눌러 접거나 폈다. 값은 새 상태다(`setCollapsed`로 바꾼 것은 알리지 않는다).
+    var onToggle: ((Bool) -> Void)?
+
+    /// 접힘을 정한다 — 기억해 둔 상태로 열 때 쓴다.
+    func setCollapsed(_ collapsed: Bool) {
+        isCollapsed = collapsed
+        disclosure.state = collapsed ? .off : .on
+        grid.isHidden = collapsed
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -87,9 +96,8 @@ final class FrontMatterCardView: NSView {
     }
 
     @objc private func toggleCollapsed() {
-        isCollapsed = disclosure.state == .off
-        grid.isHidden = isCollapsed
-        onToggle?()
+        setCollapsed(disclosure.state == .off)
+        onToggle?(isCollapsed)
     }
 
     // MARK: Content

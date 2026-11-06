@@ -104,6 +104,9 @@ public final class MarkdownEditorView: NSView {
         textView.clickHandler = { [weak self] index, modifiers in
             self?.handleClick(at: index, modifiers: modifiers) ?? false
         }
+        textView.drawingClickHandler = { [weak self] point, modifiers in
+            self?.handleDrawingClick(at: point, modifiers: modifiers) ?? false
+        }
         textView.imageInsertHandler = { [weak self] pasteboard, range in
             self?.insertImages(from: pasteboard, replacing: range) ?? false
         }
@@ -740,6 +743,31 @@ extension MarkdownEditorView {
             return true
         }
         return false
+    }
+
+    /// 격자로 그린 표 위의 ⌘클릭 — 칸의 링크를 연다. 보조 키 없는 클릭은 텍스트 뷰에 맡긴다(캐럿이
+    /// 표로 들어가 원문이 된다).
+    func handleDrawingClick(at point: NSPoint, modifiers: NSEvent.ModifierFlags) -> Bool {
+        guard modifiers.intersection([.command, .shift, .option, .control]) == .command,
+              let url = tableLink(at: point) else { return false }
+        editorDelegate?.markdownEditor(self, didClickLink: url)
+        return true
+    }
+
+    /// 머리 행이 `headerLine`인 표의 격자. 테스트가 칸의 자리를 잴 때 쓴다.
+    func drawnTableGrid(headerLine: NSRange) -> TableGrid? {
+        styler.drawnTables.first { $0.headerLine == headerLine }?.grid
+    }
+
+    /// 점(텍스트 뷰 좌표) 아래, 격자로 그린 표 칸의 링크 주소.
+    func tableLink(at point: NSPoint) -> String? {
+        guard !styler.codeView else { return nil }
+        for table in styler.drawnTables {
+            guard let placement = textView.imagePlacements.first(where: { $0.lineRange == table.headerLine }),
+                  let frame = textView.frame(of: placement), frame.contains(point) else { continue }
+            return table.grid.link(at: NSPoint(x: point.x - frame.minX, y: point.y - frame.minY))
+        }
+        return nil
     }
 
     // MARK: 그림 넣기

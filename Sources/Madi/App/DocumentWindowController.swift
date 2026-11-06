@@ -120,8 +120,13 @@ final class DocumentWindowController: NSWindowController {
         documentArea.alignment = .leading
         documentArea.spacing = 0
         frontMatterCard.isHidden = true
+        // 접어 둔 사람은 다음 문서도 접힌 채 본다(`collapsesFrontMatter`).
+        frontMatterCard.setCollapsed(preferences.collapsesFrontMatter)
         editor.headerView = frontMatterCard
-        frontMatterCard.onToggle = { [weak editor] in editor?.headerDidChange() }
+        frontMatterCard.onToggle = { [weak self] collapsed in
+            self?.preferences.collapsesFrontMatter = collapsed
+            self?.editor.headerDidChange()
+        }
 
         NSLayoutConstraint.activate([
             editor.leadingAnchor.constraint(equalTo: documentArea.leadingAnchor),
@@ -815,6 +820,8 @@ final class DocumentWindowController: NSWindowController {
 
         document.hostWindow = window
         let pane = TranslationPaneView(document: document, direction: direction)
+        pane.setCardCollapsed(preferences.collapsesFrontMatter)
+        pane.onCardToggle = { [weak self] collapsed in self?.preferences.collapsesFrontMatter = collapsed }
         pane.editor.apply(preferences.current)
         // 그림의 상대 경로는 원문 폴더를 기준으로 푼다 — 번역본은 보통 원문 옆에 저장한다.
         pane.editor.documentURL = markdownDocument?.fileURL

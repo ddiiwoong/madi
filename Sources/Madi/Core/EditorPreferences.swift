@@ -413,4 +413,18 @@ public final class PreferenceStore {
     public func reset() {
         for key in Key.all { defaults.removeObject(forKey: key) }
     }
+
+    // MARK: 화면 상태
+
+    /// 문서 메타데이터 카드를 접어 두었는가. 접으면 다음에 여는 문서의 카드도 접힌 채 열린다 —
+    /// 카드를 매번 접는 사람은 매번 접어야 했다.
+    ///
+    /// 설정이 아니라 화면 상태라 `EditorPreferences`에 넣지 않는다. 설정 창에 항목이 없고,
+    /// `기본값으로`가 되돌리지 않는다(`Key.all`에 없다). 문서마다가 아니라 앱에 하나다.
+    public var collapsesFrontMatter: Bool {
+        get { defaults.bool(forKey: Self.frontMatterCollapsedKey) }
+        set { defaults.set(newValue, forKey: Self.frontMatterCollapsedKey) }
+    }
+
+    static let frontMatterCollapsedKey = "frontMatter.collapsed"
 }
