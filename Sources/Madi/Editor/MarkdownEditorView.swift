@@ -91,8 +91,7 @@ public final class MarkdownEditorView: NSView {
         textView.usesFindBar = false
         textView.importsGraphics = false
         textView.setInsets(theme.textInsets, topAccessory: 0)
-        textView.insertionPointColor = theme.insertionPoint
-        textView.backgroundColor = .textBackgroundColor
+        applyColors()
         textView.minSize = NSSize(width: 0, height: 0)
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude,
                                   height: CGFloat.greatestFiniteMagnitude)
@@ -227,9 +226,16 @@ public final class MarkdownEditorView: NSView {
     /// 프린트·PDF처럼 **캐럿 없는 그림**을 낼 동안 켠다. 켜 있으면 캐럿이 있는 줄도 다른 줄처럼 마커를
     /// 숨긴다 — 안 그러면 내보낸 PDF에 캐럿이 있던 줄의 `#`·`**`가 찍힌다(실측: 캐럿을 제목에 두고
     /// 내보내면 `# 제목`).
+    ///
+    /// 내보내는 동안은 **흰 종이에 기본 색**이다 — 고른 테마(종이의 미색 바탕, 다크의 검은 바탕)를 그대로
+    /// 찍으면 잉크를 쓰고, 어느 테마에서 내보냈는지에 따라 같은 문서가 다른 PDF가 된다. 그래서 테마를
+    /// `기본`으로, 텍스트 뷰의 외관을 라이트로 둔다(시스템 의미색이 라이트로 풀린다). 끝나면 되돌린다.
     public var isRenderingForOutput = false {
         didSet {
             guard isRenderingForOutput != oldValue else { return }
+            theme.isForOutput = isRenderingForOutput
+            textView.appearance = isRenderingForOutput ? NSAppearance(named: .aqua) : nil
+            applyColors()
             // 머리(메타데이터 카드)는 내보내지 않는다 — 텍스트 뷰 안에 있어 숨기지 않으면 함께 찍힌다.
             if let headerView {
                 if isRenderingForOutput {
@@ -436,13 +442,25 @@ public final class MarkdownEditorView: NSView {
         theme.bodyFontFamily = preferences.bodyFontFamily
         theme.codeFontFamily = preferences.codeFontFamily
         theme.headingFont = preferences.headingFont
+        theme.colorTheme = preferences.colorTheme
         styler.highlightsCode = preferences.highlightCode
         styler.alignsTables = preferences.alignTables
         styler.appliesSyntheticSlant = preferences.syntheticSlant
         imageStore.loadsRemote = preferences.loadsRemoteImages
         updateTextInsets()
-        textView.insertionPointColor = theme.insertionPoint
+        applyColors()
         restyleAll()
+    }
+
+    /// 글자 속성이 아닌 색 — 바탕, 캐럿, 고른 글의 바탕. 테마를 바꾸거나 내보내기를 시작·끝낼 때 싣는다.
+    private func applyColors() {
+        textView.backgroundColor = theme.background
+        // 굴리다 끝을 넘어 튕길 때 보이는 자리도 같은 바탕이어야 한다.
+        scrollView.backgroundColor = theme.background
+        textView.insertionPointColor = theme.insertionPoint
+        var selected = textView.selectedTextAttributes
+        selected[.backgroundColor] = theme.selection ?? NSColor.selectedTextBackgroundColor
+        textView.selectedTextAttributes = selected
     }
 
     /// 글을 가운데 두는 가로 여백을 다시 잰다. 창 크기가 바뀔 때도 불려야 한다.
@@ -626,8 +644,22 @@ public final class MarkdownEditorView: NSView {
         restyleAll()
     }
 
+    /// 다이어그램·수식을 다크로 그릴지. 내보내는 동안은 흰 종이라 라이트다.
     private var isDarkAppearance: Bool {
-        effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        !isRenderingForOutput && effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+    }
+
+    /// 아직 그리는 중인 다이어그램·수식이 있는가.
+    var hasPendingDrawings: Bool { styler.pendingRenderedBlockCount > 0 }
+
+    /// 그리는 중인 다이어그램·수식을 기다린다 — 프린트·PDF 직전에 부른다. 다크 화면에서는 라이트 그림을
+    /// 아직 그린 적이 없을 수 있고, 그대로 찍으면 그 자리에 원문이 나간다. 그림이 도착하면 편집기가 다시
+    /// 칠한다(`DiagramRenderer.didRender`). 시간 안에 오지 않으면 그대로 찍는다.
+    func waitForPendingDrawings(timeout: TimeInterval = 8) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while hasPendingDrawings, Date() < deadline {
+            RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.05))
+        }
     }
 
     /// 지금 그림으로 그려진 블록의 수. 테스트가 쓴다.
@@ -648,6 +680,9 @@ public final class MarkdownEditorView: NSView {
         syncCodeBlockBackgrounds()
         isStyling = false
     }
+
+    /// 장식 확인을 다음 차례에 잡아 두었는가 — 레이아웃이 여러 번 끝나도 한 번만 본다.
+    private var decorationCheckScheduled = false
 
     private func restyle(dirty range: NSRange) {
         guard !isStyling else { return }
@@ -1021,6 +1056,27 @@ extension MarkdownEditorView: @preconcurrency NSLayoutManagerDelegate {
         layoutManager.setGlyphs(glyphs, properties: &adjusted, characterIndexes: charIndexes,
                                 font: aFont, forGlyphRange: glyphRange)
         return count
+    }
+
+    /// 레이아웃이 한 차례 끝나면 그려 둔 장식(코드 블록 바탕·인용 막대)이 옮겨 갔는지 본다
+    /// (`DecoratedTextView.revalidateDecorations`).
+    ///
+    /// 왜(실측, 앱에서 문서를 열고 3~5초 뒤 찍은 창, Solarized·GitHub 다크): 코드 블록 바탕이 블록 자리가
+    /// 아니라 그보다 450pt 위, 제목 위의 빈 줄에 띠로 남아 있었다(15초 뒤에는 없었다). 끊어 놓기
+    /// (`allowsNonContiguousLayout`)는 아직 놓지 않은 구간을 어림으로 두고 먼저 그린다. 어림 자리에 그린
+    /// 바탕은 글자가 아니라 레이아웃 관리자가 모르는 그림이라, 자리가 고쳐진 뒤에도 옛 자리를 다시 그려
+    /// 주지 않는다. 기본 테마의 코드 바탕은 아주 옅어 눈에 띄지 않았다.
+    /// 그 자리에서 레이아웃을 묻지 않고 다음 차례로 미룬다 — 레이아웃 알림 안에서 레이아웃을 물으면 다시
+    /// 레이아웃이 돈다.
+    public func layoutManager(_ layoutManager: NSLayoutManager, didCompleteLayoutFor textContainer: NSTextContainer?,
+                              atEnd layoutFinishedFlag: Bool) {
+        guard !decorationCheckScheduled else { return }
+        decorationCheckScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.decorationCheckScheduled = false
+            self.textView.revalidateDecorations()
+        }
     }
 
     public func layoutManager(_ layoutManager: NSLayoutManager,

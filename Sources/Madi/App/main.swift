@@ -32,11 +32,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 시스템을 따를 때는 `nil`을 준다 — 아무 값이나 넣으면 사용자가 시스템 모양을
     /// 바꿔도 앱만 그대로 남는다.
     private func applyAppearance() {
-        switch preferences.current.appearance {
+        let current = preferences.current
+        switch current.appearance {
         case .system: NSApp.appearance = nil
         case .light: NSApp.appearance = NSAppearance(named: .aqua)
         case .dark: NSApp.appearance = NSAppearance(named: .darkAqua)
         }
+        // 보기 ▸ 테마의 체크. 설정 창에서 바꿔도 메뉴가 따라온다.
+        if let main = NSApp.mainMenu { AppMenu.markColorTheme(current.colorTheme, in: main) }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {

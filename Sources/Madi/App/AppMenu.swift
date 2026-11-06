@@ -169,7 +169,10 @@ enum AppMenu {
         main.addItem(submenu(String(localized: "파일"), fileCommands, insertRecentAfter: String(localized: "문서 열기…")))
         main.addItem(submenu(String(localized: "편집"), editCommands))
         let view = submenu(String(localized: "보기"), viewCommands)
-        if let menu = view.submenu { addHiddenPlusShortcut(to: menu) }
+        if let menu = view.submenu {
+            addHiddenPlusShortcut(to: menu)
+            addThemeMenu(to: menu)
+        }
         main.addItem(view)
         main.addItem(submenu(String(localized: "도구"), toolCommands))
 
@@ -200,6 +203,38 @@ enum AppMenu {
         plus.isHidden = true
         plus.allowsKeyEquivalentWhenHidden = true
         menu.insertItem(plus, at: index + 1)
+    }
+
+    /// 보기 ▸ 테마 — 다섯 테마를 고르는 하위 메뉴. `글꼴…` 바로 앞에 둔다. 항목마다 색 견본을 붙이고,
+    /// 지금 테마에 체크를 단다(`markColorTheme`). 명령 팔레트도 이 메뉴를 읽어 `보기 › 테마 › 종이`로 보인다.
+    private static func addThemeMenu(to menu: NSMenu) {
+        let fonts = #selector(DocumentWindowController.showFontSettings(_:))
+        let index = menu.items.firstIndex { $0.action == fonts } ?? menu.items.count
+        let title = String(localized: "테마")
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        let themes = NSMenu(title: title)
+        for theme in EditorPreferences.ColorTheme.allCases {
+            let entry = themes.addItem(withTitle: theme.label,
+                                       action: #selector(DocumentWindowController.chooseColorThemeAction(_:)),
+                                       keyEquivalent: "")
+            entry.representedObject = theme.rawValue
+            entry.image = ThemePalette.swatch(for: theme)
+        }
+        item.submenu = themes
+        menu.insertItem(item, at: index)
+    }
+
+    /// 테마 메뉴의 체크 — 지금 테마 하나에만. 앱이 설정이 바뀔 때마다 부른다.
+    ///
+    /// `validateMenuItem`으로 하지 않는 까닭은 원본 보기의 체크와 같다(`DocumentWindowController.mark`).
+    static func markColorTheme(_ theme: EditorPreferences.ColorTheme, in menu: NSMenu) {
+        let action = #selector(DocumentWindowController.chooseColorThemeAction(_:))
+        for item in menu.items {
+            if item.action == action {
+                item.state = (item.representedObject as? String) == theme.rawValue ? .on : .off
+            }
+            if let submenu = item.submenu { markColorTheme(theme, in: submenu) }
+        }
     }
 
     private static func submenu(_ title: String, _ commands: [Command?],

@@ -103,6 +103,44 @@ final class PrintAndPDFTests: XCTestCase {
         XCTAssertNil(storage.attribute(.mdHiddenMarker, at: 0, effectiveRange: nil), "화면에서는 캐럿 줄의 마커가 다시 보인다")
     }
 
+    /// PDF는 흰 종이에 기본 색이다 — 다크 화면에서 종이 테마를 골라 두어도. 전에는 테마가 없었지만 다크
+    /// 화면이면 텍스트 뷰가 다크 바탕을 그대로 찍을 수 있었다. 끝나면 화면은 고른 테마로 돌아온다.
+    func testPDFIsWhitePaperWhateverTheThemeAndAppearance() throws {
+        var preferences = settings(paper: .letter, orientation: .portrait, margin: .normal)
+        preferences.colorTheme = .paper
+        let controller = open("본문 글 한 줄\n", preferences: preferences)
+        controller.window?.appearance = NSAppearance(named: .darkAqua)
+        let url = folder.appendingPathComponent("종이.pdf")
+        XCTAssertTrue(controller.exportPDF(to: url, showsProgress: false))
+
+        let page = try XCTUnwrap(PDFDocument(url: url)?.page(at: 0))
+        let bounds = page.bounds(for: .mediaBox)
+        let image = page.thumbnail(of: bounds.size, for: .mediaBox)
+        let rep = try XCTUnwrap(image.representations.compactMap { $0 as? NSBitmapImageRep }.first
+                                ?? image.tiffRepresentation.flatMap(NSBitmapImageRep.init(data:)))
+        let scale = CGFloat(rep.pixelsWide) / bounds.width
+        func color(x: CGFloat, yFromTop: CGFloat) -> NSColor? {
+            rep.colorAt(x: Int(x * scale), y: Int(yFromTop * scale))?.usingColorSpace(.sRGB)
+        }
+        // 글 칸 안의 빈 자리(오른쪽 위, 글 아래)는 흰색이다 — 테마 바탕도, 다크 바탕도 아니다.
+        for (x, y) in [(500.0, 120.0), (300.0, 300.0), (100.0, 600.0)] {
+            let pixel = try XCTUnwrap(color(x: x, yFromTop: y))
+            XCTAssertGreaterThan(pixel.brightnessComponent, 0.97, "(\(x), \(y))가 흰색이 아니다: \(pixel)")
+            XCTAssertLessThan(abs(pixel.redComponent - pixel.blueComponent), 0.02, "미색이 아니다")
+        }
+        // 글자는 어둡다(다크 화면의 흰 글자가 흰 종이에 찍히지 않았다).
+        var darkest: CGFloat = 1
+        for x in stride(from: 40.0, to: 300.0, by: 1) {
+            for y in stride(from: 40.0, to: 140.0, by: 1) {
+                darkest = min(darkest, color(x: x, yFromTop: y)?.brightnessComponent ?? 1)
+            }
+        }
+        XCTAssertLessThan(darkest, 0.3, "글자가 보이지 않는다")
+
+        XCTAssertNil(controller.editor.textView.appearance, "화면은 창의 외관으로 돌아온다")
+        XCTAssertTrue(controller.editor.textView.backgroundColor === ThemePalette.palette(for: .paper).background)
+    }
+
     func testLandscapePDFPagesAreWide() throws {
         let controller = open("가로\n", preferences: settings(paper: .a4, orientation: .landscape, margin: .wide))
         let url = folder.appendingPathComponent("가로.pdf")

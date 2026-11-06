@@ -72,6 +72,8 @@ public final class MarkdownStyler {
     /// 이번 패스에서 찾은 다이어그램·수식 블록. 편집기가 "그림이 도착하면 다시 칠할 것이
     /// 있는가"를 이것으로 안다.
     public private(set) var renderedBlocks: [RenderedBlock] = []
+    /// 이번 패스에서 아직 그리는 중이던 블록 수. 프린트·PDF가 그림을 기다릴지 이것으로 안다.
+    public private(set) var pendingRenderedBlockCount = 0
     /// 상대 경로의 기준이 되는 문서 위치. 저장하지 않은 문서는 nil이다.
     public var documentURL: URL?
 
@@ -271,6 +273,8 @@ public final class MarkdownStyler {
         if !renderedBlocks.isEmpty {
             placeRenderedBlocks(lines, in: storage, text: text, caretLine: caretLine,
                                 writeRange: writeRange)
+        } else {
+            pendingRenderedBlockCount = 0
         }
 
         for (index, range) in search.ranges.enumerated()
@@ -456,6 +460,8 @@ public final class MarkdownStyler {
         var placements = imagePlacements
         var shownAsImage: [NSRange] = []
         var dollarSources: [NSRange] = []
+        var pending = 0
+        defer { pendingRenderedBlockCount = pending }
 
         for block in renderedBlocks {
             let writes = NSIntersectionRange(block.range, writeRange).length > 0
@@ -468,7 +474,11 @@ public final class MarkdownStyler {
                                             isDark: isDarkAppearance,
                                             fontSize: Double(theme.bodyPointSize),
                                             textColor: textColor, fontFamily: fontFamily)
-                if case let .ready(ready) = renderer.image(for: request) { image = ready }
+                switch renderer.image(for: request) {
+                case let .ready(ready): image = ready
+                case .pending: pending += 1
+                case .failed: break
+                }
             }
 
             guard let image else {
@@ -777,10 +787,12 @@ public final class MarkdownStyler {
         imagePlacements = placements.sorted { $0.lineRange.location < $1.lineRange.location }
     }
 
-    /// 격자를 다시 쓸 수 있는지 가리는 열쇠 — 원문, 글 넓이, 글꼴, 줄 간격.
+    /// 격자를 다시 쓸 수 있는지 가리는 열쇠 — 원문, 글 넓이, 글꼴, 줄 간격, 색 테마(칸의 글자 색과 선
+    /// 색이 격자에 들어 있다), 내보내는 중인가(그때는 기본 색이다).
     private func tableCacheKey(_ source: String) -> String {
         "\(contentWidth)|\(theme.bodyPointSize)|\(theme.lineSpacingScale)|\(theme.bodyFontFamily ?? "")|"
-            + "\(theme.codeFontFamily ?? "")|\(appliesSyntheticSlant)\n" + source
+            + "\(theme.codeFontFamily ?? "")|\(appliesSyntheticSlant)|\(theme.colorTheme.rawValue)|"
+            + "\(theme.isForOutput)\n" + source
     }
 
     /// 표 하나의 격자. 구분 행은 빼고, 칸의 인라인 마크업은 본문처럼 그린다(마커는 뺀다).

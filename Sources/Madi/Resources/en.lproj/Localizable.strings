@@ -198,6 +198,9 @@
 "세로" = "Portrait";
 "가로" = "Landscape";
 "시스템 기본" = "System Default";
+"theme.standard" = "Default";
+"종이" = "Paper";
+"고대비" = "High Contrast";
 
 /* EpubBook.swift */
 "mimetype 항목이 없습니다" = "No mimetype entry";
@@ -265,6 +268,8 @@
 "시스템 고정폭" = "System Monospaced";
 "문서 내용을 바꾸지 않고 읽기 화면만 조정합니다." = "These settings change how documents look, never what they contain.";
 "화면 모양" = "Appearance";
+"테마" = "Theme";
+"테마마다 라이트·다크가 있어 화면 모양이 고릅니다. 프린트·PDF는 테마와 상관없이 흰 종이에 기본 색으로 찍습니다." = "Each theme has a light and a dark version; Appearance picks one. Printing and PDF always use the default colors on white paper, whatever the theme.";
 "줄 간격" = "Line spacing";
 "글 넓이" = "Text width";
 "글꼴" = "Fonts";

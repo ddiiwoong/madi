@@ -227,6 +227,29 @@ final class DocumentWindowControllerTests: XCTestCase {
         XCTAssertEqual(hiddenPlus?.allowsKeyEquivalentWhenHidden, true)
     }
 
+    // MARK: 테마
+
+    /// 보기 ▸ 테마에 다섯 테마가 견본과 함께 있고, `글꼴…` 바로 앞이다. 고르면 저장되고, 창이 그 색으로
+    /// 칠하고, 그 항목에만 체크가 붙는다.
+    func testThemeMenuChoosesAndChecksTheTheme() throws {
+        let fonts = try XCTUnwrap(menuItem(for: #selector(DocumentWindowController.showFontSettings(_:))))
+        let menu = try XCTUnwrap(fonts.menu)
+        let index = try XCTUnwrap(menu.items.firstIndex(of: fonts))
+        let themeItem = menu.items[index - 1]
+        let themes = try XCTUnwrap(themeItem.submenu, "글꼴… 앞이 테마 하위 메뉴다")
+        XCTAssertEqual(themes.items.compactMap { $0.representedObject as? String },
+                       EditorPreferences.ColorTheme.allCases.map(\.rawValue))
+        XCTAssertTrue(themes.items.allSatisfy { $0.image != nil }, "견본이 붙어 있다")
+
+        let store = PreferenceStore(defaults: MemoryDefaults())
+        let (_, controller) = open("본문\n", store: store)
+        let paper = try XCTUnwrap(themes.items.first { ($0.representedObject as? String) == "paper" })
+        controller.chooseColorThemeAction(paper)
+        XCTAssertEqual(store.current.colorTheme, .paper)
+        XCTAssertTrue(controller.editor.textView.backgroundColor === ThemePalette.palette(for: .paper).background)
+        XCTAssertEqual(themes.items.filter { $0.state == .on }.map { $0.representedObject as? String }, ["paper"])
+    }
+
     // MARK: 문서 메타데이터 카드
 
     /// 카드는 편집기의 텍스트 뷰 안에 있어 글과 함께 굴러간다. 글은 카드 아래에서 시작하고, 저장하는

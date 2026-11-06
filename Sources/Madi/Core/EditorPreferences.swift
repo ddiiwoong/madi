@@ -33,6 +33,31 @@ public struct EditorPreferences: Equatable, Sendable {
         }
     }
 
+    /// 문서 색 묶음. 테마마다 라이트·다크 두 벌이 있고, 화면 모양(`Appearance`)이 그중 하나를 고른다.
+    /// 색 값은 그리는 쪽에 있다(`ThemePalette`) — 여기는 무엇을 골랐는지만 안다.
+    public enum ColorTheme: String, CaseIterable, Sendable {
+        /// 시스템 색. 테마를 고르기 전의 모양 그대로다.
+        case standard
+        /// 따뜻한 미색 바탕에 짙은 갈색 글 — 긴 원고를 읽기 편하다.
+        case paper
+        /// GitHub 문서와 같은 색. 올렸을 때의 모양으로 본다.
+        case github
+        /// Solarized 색 조합. 글자 대비를 4.5 : 1 위로 맞추려고 강조색을 조금 진하게(다크는 밝게) 했다.
+        case solarized
+        /// 흰 바탕에 검은 글(다크는 반대). 밝은 곳이나 눈이 피로할 때.
+        case highContrast
+
+        public var label: String {
+            switch self {
+            case .standard: return String(localized: "theme.standard", defaultValue: "기본")
+            case .paper: return String(localized: "종이")
+            case .github: return "GitHub"
+            case .solarized: return "Solarized"
+            case .highContrast: return String(localized: "고대비")
+            }
+        }
+    }
+
     /// 줄 간격 — 본문 크기에 대한 배율이다. 고정 pt로 두면 글자를 키울 때 줄이 붙는다.
     public enum LineSpacing: String, CaseIterable, Sendable {
         case tight, normal, loose
@@ -148,6 +173,9 @@ public struct EditorPreferences: Equatable, Sendable {
     public var syntheticSlant: Bool
     public var openInCodeView: Bool
     public var appearance: Appearance
+    /// 문서 색 테마. 화면 모양과 따로 고른다 — 테마마다 라이트·다크가 있다. 프린트·PDF는 테마와 상관없이
+    /// 흰 종이에 기본 색이다.
+    public var colorTheme: ColorTheme
     public var lineSpacing: LineSpacing
     public var documentWidth: DocumentWidth
     /// 원격 그림을 받아올지. **기본이 꺼짐이고 그래야 한다** — 문서를 열었을 뿐인데
@@ -237,8 +265,10 @@ public struct EditorPreferences: Equatable, Sendable {
                 translationTarget: String = "en",
                 bodyFontFamily: String? = nil,
                 codeFontFamily: String? = nil,
-                headingFont: HeadingFont = .sameAsBody) {
+                headingFont: HeadingFont = .sameAsBody,
+                colorTheme: ColorTheme = .standard) {
         self.bodyPointSize = Self.clamp(bodyPointSize)
+        self.colorTheme = colorTheme
         self.highlightCode = highlightCode
         self.alignTables = alignTables
         self.syntheticSlant = syntheticSlant
@@ -317,11 +347,13 @@ public final class PreferenceStore {
         static let codeFontFamily = "editor.codeFontFamily"
         /// 없으면 본문과 같음, 빈 값이면 시스템, 이름이면 그 패밀리.
         static let headingFontFamily = "editor.headingFontFamily"
+        static let colorTheme = "editor.colorTheme"
 
         static let all = [bodyPointSize, highlightCode, alignTables, syntheticSlant,
                           openInCodeView, appearance, lineSpacing, documentWidth,
                           loadsRemoteImages, printMargin, printOrientation, printPaper,
-                          translationTarget, bodyFontFamily, codeFontFamily, headingFontFamily]
+                          translationTarget, bodyFontFamily, codeFontFamily, headingFontFamily,
+                          colorTheme]
     }
 
     private let defaults: UserDefaults
@@ -366,7 +398,8 @@ public final class PreferenceStore {
                 ?? standard.translationTarget,
             bodyFontFamily: family(Key.bodyFontFamily, standard.bodyFontFamily),
             codeFontFamily: family(Key.codeFontFamily, standard.codeFontFamily),
-            headingFont: headingFont()
+            headingFont: headingFont(),
+            colorTheme: value(Key.colorTheme, standard.colorTheme)
         )
     }
 
@@ -390,6 +423,7 @@ public final class PreferenceStore {
         defaults.set(preferences.syntheticSlant, forKey: Key.syntheticSlant)
         defaults.set(preferences.openInCodeView, forKey: Key.openInCodeView)
         defaults.set(preferences.appearance.rawValue, forKey: Key.appearance)
+        defaults.set(preferences.colorTheme.rawValue, forKey: Key.colorTheme)
         defaults.set(preferences.lineSpacing.rawValue, forKey: Key.lineSpacing)
         defaults.set(preferences.documentWidth.rawValue, forKey: Key.documentWidth)
         defaults.set(preferences.loadsRemoteImages, forKey: Key.loadsRemoteImages)

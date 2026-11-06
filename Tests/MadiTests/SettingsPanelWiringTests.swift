@@ -153,8 +153,23 @@ final class SettingsPanelWiringTests: XCTestCase {
         XCTAssertEqual(panel.selectedTab, SettingsPanel.fontTab)
     }
 
+    /// 테마 고르개 — 다섯 테마가 견본과 함께 있고, 고르면 저장소까지 간다. 다시 열면 고른 것이 골라져 있다.
+    func testThemePickerReachesTheStore() throws {
+        let themes = try XCTUnwrap(picker(for: EditorPreferences.ColorTheme.self))
+        XCTAssertEqual(themes.identifier?.rawValue, "view.theme")
+        XCTAssertTrue(themes.itemArray.allSatisfy { $0.image != nil }, "견본이 붙어 있다")
+        XCTAssertEqual(themes.selectedItem?.representedObject as? String, "standard")
+        select("github", in: themes)
+        fire(themes)
+        XCTAssertEqual(store.current.colorTheme, .github)
+        panel = makePanel()
+        XCTAssertEqual(picker(for: EditorPreferences.ColorTheme.self)?.selectedItem?.representedObject as? String,
+                       "github")
+    }
+
     /// 고르개가 비어 있으면 사용자가 고를 것이 없다.
     func testEveryPickerIsPopulated() {
+        XCTAssertEqual(picker(for: EditorPreferences.ColorTheme.self)?.numberOfItems, 5)
         XCTAssertEqual(picker(for: EditorPreferences.Appearance.self)?.numberOfItems, 3)
         XCTAssertEqual(picker(for: EditorPreferences.LineSpacing.self)?.numberOfItems, 3)
         XCTAssertEqual(picker(for: EditorPreferences.DocumentWidth.self)?.numberOfItems, 4)

@@ -72,21 +72,37 @@ public struct MarkdownTheme {
     /// 기억한 이름이 계속 없는 것으로 남지 않게.
     static func forgetResolvedFonts() { resolved = [:] }
 
-    public var text: NSColor { .labelColor }
+    // MARK: 색 — 고른 테마에서 온다(`ThemePalette`)
+
+    /// 문서 색 테마. 설정에서 온다.
+    public var colorTheme: EditorPreferences.ColorTheme = .standard
+    /// 프린트·PDF를 그리는 중인가. 그동안은 고른 테마와 상관없이 **기본 색**이다 — 흰 종이에 찍는다
+    /// (편집기가 그동안 텍스트 뷰를 라이트 외관으로 바꾼다, `MarkdownEditorView.isRenderingForOutput`).
+    public var isForOutput = false
+
+    /// 지금 그리는 색 묶음.
+    var palette: ThemePalette { ThemePalette.palette(for: isForOutput ? .standard : colorTheme) }
+
+    /// 글 바탕.
+    public var background: NSColor { palette.background }
+    /// 고른 글의 바탕. nil이면 시스템 색이다(`기본` 테마).
+    public var selection: NSColor? { palette.selection }
+
+    public var text: NSColor { palette.text }
     /// 마커(`#`, `**`, 목록 글머리, 인용 막대) 색. 본문보다 물러나야 하지만 **보여야**
     /// 한다 — 캐럿을 올린 줄의 마커는 구조를 고치기 위해 읽는 것이다.
     /// `.tertiaryLabelColor`를 쓰던 때는 대비가 1.88 : 1이어서 캐럿을 올려도 `#`이
     /// 거의 보이지 않았다. 지금은 약 3.9 : 1이고 본문(14 : 1)과는 여전히 뚜렷이 다르다.
     /// `MarkdownThemeContrastTests`가 3 : 1 아래로 내려가지 않게 지킨다.
-    public var dim: NSColor { .secondaryLabelColor }
+    public var dim: NSColor { palette.dim }
     /// 인용 글 색. 본문보다 물러나되 **긴 글로 읽혀야** 한다.
     ///
     /// 전에는 마커와 같은 `.secondaryLabelColor`였다. 알파 0.5의 반투명 색이라 흰 바탕에서 회색
     /// 128 정도로 보이고, 몇 줄짜리 인용(책의 머리말, 주의 글)을 읽기에는 흐렸다. 막대가 인용임을
     /// 알려 주므로 글은 그보다 진해도 된다. 대비는 `MarkdownThemeContrastTests`가 지킨다(4.5 : 1 이상).
-    public var quote: NSColor { Self.dynamic(light: 0x55_59_5E, dark: 0xB6_BA_BF) }
+    public var quote: NSColor { palette.quote }
     /// 인용 막대 색. 글자가 아니라 3pt 막대라 옅어도 보인다(GitHub의 인용 막대와 같은 쪽).
-    public var quoteBar: NSColor { Self.dynamic(light: 0xC9_CF_D6, dark: 0x4D_54_5C) }
+    public var quoteBar: NSColor { palette.quoteBar }
 
     /// 막대 하나의 색 — 알림 상자의 바깥 막대는 그 종류의 색이다.
     public func quoteBarColor(for alert: GithubAlert?) -> NSColor {
@@ -94,12 +110,12 @@ public struct MarkdownTheme {
     }
 
     /// 표를 격자로 그릴 때의 선과 머리 행 바탕.
-    public var tableLine: NSColor { Self.dynamic(light: 0xD5_D9_DE, dark: 0x45_4A_51) }
-    public var tableHeaderBackground: NSColor { Self.dynamic(light: 0xF3_F4_F6, dark: 0x2B_2E_33) }
-    public var link: NSColor { .linkColor }
-    public var codeText: NSColor { .labelColor }
-    public var codeBackground: NSColor { .quaternarySystemFill }
-    public var rule: NSColor { .separatorColor }
+    public var tableLine: NSColor { palette.tableLine }
+    public var tableHeaderBackground: NSColor { palette.tableHeaderBackground }
+    public var link: NSColor { palette.link }
+    public var codeText: NSColor { palette.codeText }
+    public var codeBackground: NSColor { palette.codeBackground }
+    public var rule: NSColor { palette.rule }
 
     /// 코드 구문 강조 색.
     ///
@@ -109,17 +125,11 @@ public struct MarkdownTheme {
     /// 글자 대비 기준은 4.5 : 1이다. 주석에 쓰던 `.secondaryLabelColor`는 알파가
     /// 0.50인 **반투명** 색이라 말 그대로 투명하게 보였다.
     ///
-    /// 그래서 외관마다 불투명한 색을 따로 둔다. 값은 Xcode의 기본 테마에서 가져왔다 —
-    /// 같은 문제(흰/검은 배경 위의 작은 고정폭 글자)를 이미 푼 팔레트다.
-    /// 대비는 `MarkdownThemeContrastTests`가 두 외관 모두에서 지킨다.
+    /// 그래서 외관마다 불투명한 색을 따로 둔다. `기본` 테마의 값은 Xcode의 기본 테마에서 가져왔다 —
+    /// 같은 문제(흰/검은 배경 위의 작은 고정폭 글자)를 이미 푼 팔레트다. 다른 테마의 값은 `ThemePalette`.
+    /// 대비는 `MarkdownThemeContrastTests`가 모든 테마의 두 외관에서 지킨다.
     public func codeColor(for role: CodeHighlighter.Span.Role) -> NSColor {
-        switch role {
-        case .keyword: return Self.dynamic(light: 0xA3_19_9B, dark: 0xFF_7A_B2)
-        case .type:    return Self.dynamic(light: 0x0F_5A_63, dark: 0x6B_DF_FF)
-        case .string:  return Self.dynamic(light: 0xB8_28_14, dark: 0xFF_81_70)
-        case .comment: return Self.dynamic(light: 0x4A_5A_66, dark: 0x93_A1_AD)
-        case .number:  return Self.dynamic(light: 0x21_24_BD, dark: 0xD9_C8_FF)
-        }
+        palette.code(role)
     }
 
     /// 외관에 따라 갈라지는 불투명한 색. 두 값 다 알파 1이어야 한다 — 알파를 쓰면
@@ -140,15 +150,9 @@ public struct MarkdownTheme {
 
     /// GitHub 알림의 색. 역할마다 다르고, 코드 색과 같은 이유로 외관별 불투명 색이다
     /// (시스템 틴트 색은 흰 배경의 작은 글자로 씻겨 보인다).
-    /// 값은 GitHub의 알림 색을 라이트/다크에서 각각 읽히게 조정한 것이다.
+    /// `기본` 테마의 값은 GitHub의 알림 색을 라이트/다크에서 각각 읽히게 조정한 것이다.
     public func alertColor(for alert: GithubAlert) -> NSColor {
-        switch alert {
-        case .note:      return Self.dynamic(light: 0x0A_52_A1, dark: 0x6C_B6_FF)
-        case .tip:       return Self.dynamic(light: 0x1A_65_32, dark: 0x5E_D2_86)
-        case .important: return Self.dynamic(light: 0x6A_2D_9E, dark: 0xC2_97_FF)
-        case .warning:   return Self.dynamic(light: 0x8A_52_00, dark: 0xE3_B3_41)
-        case .caution:   return Self.dynamic(light: 0xA3_1C_1C, dark: 0xFF_81_82)
-        }
+        palette.alert(alert)
     }
 
     /// Amber, matching the colour family a markdown editor conventionally uses
@@ -161,7 +165,7 @@ public struct MarkdownTheme {
         NSColor(calibratedRed: 0.965, green: 0.780, blue: 0.267, alpha: 0.95)
     }
 
-    public var insertionPoint: NSColor { .labelColor }
+    public var insertionPoint: NSColor { palette.text }
 
     public var lineSpacing: CGFloat { bodyPointSize * CGFloat(lineSpacingScale) }
     public var paragraphSpacing: CGFloat { bodyPointSize * 0.55 }

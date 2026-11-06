@@ -23,6 +23,7 @@ final class SettingsPanel: NSWindowController {
     private let sizeSlider = NSSlider()
     private let sizeLabel = NSTextField(labelWithString: "")
     private let appearancePicker = NSPopUpButton()
+    private let themePicker = NSPopUpButton()
     private let lineSpacingPicker = NSPopUpButton()
     private let widthPicker = NSPopUpButton()
     private let bodyFontPicker = NSPopUpButton()
@@ -438,6 +439,13 @@ final class SettingsPanel: NSWindowController {
 
     /// 보기 탭 — 화면 모양과 그리는 방식.
     private func makeViewTab() -> NSView {
+        fill(themePicker, EditorPreferences.ColorTheme.allCases) { $0.label }
+        themePicker.identifier = NSUserInterfaceItemIdentifier("view.theme")
+        for item in themePicker.itemArray {
+            guard let raw = item.representedObject as? String,
+                  let theme = EditorPreferences.ColorTheme(rawValue: raw) else { continue }
+            item.image = ThemePalette.swatch(for: theme)
+        }
         fill(appearancePicker, EditorPreferences.Appearance.allCases) { $0.label }
         fill(lineSpacingPicker, EditorPreferences.LineSpacing.allCases) { $0.label }
         fill(widthPicker, EditorPreferences.DocumentWidth.allCases) { $0.label }
@@ -449,7 +457,11 @@ final class SettingsPanel: NSWindowController {
 
         return column([
             note(String(localized: "문서 내용을 바꾸지 않고 읽기 화면만 조정합니다.")),
+            row(String(localized: "테마"), themePicker),
             row(String(localized: "화면 모양"), appearancePicker),
+            // 테마마다 라이트·다크가 있다는 것과 PDF가 테마를 따르지 않는다는 것 — 말하지 않으면 다크에서
+            // 테마를 고르고 '라이트 색이 안 보인다'고 여기거나, PDF가 미색으로 나올 줄 안다.
+            note(String(localized: "테마마다 라이트·다크가 있어 화면 모양이 고릅니다. 프린트·PDF는 테마와 상관없이 흰 종이에 기본 색으로 찍습니다.")),
             row(String(localized: "줄 간격"), lineSpacingPicker),
             row(String(localized: "글 넓이"), widthPicker),
             highlightCheck, alignCheck, slantCheck, codeViewCheck,
@@ -714,6 +726,7 @@ final class SettingsPanel: NSWindowController {
         codeViewCheck.state = preferences.openInCodeView ? .on : .off
         remoteImageCheck.state = preferences.loadsRemoteImages ? .on : .off
         select(preferences.appearance, in: appearancePicker)
+        select(preferences.colorTheme, in: themePicker)
         select(preferences.lineSpacing, in: lineSpacingPicker)
         select(preferences.documentWidth, in: widthPicker)
         selectFonts()
@@ -766,7 +779,8 @@ final class SettingsPanel: NSWindowController {
             translationTarget: preferences.translationTarget,
             bodyFontFamily: fontSelection(bodyFontPicker),
             codeFontFamily: fontSelection(codeFontPicker),
-            headingFont: headingSelection()
+            headingFont: headingSelection(),
+            colorTheme: selection(themePicker, preferences.colorTheme)
         )
         updateSizeLabel()
         preview.apply(preferences)

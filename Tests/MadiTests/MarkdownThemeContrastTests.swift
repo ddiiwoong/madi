@@ -167,6 +167,64 @@ final class MarkdownThemeContrastTests: XCTestCase {
         }
     }
 
+    /// 다섯 테마의 라이트·다크 열 벌 모두에서 — 본문·인용·링크·코드 글자·알림·표 머리 글자 4.5 : 1, 마커
+    /// 3 : 1, 인용은 본문보다 옅게, 막대·표 선은 바탕과 갈리게, 고른 글 위의 글자도 읽히게.
+    /// 테마를 더하거나 색을 고치면 이 시험이 먼저 본다.
+    @MainActor
+    func testEveryThemeIsReadableInBothAppearances() {
+        for colorTheme in EditorPreferences.ColorTheme.allCases {
+            for name in [NSAppearance.Name.aqua, .darkAqua] {
+                guard let appearance = NSAppearance(named: name) else { continue }
+                appearance.performAsCurrentDrawingAppearance {
+                    var theme = MarkdownTheme()
+                    theme.colorTheme = colorTheme
+                    let label = "\(colorTheme.rawValue)·\(name.rawValue)"
+                    let page = Self.composite(theme.background, over: name == .aqua ? .white : .black)
+                    func check(_ what: String, _ color: NSColor, over ground: NSColor, atLeast minimum: Double) {
+                        let ratio = Self.contrast(Self.composite(color, over: ground), ground)
+                        XCTAssertGreaterThanOrEqual(ratio, minimum,
+                                                    "\(label) \(what) \(String(format: "%.2f", ratio)) : 1")
+                    }
+                    check("본문", theme.text, over: page, atLeast: minimumTextContrast)
+                    check("인용", theme.quote, over: page, atLeast: minimumTextContrast)
+                    check("링크", theme.link, over: page, atLeast: minimumTextContrast)
+                    check("마커", theme.dim, over: page, atLeast: 3)
+                    check("막대", theme.quoteBar, over: page, atLeast: 1.3)
+                    check("표 선", theme.tableLine, over: page, atLeast: 1.3)
+                    let header = Self.composite(theme.tableHeaderBackground, over: page)
+                    check("표 머리 글자", theme.text, over: header, atLeast: minimumTextContrast)
+                    let code = Self.composite(theme.codeBackground, over: page)
+                    check("코드 글자", theme.codeText, over: code, atLeast: minimumTextContrast)
+                    for role in [CodeHighlighter.Span.Role.keyword, .type, .string, .comment, .number] {
+                        check("코드 \(role)", theme.codeColor(for: role), over: code, atLeast: minimumTextContrast)
+                    }
+                    for alert in GithubAlert.allCases {
+                        check("알림 \(alert)", theme.alertColor(for: alert), over: page, atLeast: minimumTextContrast)
+                    }
+                    if let selection = theme.selection {
+                        check("고른 글", theme.text, over: Self.composite(selection, over: page),
+                              atLeast: minimumTextContrast)
+                    }
+                    let quote = Self.contrast(Self.composite(theme.quote, over: page), page)
+                    let body = Self.contrast(Self.composite(theme.text, over: page), page)
+                    XCTAssertLessThan(quote, body, "\(label) 인용 글이 본문보다 진하다")
+                }
+            }
+        }
+    }
+
+    /// 프린트·PDF는 고른 테마와 상관없이 기본 색이다(흰 종이).
+    @MainActor
+    func testOutputUsesTheStandardColors() {
+        var theme = MarkdownTheme()
+        theme.colorTheme = .paper
+        theme.isForOutput = true
+        XCTAssertTrue(theme.background === MarkdownTheme().background)
+        XCTAssertTrue(theme.text === MarkdownTheme().text)
+        theme.isForOutput = false
+        XCTAssertFalse(theme.background === MarkdownTheme().background)
+    }
+
     // MARK: 재는 법
 
     /// 알파가 있는 색을 바탕색 위에 올린 결과.

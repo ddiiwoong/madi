@@ -17,6 +17,8 @@ public class DecoratedTextView: NSTextView {
     public var codeBlockRanges: [NSRange] = [] {
         didSet {
             guard codeBlockRanges != oldValue else { return }
+            // 다 다시 그리므로 옛 자리 기억도 버린다.
+            drawnDecorations = drawnDecorations.filter { $0.key.level != 0 }
             needsDisplay = true
         }
     }
@@ -33,6 +35,7 @@ public class DecoratedTextView: NSTextView {
     public var imagePlacements: [MarkdownStyler.ImagePlacement] = [] {
         didSet {
             guard imagePlacements != oldValue else { return }
+            drawnDecorations = drawnDecorations.filter { $0.key.level != Decoration.image }
             needsDisplay = true
         }
     }
@@ -49,6 +52,7 @@ public class DecoratedTextView: NSTextView {
     public var quoteBars: [MarkdownStyler.QuoteBar] = [] {
         didSet {
             guard quoteBars != oldValue else { return }
+            drawnDecorations = drawnDecorations.filter { $0.key.level == 0 }
             needsDisplay = true
         }
     }
@@ -136,33 +140,70 @@ public class DecoratedTextView: NSTextView {
         guard !codeBlockRanges.isEmpty,
               let layoutManager, let textContainer else { return }
 
-        let origin = textContainerOrigin
         codeBlockColor.setFill()
 
         for range in Self.ranges(codeBlockRanges, touching: visible) {
-            guard range.length > 0, NSMaxRange(range) <= (textStorage?.length ?? 0) else { continue }
-            let glyphRange = layoutManager.glyphRange(forCharacterRange: range,
-                                                      actualCharacterRange: nil)
-            guard glyphRange.length > 0 else { continue }
-
-            // 블록이 차지하는 줄들의 높이. 가로는 쓰지 않는다 — 글자 폭을 따라가면
-            // 다시 들쭉날쭉해지므로 **글 넓이 전체**로 바꿔 끼운다.
-            var box = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
-            box.origin.x = origin.x + textContainer.lineFragmentPadding
-            box.size.width = textContainer.size.width - textContainer.lineFragmentPadding * 2
-            box.origin.y += origin.y
-
-            let padded = NSRect(
-                x: box.minX - codeBlockPadding.left,
-                y: box.minY - codeBlockPadding.top,
-                width: box.width + codeBlockPadding.left + codeBlockPadding.right,
-                height: box.height + codeBlockPadding.top + codeBlockPadding.bottom
-            )
             // 보이는 데만 그린다 — 큰 문서를 굴릴 때 블록 전부를 칠할 이유가 없다.
-            guard padded.intersects(rect) else { continue }
+            guard let padded = codeBlockFrame(range), padded.intersects(rect) else { continue }
+            drawnDecorations[Decoration(range: range, level: 0)] = padded
             NSBezierPath(roundedRect: padded,
                          xRadius: codeBlockCornerRadius,
                          yRadius: codeBlockCornerRadius).fill()
+        }
+    }
+
+    /// 코드 블록 하나의 바탕 자리(뷰 좌표).
+    private func codeBlockFrame(_ range: NSRange) -> NSRect? {
+        guard range.length > 0, NSMaxRange(range) <= (textStorage?.length ?? 0),
+              let layoutManager, let textContainer else { return nil }
+        let origin = textContainerOrigin
+        let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+        guard glyphRange.length > 0 else { return nil }
+
+        // 블록이 차지하는 줄들의 높이. 가로는 쓰지 않는다 — 글자 폭을 따라가면
+        // 다시 들쭉날쭉해지므로 **글 넓이 전체**로 바꿔 끼운다.
+        var box = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+        box.origin.x = origin.x + textContainer.lineFragmentPadding
+        box.size.width = textContainer.size.width - textContainer.lineFragmentPadding * 2
+        box.origin.y += origin.y
+        return NSRect(x: box.minX - codeBlockPadding.left, y: box.minY - codeBlockPadding.top,
+                      width: box.width + codeBlockPadding.left + codeBlockPadding.right,
+                      height: box.height + codeBlockPadding.top + codeBlockPadding.bottom)
+    }
+
+    // MARK: 옮겨 간 장식
+
+    /// 그린 장식 하나 — 코드 블록(`level` 0), 인용 막대(`level` = 겹), 그림·표 격자(`image`).
+    struct Decoration: Hashable {
+        let range: NSRange
+        let level: Int
+        static let image = -1
+    }
+
+    /// 마지막으로 그린 자리. 레이아웃이 자리를 고친 뒤 옛 자리를 지우는 데 쓴다(`revalidateDecorations`).
+    private(set) var drawnDecorations: [Decoration: NSRect] = [:]
+
+    /// 그려 둔 장식 가운데 레이아웃이 옮긴 것의 옛 자리와 새 자리를 다시 그린다.
+    ///
+    /// 장식은 글자가 아니라 이 뷰가 그린 그림이라, 끊어 놓기가 어림 자리를 고쳐도 레이아웃 관리자는 그
+    /// 옛 자리를 다시 그려 주지 않는다 — 바탕이 엉뚱한 줄에 띠로 남는다(`MarkdownEditorView`의 레이아웃
+    /// 알림에 실측). 그린 것만 다시 재므로 화면에 보이는 몇 개뿐이다.
+    func revalidateDecorations() {
+        guard !drawnDecorations.isEmpty else { return }
+        let bars = Dictionary(quoteBars.map { (Decoration(range: $0.range, level: $0.level), $0) },
+                              uniquingKeysWith: { first, _ in first })
+        let images = Dictionary(imagePlacements.map { ($0.lineRange, $0) }, uniquingKeysWith: { first, _ in first })
+        for (key, old) in drawnDecorations {
+            let current: NSRect?
+            switch key.level {
+            case 0: current = codeBlockFrame(key.range)
+            case Decoration.image: current = images[key.range].flatMap(frame(of:))
+            default: current = bars[key].flatMap(quoteBarFrame)
+            }
+            guard current != old else { continue }
+            setNeedsDisplay(old)
+            if let current { setNeedsDisplay(current) }
+            drawnDecorations[key] = current
         }
     }
 
@@ -179,25 +220,29 @@ public class DecoratedTextView: NSTextView {
     }
 
     private func drawQuoteBars(in rect: NSRect, visible: NSRange) {
-        guard !quoteBars.isEmpty, let layoutManager, let textContainer,
-              let length = textStorage?.length else { return }
-        let origin = textContainerOrigin
-        let textLeft = origin.x + textContainer.lineFragmentPadding
+        guard !quoteBars.isEmpty else { return }
         // 범위로만 거른다(이분 탐색을 쓰지 않는다). 겹친 인용에서는 바깥 막대가 안쪽 막대보다 먼저
         // 시작해 늦게 끝나므로 끝 위치가 차례대로 늘지 않는다. 막대는 문서에 많아야 수백 개다.
         for bar in quoteBars
         where NSIntersectionRange(bar.range, visible).length > 0 || NSLocationInRange(visible.location, bar.range) {
-            guard bar.range.length > 0, NSMaxRange(bar.range) <= length else { continue }
-            let glyphs = layoutManager.glyphRange(forCharacterRange: bar.range, actualCharacterRange: nil)
-            guard glyphs.length > 0 else { continue }
-            let first = layoutManager.lineFragmentUsedRect(forGlyphAt: glyphs.location, effectiveRange: nil)
-            let last = layoutManager.lineFragmentUsedRect(forGlyphAt: NSMaxRange(glyphs) - 1, effectiveRange: nil)
-            let frame = Self.quoteBarFrame(level: bar.level, top: first.minY + origin.y,
-                                           bottom: last.maxY + origin.y, textLeft: textLeft)
-            guard frame.intersects(rect) else { continue }
+            guard let frame = quoteBarFrame(bar), frame.intersects(rect) else { continue }
+            drawnDecorations[Decoration(range: bar.range, level: bar.level)] = frame
             quoteBarColor(bar.alert).setFill()
             NSBezierPath(roundedRect: frame, xRadius: frame.width / 2, yRadius: frame.width / 2).fill()
         }
+    }
+
+    /// 막대 하나의 자리(뷰 좌표).
+    private func quoteBarFrame(_ bar: MarkdownStyler.QuoteBar) -> NSRect? {
+        guard bar.range.length > 0, NSMaxRange(bar.range) <= (textStorage?.length ?? 0),
+              let layoutManager, let textContainer else { return nil }
+        let origin = textContainerOrigin
+        let glyphs = layoutManager.glyphRange(forCharacterRange: bar.range, actualCharacterRange: nil)
+        guard glyphs.length > 0 else { return nil }
+        let first = layoutManager.lineFragmentUsedRect(forGlyphAt: glyphs.location, effectiveRange: nil)
+        let last = layoutManager.lineFragmentUsedRect(forGlyphAt: NSMaxRange(glyphs) - 1, effectiveRange: nil)
+        return Self.quoteBarFrame(level: bar.level, top: first.minY + origin.y, bottom: last.maxY + origin.y,
+                                  textLeft: origin.x + textContainer.lineFragmentPadding)
     }
 
     // MARK: 체크박스
@@ -316,6 +361,7 @@ public class DecoratedTextView: NSTextView {
         where NSIntersectionRange(placement.lineRange, visible).length > 0
             || NSLocationInRange(placement.lineRange.location, visible) {
             guard let frame = frame(of: placement), frame.intersects(rect) else { continue }
+            drawnDecorations[Decoration(range: placement.lineRange, level: Decoration.image)] = frame
             placement.image.draw(in: frame, from: .zero, operation: .sourceOver, fraction: 1,
                                  respectFlipped: true, hints: [.interpolation: NSImageInterpolation.high])
         }

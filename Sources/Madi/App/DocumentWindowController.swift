@@ -491,7 +491,9 @@ final class DocumentWindowController: NSWindowController {
         let operation = NSPrintOperation(view: editor.printableView, printInfo: printInfo(forPDF: nil))
         operation.jobTitle = markdownDocument?.displayName ?? String(localized: "문서")
         // 프린트 패널이 떠 있는 동안과 찍는 동안 캐럿 줄의 마커도 숨긴다. 끝나면(취소해도) 되돌린다.
+        // 흰 종이에 기본 색으로 바뀌므로, 라이트로 다시 그리는 다이어그램을 기다린다.
         editor.isRenderingForOutput = true
+        editor.waitForPendingDrawings()
         operation.runModal(for: window!, delegate: self,
                            didRun: #selector(printOperationDidRun(_:success:contextInfo:)), contextInfo: nil)
     }
@@ -533,6 +535,7 @@ final class DocumentWindowController: NSWindowController {
         operation.showsProgressPanel = showsProgress
         editor.isRenderingForOutput = true
         defer { editor.isRenderingForOutput = false }
+        editor.waitForPendingDrawings()
         guard operation.run() else {
             AppLog.error(String(localized: "PDF 내보내기에 실패했습니다"), detail: url.path)
             return false
@@ -1086,6 +1089,19 @@ final class DocumentWindowController: NSWindowController {
         }
         settingsPanel?.showWindow(nil)
         settingsPanel?.window?.makeKeyAndOrderFront(nil)
+    }
+
+    /// 보기 ▸ 테마 ▸ … — 문서 색 테마를 바꾼다. 항목의 `representedObject`가 테마의 raw 값이다.
+    /// 모든 창과 열린 설정 창이 따라온다(`PreferenceStore.didChange`).
+    @objc func chooseColorThemeAction(_ sender: Any?) {
+        guard let raw = (sender as? NSMenuItem)?.representedObject as? String,
+              let theme = EditorPreferences.ColorTheme(rawValue: raw) else { return }
+        var changed = preferences.current
+        guard changed.colorTheme != theme else { return }
+        changed.colorTheme = theme
+        preferences.save(changed)
+        if let main = NSApp.mainMenu { AppMenu.markColorTheme(theme, in: main) }
+        NotificationCenter.default.post(name: PreferenceStore.didChange, object: nil)
     }
 
     /// 보기 ▸ 글꼴… — 설정의 '글꼴' 탭을 연다.
