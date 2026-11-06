@@ -169,6 +169,34 @@ public struct EditorPreferences: Equatable, Sendable {
     /// IBM Plex Mono다. **고정폭만** 받는다 — 그리는 쪽이 고정폭이 아닌 이름을 시스템
     /// 고정폭으로 바꾼다(코드의 들여쓰기와 열이 맞아야 한다).
     public var codeFontFamily: String?
+    /// 제목(h1~h6, `===`·`---` 밑줄 꼴 포함)의 글꼴. 기본은 본문과 같다. 다르게 고르면 제목에만
+    /// 쓰이고 목록 표지·코드·표는 그대로다.
+    public var headingFont: HeadingFont
+
+    /// 제목 글꼴을 고르는 세 길.
+    public enum HeadingFont: Equatable, Sendable {
+        /// 본문 글꼴을 따른다 — 본문을 바꾸면 제목도 바뀐다.
+        case sameAsBody
+        /// 시스템 글꼴.
+        case system
+        /// 이 패밀리(`NSFontManager`의 이름).
+        case family(String)
+
+        /// 공백뿐인 이름은 시스템이다 — 본문·코드 글꼴과 같은 규칙.
+        static func normalized(_ value: HeadingFont) -> HeadingFont {
+            guard case let .family(name) = value else { return value }
+            return EditorPreferences.family(name).map(HeadingFont.family) ?? .system
+        }
+    }
+
+    /// 제목을 그릴 패밀리. `nil`이면 시스템 글꼴이다.
+    public var headingFontFamily: String? {
+        switch headingFont {
+        case .sameAsBody: bodyFontFamily
+        case .system: nil
+        case let .family(name): name
+        }
+    }
 
     /// 앱에 들어 있는 글꼴(`Resources/Fonts`). 어느 Mac에서도 같은 모양이 나오고, 시스템
     /// 글꼴보다 한글 본문이 읽기 좋아 기본값으로 쓴다.
@@ -208,7 +236,8 @@ public struct EditorPreferences: Equatable, Sendable {
                 printPaper: PrintPaper = .system,
                 translationTarget: String = "en",
                 bodyFontFamily: String? = nil,
-                codeFontFamily: String? = nil) {
+                codeFontFamily: String? = nil,
+                headingFont: HeadingFont = .sameAsBody) {
         self.bodyPointSize = Self.clamp(bodyPointSize)
         self.highlightCode = highlightCode
         self.alignTables = alignTables
@@ -226,6 +255,7 @@ public struct EditorPreferences: Equatable, Sendable {
         self.translationTarget = trimmed.isEmpty ? "en" : trimmed
         self.bodyFontFamily = Self.family(bodyFontFamily)
         self.codeFontFamily = Self.family(codeFontFamily)
+        self.headingFont = HeadingFont.normalized(headingFont)
     }
 
     /// 빈 이름과 공백뿐인 이름은 '시스템'(`nil`)이다 — 저장소에 손으로 쓴 빈 값이 이름 없는
@@ -285,11 +315,13 @@ public final class PreferenceStore {
         static let translationTarget = "translation.target"
         static let bodyFontFamily = "editor.bodyFontFamily"
         static let codeFontFamily = "editor.codeFontFamily"
+        /// 없으면 본문과 같음, 빈 값이면 시스템, 이름이면 그 패밀리.
+        static let headingFontFamily = "editor.headingFontFamily"
 
         static let all = [bodyPointSize, highlightCode, alignTables, syntheticSlant,
                           openInCodeView, appearance, lineSpacing, documentWidth,
                           loadsRemoteImages, printMargin, printOrientation, printPaper,
-                          translationTarget, bodyFontFamily, codeFontFamily]
+                          translationTarget, bodyFontFamily, codeFontFamily, headingFontFamily]
     }
 
     private let defaults: UserDefaults
@@ -333,7 +365,8 @@ public final class PreferenceStore {
             translationTarget: defaults.string(forKey: Key.translationTarget)
                 ?? standard.translationTarget,
             bodyFontFamily: family(Key.bodyFontFamily, standard.bodyFontFamily),
-            codeFontFamily: family(Key.codeFontFamily, standard.codeFontFamily)
+            codeFontFamily: family(Key.codeFontFamily, standard.codeFontFamily),
+            headingFont: headingFont()
         )
     }
 
@@ -342,6 +375,11 @@ public final class PreferenceStore {
     private func family(_ key: String, _ fallback: String?) -> String? {
         guard defaults.object(forKey: key) != nil else { return fallback }
         return EditorPreferences.family(defaults.string(forKey: key))
+    }
+
+    private func headingFont() -> EditorPreferences.HeadingFont {
+        guard let raw = defaults.string(forKey: Key.headingFontFamily) else { return .sameAsBody }
+        return EditorPreferences.family(raw).map(EditorPreferences.HeadingFont.family) ?? .system
     }
 
     /// 저장한다. 값은 `EditorPreferences`의 이니셜라이저가 이미 가둬 둔 것이다.
@@ -363,6 +401,12 @@ public final class PreferenceStore {
         // 읽혀, 시스템 글꼴을 골라도 다음에 열면 Pretendard로 돌아간다.
         defaults.set(preferences.bodyFontFamily ?? "", forKey: Key.bodyFontFamily)
         defaults.set(preferences.codeFontFamily ?? "", forKey: Key.codeFontFamily)
+        // '본문과 같음'은 키를 지워 둔다 — 없을 때의 뜻이 그것이다.
+        switch preferences.headingFont {
+        case .sameAsBody: defaults.removeObject(forKey: Key.headingFontFamily)
+        case .system: defaults.set("", forKey: Key.headingFontFamily)
+        case let .family(name): defaults.set(name, forKey: Key.headingFontFamily)
+        }
     }
 
     /// 전부 기본값으로. 키를 지워 두면 다음에 기본값이 다시 읽힌다.

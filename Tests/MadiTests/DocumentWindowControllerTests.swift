@@ -226,6 +226,39 @@ final class DocumentWindowControllerTests: XCTestCase {
         XCTAssertEqual(hiddenPlus?.allowsKeyEquivalentWhenHidden, true)
     }
 
+    // MARK: 글꼴
+
+    /// 보기 ▸ 글꼴…은 글자 크기 명령 바로 앞에 있다.
+    func testFontSettingsCommandIsInTheViewMenu() throws {
+        let fonts = try XCTUnwrap(menuItem(for: #selector(DocumentWindowController.showFontSettings(_:))))
+        let larger = try XCTUnwrap(menuItem(for: #selector(DocumentWindowController.makeTextLargerAction(_:))))
+        XCTAssertTrue(fonts.menu === larger.menu, "같은 메뉴(보기)에 있다")
+        let items = try XCTUnwrap(fonts.menu?.items)
+        XCTAssertEqual(items.firstIndex(of: fonts).map { $0 + 1 }, items.firstIndex(of: larger))
+    }
+
+    /// 다른 탭을 보고 있었어도 글꼴…은 설정 창을 **글꼴 탭으로** 연다.
+    func testFontSettingsOpensTheFontTab() throws {
+        let (_, controller) = open("본문\n")
+        let languageDomain = "madi.tests.font-settings"
+        let languageDefaults = MemoryDefaults(name: languageDomain)
+        controller.makeSettingsPanel = { store in
+            let panel = SettingsPanel(store: store, languageDefaults: languageDefaults, languageDomain: languageDomain,
+                                      secrets: MemorySecretStore(), llmDefaults: languageDefaults,
+                                      openURL: { _ in XCTFail("브라우저를 열지 않는다") })
+            panel.window?.setFrameOrigin(NSPoint(x: -20000, y: 0))
+            return panel
+        }
+        defer { controller.settingsPanel?.close() }
+
+        controller.showSettings(nil)
+        let panel = try XCTUnwrap(controller.settingsPanel)
+        panel.selectTab("print")
+        controller.showFontSettings(nil)
+        XCTAssertTrue(controller.settingsPanel === panel, "같은 창을 다시 쓴다")
+        XCTAssertEqual(panel.selectedTab, SettingsPanel.fontTab)
+    }
+
     // MARK: 나란히 보기 — 한 창 안의 좌우
 
     private let english = TranslationDirection(source: "ko", target: "en")

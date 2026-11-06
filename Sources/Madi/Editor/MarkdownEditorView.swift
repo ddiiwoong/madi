@@ -277,6 +277,12 @@ public final class MarkdownEditorView: NSView {
 
     // MARK: Block coordinates (나란히 보기)
 
+    /// 세로 스크롤 막대를 보일지. 설정 창의 미리보기처럼 글이 칸에 다 들어가는 곳은 끈다.
+    public var showsVerticalScroller: Bool {
+        get { scrollView.hasVerticalScroller }
+        set { scrollView.hasVerticalScroller = newValue }
+    }
+
     /// 스크롤이 일어나는 클립 뷰. 나란히 보기가 이것의 경계 변경을 듣는다.
     public var clipView: NSClipView { scrollView.contentView }
 
@@ -415,6 +421,7 @@ public final class MarkdownEditorView: NSView {
         theme.documentWidthMultiple = preferences.documentWidth.multipleOfBodySize
         theme.bodyFontFamily = preferences.bodyFontFamily
         theme.codeFontFamily = preferences.codeFontFamily
+        theme.headingFont = preferences.headingFont
         styler.highlightsCode = preferences.highlightCode
         styler.alignsTables = preferences.alignTables
         styler.appliesSyntheticSlant = preferences.syntheticSlant

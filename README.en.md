@@ -63,6 +63,7 @@ The full list and every shortcut are in [docs/features.md](docs/features.md) (Ko
 | | |
 |---|---|
 | Editing | Live preview ↔ Markdown source toggle (`⌘E`), syntax highlighting for 11 languages, table column alignment, inline images, Mermaid diagram and KaTeX math blocks |
+| Fonts | Separate body, heading and code fonts (View ▸ Fonts…), free Korean recommendations at the top (missing ones link to their download page with “Get…”), a live preview |
 | Find | In-document search (`⌘F`), match count and stepping (`⌘G`) |
 | Navigation | Outline · recent documents · file browser sidebar (each toggles) |
 | Documents | YAML front matter card; `NSDocument` open, save, autosave and version restore |

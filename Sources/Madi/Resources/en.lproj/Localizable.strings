@@ -77,6 +77,7 @@
 
 "빠른 열기…" = "Open Quickly…";
 "명령 팔레트…" = "Command Palette…";
+"글꼴…" = "Fonts…";
 "글자 크게" = "Make Text Bigger";
 "글자 작게" = "Make Text Smaller";
 "글자 기본 크기" = "Default Text Size";
@@ -259,7 +260,6 @@
 "PDF·프린트" = "PDF & Print";
 "정보" = "About";
 "기본값으로" = "Restore Defaults";
-"%@ — 기본, 앱에 들어 있음" = "%@ — default, bundled";
 "%@ (이 Mac에 없음)" = "%@ (not on this Mac)";
 "시스템 글꼴" = "System Font";
 "시스템 고정폭" = "System Monospaced";
@@ -267,10 +267,18 @@
 "화면 모양" = "Appearance";
 "줄 간격" = "Line spacing";
 "글 넓이" = "Text width";
-"본문 글꼴" = "Body font";
-"코드 글꼴" = "Code font";
-"코드 글꼴은 고정폭만 고를 수 있습니다. 글자 폭이 다르면 코드의 들여쓰기와 줄 맞춤이 어긋납니다." = "Only monospaced fonts can be chosen for code. With varying character widths, indentation and alignment in code fall apart.";
-"본문 글자 크기" = "Body text size";
+"글꼴" = "Fonts";
+"본문" = "Body";
+"제목" = "Headings";
+"코드" = "Code";
+"크기" = "Size";
+"문서 내용은 바뀌지 않습니다. 고르는 대로 열린 창에 바로 보입니다." = "Your documents don’t change. Open windows update as you choose.";
+"⌘= · ⌘- · ⌘0으로도 크기를 바꿉니다. 제목 글꼴은 제목에만 쓰이고, 코드 글꼴은 고정폭만 고를 수 있습니다." = "⌘= · ⌘- · ⌘0 also change the size. The heading font applies only to headings, and only monospaced fonts can be chosen for code.";
+"추천에서 ‘받기…’가 붙은 글꼴은 무료 배포처를 엽니다. 내려받아 설치하면 이 목록에 바로 나타납니다." = "Recommended fonts marked “Get…” open their free download page. Once you install one, it appears in this list right away.";
+"‘%@’을 받는 곳을 열었습니다. 내려받아 설치하면 이 목록에 바로 나타납니다." = "Opened the download page for “%@”. Once you install it, it appears in this list right away.";
+"글꼴 받는 곳을 열었습니다" = "Opened a font download page";
+"제목은 이렇게 보입니다" = "Headings look like this";
+"본문은 이렇게 보입니다. **굵게**와 *기울임*, 코드 `let title = 42`가 섞여도 한 줄로 읽힙니다." = "Body text looks like this. **Bold**, *italic* and code like `let title = 42` read together on one line.";
 "화면 언어" = "Language";
 "바꾼 언어는 마디를 다시 열면 적용됩니다." = "A new language takes effect the next time you open Madi.";
 "이미지" = "Images";
@@ -290,6 +298,20 @@
 "화면 언어를 바꿨습니다 — 마디를 다시 열면 적용됩니다" = "Changed the interface language — it takes effect the next time you open Madi";
 "기본 앱으로 등록하지 못했습니다" = "Couldn’t make Madi the default app";
 "Markdown 파일의 기본 앱이 마디로 바뀌었습니다" = "Madi is now the default app for Markdown files";
+
+/* FontPickerMenu.swift */
+"본문과 같음" = "Same as Body";
+"추천" = "Recommended";
+"이 Mac의 글꼴" = "Fonts on This Mac";
+"받기…" = "Get…";
+"앱에 들어 있음 · 기본" = "bundled · default";
+"이 Mac에 없습니다 — 고르면 내려받는 곳(%@)을 엽니다" = "Not on this Mac — choosing it opens the download page (%@)";
+
+/* RecommendedFonts.swift */
+"고딕" = "sans-serif";
+"명조" = "serif";
+"고정폭" = "monospaced";
+"한글 고정폭" = "Korean monospaced";
 
 /* SettingsPanel.swift — AI 교정 */
 "AI 교정" = "AI Proofreading";

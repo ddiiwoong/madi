@@ -114,6 +114,153 @@ final class FontPreferenceTests: XCTestCase {
         XCTAssertNil(store.current.codeFontFamily)
     }
 
+    // MARK: 제목 글꼴
+
+    /// 기본은 본문을 따른다 — 본문을 바꾸면 제목도 바뀐다.
+    func testHeadingFollowsTheBodyByDefault() {
+        var preferences = EditorPreferences.standard
+        XCTAssertEqual(preferences.headingFont, .sameAsBody)
+        XCTAssertEqual(preferences.headingFontFamily, "Pretendard")
+        preferences.bodyFontFamily = "Helvetica"
+        XCTAssertEqual(preferences.headingFontFamily, "Helvetica")
+        preferences.bodyFontFamily = nil
+        XCTAssertNil(preferences.headingFontFamily)
+    }
+
+    func testHeadingFontChoicesMapToFamilies() {
+        var preferences = EditorPreferences.standard
+        preferences.headingFont = .system
+        XCTAssertNil(preferences.headingFontFamily)
+        preferences.headingFont = .family("AppleMyungjo")
+        XCTAssertEqual(preferences.headingFontFamily, "AppleMyungjo")
+        XCTAssertEqual(preferences.bodyFontFamily, "Pretendard", "본문은 그대로다")
+        // 공백뿐인 이름은 시스템이다 — 본문·코드와 같은 규칙.
+        let standard = EditorPreferences.standard
+        let blank = EditorPreferences(bodyPointSize: standard.bodyPointSize, highlightCode: standard.highlightCode,
+                                      alignTables: standard.alignTables, syntheticSlant: standard.syntheticSlant,
+                                      openInCodeView: standard.openInCodeView, headingFont: .family("  "))
+        XCTAssertEqual(blank.headingFont, .system)
+    }
+
+    /// 저장소: 키가 없으면 본문과 같음, 빈 값이면 시스템, 이름이면 그 패밀리.
+    func testHeadingFontRoundTripsThroughTheStore() {
+        let (store, defaults) = freshStore()
+        let key = "editor.headingFontFamily"
+        XCTAssertEqual(store.current.headingFont, .sameAsBody)
+
+        var preferences = EditorPreferences.standard
+        preferences.headingFont = .family("AppleMyungjo")
+        store.save(preferences)
+        XCTAssertEqual(defaults.string(forKey: key), "AppleMyungjo")
+        XCTAssertEqual(store.current, preferences)
+
+        preferences.headingFont = .system
+        store.save(preferences)
+        XCTAssertEqual(defaults.string(forKey: key), "")
+        XCTAssertEqual(store.current.headingFont, .system)
+
+        preferences.headingFont = .sameAsBody
+        store.save(preferences)
+        XCTAssertNil(defaults.object(forKey: key))
+        XCTAssertEqual(store.current.headingFont, .sameAsBody)
+
+        defaults.set("   ", forKey: key)
+        XCTAssertEqual(store.current.headingFont, .system, "손으로 쓴 공백도 시스템이다")
+    }
+
+    func testResetReturnsTheHeadingToTheBody() {
+        let (store, defaults) = freshStore()
+        var preferences = EditorPreferences.standard
+        preferences.headingFont = .family("AppleMyungjo")
+        store.save(preferences)
+        store.reset()
+        XCTAssertNil(defaults.object(forKey: "editor.headingFontFamily"))
+        XCTAssertEqual(store.current.headingFont, .sameAsBody)
+    }
+
+    /// 제목에만 쓰인다 — 본문 · 코드 글꼴은 그대로다.
+    func testThemeDrawsHeadingsInTheHeadingFont() {
+        var theme = MarkdownTheme()
+        theme.bodyFontFamily = "Helvetica"
+        theme.codeFontFamily = "Menlo"
+        theme.headingFont = .family("Times New Roman")
+        XCTAssertEqual(theme.headingFont(level: 1).familyName, "Times New Roman")
+        XCTAssertEqual(theme.headingFont(level: 6).familyName, "Times New Roman")
+        XCTAssertTrue(NSFontManager.shared.traits(of: theme.headingFont(level: 2)).contains(.boldFontMask))
+        XCTAssertEqual(theme.bodyFont.familyName, "Helvetica")
+        XCTAssertEqual(theme.monoFont.familyName, "Menlo")
+
+        theme.headingFont = .system
+        XCTAssertEqual(theme.headingFont(level: 1),
+                       .systemFont(ofSize: theme.bodyPointSize * MarkdownTheme.headingScale[0], weight: .bold))
+        theme.headingFont = .sameAsBody
+        XCTAssertEqual(theme.headingFont(level: 1).familyName, "Helvetica")
+    }
+
+    /// 설정 → 편집기 → 글자 속성. 제목 줄만 제목 글꼴이고, 본문 줄은 본문 글꼴이다.
+    func testEditorDrawsOnlyHeadingsInTheHeadingFont() {
+        let editor = MarkdownEditorView(frame: NSRect(x: 0, y: 0, width: 520, height: 400))
+        editor.markdown = "# Title here\n\nBody text\n\nSetext\n===\n"
+        var preferences = EditorPreferences.standard
+        preferences.bodyFontFamily = "Helvetica"
+        preferences.headingFont = .family("Times New Roman")
+        editor.apply(preferences)
+        let storage = editor.textView.textStorage!
+        let text = storage.string as NSString
+        func family(_ needle: String) -> String? {
+            (storage.attribute(.font, at: text.range(of: needle).location, effectiveRange: nil) as? NSFont)?.familyName
+        }
+        XCTAssertEqual(family("Title"), "Times New Roman")
+        XCTAssertEqual(family("Setext"), "Times New Roman", "밑줄 꼴 제목도")
+        XCTAssertEqual(family("Body"), "Helvetica")
+    }
+
+    // MARK: 추천 글꼴
+
+    func testRecommendedListsAreSplitByUseAndStartWithTheBundledFonts() {
+        let text = RecommendedFonts.list(for: .text)
+        let code = RecommendedFonts.list(for: .code)
+        XCTAssertEqual(text.first?.family, EditorPreferences.bundledBodyFamily)
+        XCTAssertEqual(code.first?.family, EditorPreferences.bundledCodeFamily)
+        XCTAssertEqual(text.first?.source, .bundled)
+        XCTAssertEqual(text.count + code.count, RecommendedFonts.all.count)
+        XCTAssertEqual(Set(RecommendedFonts.all.map(\.family)).count, RecommendedFonts.all.count, "같은 글꼴이 두 번 없다")
+    }
+
+    /// 받을 곳은 받아야 하는 글꼴에만 있고, 모두 https다.
+    func testDownloadPagesAreOnlyForFontsToDownload() {
+        for font in RecommendedFonts.all {
+            switch font.source {
+            case .bundled, .system:
+                XCTAssertNil(font.downloadPage, font.family)
+            case let .download(url):
+                XCTAssertEqual(font.downloadPage, url)
+                XCTAssertEqual(url.scheme, "https", font.family)
+                XCTAssertNotNil(url.host, font.family)
+            }
+        }
+        XCTAssertTrue(RecommendedFonts.all.contains { $0.downloadPage != nil })
+    }
+
+    /// 배포처마다 패밀리 이름이 다르다 — 다른 이름으로 설치돼 있어도 찾고, 그 이름을 쓴다.
+    func testInstalledNameResolvesAliases() throws {
+        let nanum = try XCTUnwrap(RecommendedFonts.all.first { $0.family == "Nanum Myeongjo" })
+        XCTAssertEqual(nanum.installedName { $0 == "Nanum Myeongjo" }, "Nanum Myeongjo")
+        XCTAssertEqual(nanum.installedName { $0 == "NanumMyeongjo" }, "NanumMyeongjo")
+        XCTAssertEqual(nanum.installedName { $0 == "나눔명조" }, "나눔명조")
+        XCTAssertNil(nanum.installedName { _ in false })
+        // 이름이 둘 다 있으면 대표 이름이 먼저다.
+        XCTAssertEqual(nanum.installedName { _ in true }, "Nanum Myeongjo")
+    }
+
+    /// 코드 쪽 추천은 이 Mac에 있으면 정말 고정폭이다 — 아니면 고르개가 받아들이지 않는다.
+    func testInstalledCodeRecommendationsAreFixedPitch() {
+        for font in RecommendedFonts.list(for: .code) {
+            guard let name = font.installedName(isInstalled: { SettingsPanel.isUsable($0, for: .text) }) else { continue }
+            XCTAssertTrue(SettingsPanel.isUsable(name, for: .code), name)
+        }
+    }
+
     // MARK: 앱에 든 글꼴
 
     static var repoFonts: URL {

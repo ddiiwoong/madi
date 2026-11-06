@@ -20,7 +20,9 @@ final class DocumentWindowController: NSWindowController {
     /// 떠 있는 기록 창. 처음 열 때 만들고 그다음부터 같은 것을 다시 보인다.
     private var logPanel: ActivityLogPanel?
     /// 설정 창도 같은 방식으로 하나만 둔다.
-    private var settingsPanel: SettingsPanel?
+    private(set) var settingsPanel: SettingsPanel?
+    /// 설정 창을 짓는다. 테스트가 바꾼다 — 사용자의 키체인과 화면 언어 설정에 닿지 않게.
+    var makeSettingsPanel: (PreferenceStore) -> SettingsPanel = { SettingsPanel(store: $0) }
     /// 빠른 열기·명령 팔레트. 하나만 뜬다 — 새로 열면 앞의 것을 버린다.
     private(set) var quickPick: QuickPickPanel?
     /// 블록 편집기 창(설계 단계 1). 기본 편집기는 그대로 두고 평가용으로 띄운다.
@@ -1077,10 +1079,16 @@ final class DocumentWindowController: NSWindowController {
 
     @objc func showSettings(_ sender: Any?) {
         if settingsPanel == nil {
-            settingsPanel = SettingsPanel(store: preferences)
+            settingsPanel = makeSettingsPanel(preferences)
         }
         settingsPanel?.showWindow(nil)
         settingsPanel?.window?.makeKeyAndOrderFront(nil)
+    }
+
+    /// 보기 ▸ 글꼴… — 설정의 '글꼴' 탭을 연다.
+    @objc func showFontSettings(_ sender: Any?) {
+        showSettings(sender)
+        settingsPanel?.selectTab(SettingsPanel.fontTab)
     }
 
     /// 설정이 바뀌면 이 창에 바로 싣는다. 창마다 따로 받으므로 여러 창이 함께 바뀐다.

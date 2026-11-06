@@ -9,6 +9,17 @@ public struct MarkdownTheme {
     /// 본문·코드 글꼴 패밀리. `nil`이면 시스템 글꼴이다(`EditorPreferences`와 같은 뜻).
     public var bodyFontFamily: String?
     public var codeFontFamily: String?
+    /// 제목 글꼴. 기본은 본문을 따른다 — 본문만 바꾼 쪽(블록 편집기, 테스트)도 제목이 함께 바뀐다.
+    public var headingFont: EditorPreferences.HeadingFont = .sameAsBody
+
+    /// 제목을 그리는 패밀리. `nil`이면 시스템.
+    public var headingFontFamily: String? {
+        switch headingFont {
+        case .sameAsBody: bodyFontFamily
+        case .system: nil
+        case let .family(name): name
+        }
+    }
 
     public var bodyFont: NSFont {
         Self.font(family: bodyFontFamily, size: bodyPointSize) ?? .systemFont(ofSize: bodyPointSize)
@@ -27,7 +38,7 @@ public struct MarkdownTheme {
         let clamped = max(1, min(6, level))
         let size = bodyPointSize * Self.headingScale[clamped - 1]
         // 패밀리에 굵은꼴이 없으면 보통 굵기가 돌아온다 — 크기로만 제목이 갈린다.
-        if let bold = Self.font(family: bodyFontFamily, size: size, bold: true) { return bold }
+        if let bold = Self.font(family: headingFontFamily, size: size, bold: true) { return bold }
         return .systemFont(ofSize: size, weight: clamped <= 2 ? .bold : .semibold)
     }
 

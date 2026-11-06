@@ -26,7 +26,19 @@ final class SettingsPanel: NSWindowController {
     private let lineSpacingPicker = NSPopUpButton()
     private let widthPicker = NSPopUpButton()
     private let bodyFontPicker = NSPopUpButton()
+    private let headingFontPicker = NSPopUpButton()
     private let codeFontPicker = NSPopUpButton()
+    /// 고른 글꼴·크기·줄 간격으로 그린 미리보기. 실제 편집기라 문서 창과 같은 모양이다.
+    let preview = MarkdownEditorView(frame: NSRect(x: 0, y: 0, width: 420, height: 170))
+    /// '받기…'를 골랐을 때 무엇을 열었는지 알린다.
+    let fontNote = NSTextField(wrappingLabelWithString: "")
+    /// 배포 페이지를 연다. 테스트가 바꾼다 — 브라우저를 띄우지 않게.
+    private let openURL: (URL) -> Void
+    /// 이 Mac의 패밀리(고정폭만이면 true). 테스트가 바꾼다 — 글꼴이 새로 설치된 것을 흉내 낸다.
+    private let fontFamilies: (Bool) -> [String]
+    /// 패밀리가 이 Mac에 있고 그 용도에 쓸 수 있는가.
+    private let isFontUsable: (String, RecommendedFont.Use) -> Bool
+    private var tabs: NSTabView?
     private let highlightCheck = NSButton(checkboxWithTitle: String(localized: "코드 블록 구문 강조"), target: nil, action: nil)
     private let alignCheck = NSButton(checkboxWithTitle: String(localized: "표 열 맞추기"), target: nil, action: nil)
     private let slantCheck = NSButton(checkboxWithTitle: String(localized: "한글·CJK 기울임 강제 적용"), target: nil, action: nil)
@@ -68,11 +80,20 @@ final class SettingsPanel: NSWindowController {
     private let orientationPicker = NSPopUpButton()
     private let marginPicker = NSPopUpButton()
 
-    private static let panelSize = NSSize(width: 460, height: 500)
+    private static let panelSize = NSSize(width: 500, height: 620)
 
     /// 글꼴 고르개의 '시스템' 항목에 다는 값. 패밀리 이름이 빈 문자열일 수는 없으므로
     /// 겹치지 않는다.
-    static let systemFontTag = ""
+    static let systemFontTag = FontPickerMenu.systemTag
+
+    /// 패밀리가 이 Mac에 있는가 — **이름으로 찾아** 본다. `availableFontFamilies`는 글꼴을 등록한 뒤
+    /// 런루프가 한 번 돌아야 갱신된다(실측: 앱에 든 글꼴이 등록 직후에는 빠져 있었다). 코드는 고정폭만.
+    static func isUsable(_ family: String, for use: RecommendedFont.Use) -> Bool {
+        guard let font = NSFontManager.shared.font(withFamily: family, traits: [], weight: 5, size: 13) else {
+            return false
+        }
+        return use == .text || font.isFixedPitch
+    }
 
     /// 이 Mac의 글꼴 패밀리. 코드 쪽은 **고정폭만** — 고정폭이 아니면 코드의 들여쓰기와
     /// 줄 맞춤이 어긋난다. (표 열 맞추기는 그 줄의 실제 글꼴로 폭을 재므로 이 제한의 이유가
@@ -91,8 +112,14 @@ final class SettingsPanel: NSWindowController {
          languageDomain: String? = Bundle.main.bundleIdentifier,
          secrets: SecretStore = KeychainSecretStore.app,
          keyChecker: KeyChecking = LiveKeyChecker(),
-         llmDefaults: UserDefaults = .standard) {
+         llmDefaults: UserDefaults = .standard,
+         openURL: @escaping (URL) -> Void = { NSWorkspace.shared.open($0) },
+         fontFamilies: @escaping (Bool) -> [String] = { SettingsPanel.installedFamilies(fixedPitchOnly: $0) },
+         isFontUsable: @escaping (String, RecommendedFont.Use) -> Bool = { SettingsPanel.isUsable($0, for: $1) }) {
         self.store = store
+        self.openURL = openURL
+        self.fontFamilies = fontFamilies
+        self.isFontUsable = isFontUsable
         self.preferences = store.current
         self.languageDefaults = languageDefaults
         self.languageDomain = languageDomain
@@ -119,7 +146,30 @@ final class SettingsPanel: NSWindowController {
         // 항목을 고칠 때 **낡은 글자 크기를 다시 저장한다** — 모든 항목을 한 번에 저장하기 때문이다.
         NotificationCenter.default.addObserver(self, selector: #selector(preferencesChangedElsewhere(_:)),
                                                name: PreferenceStore.didChange, object: nil)
+        // 글꼴을 설치·삭제하면 고르개를 다시 채운다 — '받기…'로 받아 설치한 글꼴이 창을 다시 열지
+        // 않아도 바로 나온다.
+        NotificationCenter.default.addObserver(self, selector: #selector(fontSetChanged(_:)),
+                                               name: NSFont.fontSetChangedNotification, object: nil)
     }
+
+    /// 목록은 알림 뒤 런루프가 한 번 돌아야 갱신된다(위 `isUsable`) — 다음 차례에 채운다.
+    @objc func fontSetChanged(_ note: Notification) {
+        DispatchQueue.main.async { [weak self] in self?.reloadFonts() }
+    }
+
+    func reloadFonts() {
+        MarkdownTheme.forgetResolvedFonts()
+        refillFonts()
+        load()
+    }
+
+    /// 탭을 고른다 — 보기 ▸ 글꼴…이 '글꼴' 탭을 연다.
+    func selectTab(_ identifier: String) {
+        tabs?.selectTabViewItem(withIdentifier: identifier)
+    }
+
+    static let fontTab = "font"
+    var selectedTab: String? { tabs?.selectedTabViewItem?.identifier as? String }
 
     @objc private func preferencesChangedElsewhere(_ note: Notification) {
         guard (note.object as AnyObject?) !== self else { return }
@@ -140,11 +190,13 @@ final class SettingsPanel: NSWindowController {
         let controller = NSViewController()
         let tabs = NSTabView()
         tabs.translatesAutoresizingMaskIntoConstraints = false
-        tabs.addTabViewItem(tab(String(localized: "보기"), view: makeViewTab()))
-        tabs.addTabViewItem(tab(String(localized: "일반"), view: makeGeneralTab()))
-        tabs.addTabViewItem(tab(String(localized: "PDF·프린트"), view: makePrintTab()))
-        tabs.addTabViewItem(tab(String(localized: "AI 교정"), view: makeAITab()))
-        tabs.addTabViewItem(tab(String(localized: "정보"), view: makeAboutTab()))
+        tabs.addTabViewItem(tab(Self.fontTab, String(localized: "글꼴"), view: makeFontTab()))
+        tabs.addTabViewItem(tab("view", String(localized: "보기"), view: makeViewTab()))
+        tabs.addTabViewItem(tab("general", String(localized: "일반"), view: makeGeneralTab()))
+        tabs.addTabViewItem(tab("print", String(localized: "PDF·프린트"), view: makePrintTab()))
+        tabs.addTabViewItem(tab("ai", String(localized: "AI 교정"), view: makeAITab()))
+        tabs.addTabViewItem(tab("about", String(localized: "정보"), view: makeAboutTab()))
+        self.tabs = tabs
 
         let reset = NSButton(title: String(localized: "기본값으로"), target: self, action: #selector(resetAll))
         reset.bezelStyle = .rounded
@@ -166,8 +218,8 @@ final class SettingsPanel: NSWindowController {
         return controller
     }
 
-    private func tab(_ title: String, view: NSView) -> NSTabViewItem {
-        let item = NSTabViewItem(identifier: title)
+    private func tab(_ identifier: String, _ title: String, view: NSView) -> NSTabViewItem {
+        let item = NSTabViewItem(identifier: identifier)
         item.label = title
         let holder = NSView()
         view.translatesAutoresizingMaskIntoConstraints = false
@@ -220,39 +272,54 @@ final class SettingsPanel: NSWindowController {
         picker.action = #selector(changed)
     }
 
-    /// 글꼴 고르개를 채운다. 맨 위가 시스템 글꼴이고 그 아래가 패밀리 이름이다. 각 이름은
-    /// 그 글꼴로 그린다 — 고르기 전에 모양을 볼 수 있어야 한다.
-    private func fillFonts(_ picker: NSPopUpButton, system: String, bundled: String,
-                           families: [String]) {
-        picker.removeAllItems()
-        // 앱에 든 글꼴이 맨 위다 — 기본값이고, 어느 Mac에서도 같은 모양이 나온다.
-        // 목록(`availableFontFamilies`)이 아니라 **이름으로 찾아** 판정한다 — 그 목록은 글꼴을
-        // 등록한 뒤 런루프가 한 번 돌아야 갱신된다(실측: 등록 직후에는 빠져 있었다).
-        if families.contains(bundled) || MarkdownTheme.font(family: bundled, size: 13) != nil {
-            picker.addItem(withTitle: bundled)
-            if let item = picker.lastItem {
-                item.representedObject = bundled
-                let title = String(localized: "\(bundled) — 기본, 앱에 들어 있음")
-                if let font = MarkdownTheme.font(family: bundled, size: 13) {
-                    item.attributedTitle = NSAttributedString(string: title, attributes: [.font: font])
-                } else {
-                    item.title = title
-                }
-            }
+    /// 세 글꼴 고르개를 채운다(`FontPickerMenu`). 글꼴을 설치하면 다시 부른다.
+    private func refillFonts() {
+        let text = fontFamilies(false)
+        FontPickerMenu.fill(bodyFontPicker, .init(use: .text, systemTitle: String(localized: "시스템 글꼴"),
+                                                  families: text) { [isFontUsable] in isFontUsable($0, .text) })
+        FontPickerMenu.fill(headingFontPicker, .init(use: .text, systemTitle: String(localized: "시스템 글꼴"),
+                                                     includesSameAsBody: true,
+                                                     families: text) { [isFontUsable] in isFontUsable($0, .text) })
+        FontPickerMenu.fill(codeFontPicker, .init(use: .code, systemTitle: String(localized: "시스템 고정폭"),
+                                                  families: fontFamilies(true)) { [isFontUsable] in
+            isFontUsable($0, .code)
+        })
+        for picker in [bodyFontPicker, headingFontPicker, codeFontPicker] {
+            picker.target = self
+            picker.action = #selector(fontPicked(_:))
         }
-        picker.addItem(withTitle: system)
-        picker.lastItem?.representedObject = Self.systemFontTag
-        picker.menu?.addItem(.separator())
-        for family in families where family != bundled {
-            picker.addItem(withTitle: family)
-            guard let item = picker.lastItem else { continue }
-            item.representedObject = family
-            if let font = MarkdownTheme.font(family: family, size: 13) {
-                item.attributedTitle = NSAttributedString(string: family, attributes: [.font: font])
-            }
+    }
+
+    /// 글꼴 고르개에서 골랐다. 아직 없는 추천 글꼴('받기…')이면 설정을 바꾸지 않고 배포 페이지를 연다.
+    @objc func fontPicked(_ sender: NSPopUpButton) {
+        guard let font = sender.selectedItem?.representedObject as? RecommendedFont,
+              let page = font.downloadPage else {
+            changed()
+            return
         }
-        picker.target = self
-        picker.action = #selector(changed)
+        let name = font.family
+        openURL(page)
+        selectFonts()
+        fontNote.stringValue = String(localized: "‘\(name)’을 받는 곳을 열었습니다. 내려받아 설치하면 이 목록에 바로 나타납니다.")
+        AppLog.info(String(localized: "글꼴 받는 곳을 열었습니다"), detail: "\(name) — \(page.absoluteString)")
+    }
+
+    /// 저장된 글꼴을 세 고르개에 싣는다.
+    private func selectFonts() {
+        selectFont(preferences.bodyFontFamily, in: bodyFontPicker)
+        switch preferences.headingFont {
+        case .sameAsBody: selectFont(FontPickerMenu.sameAsBodyTag, in: headingFontPicker)
+        case .system: selectFont(nil, in: headingFontPicker)
+        case let .family(name): selectFont(name, in: headingFontPicker)
+        }
+        selectFont(preferences.codeFontFamily, in: codeFontPicker)
+    }
+
+    /// 제목 고르개에서 고른 것.
+    private func headingSelection() -> EditorPreferences.HeadingFont {
+        guard let raw = headingFontPicker.selectedItem?.representedObject as? String,
+              raw != FontPickerMenu.sameAsBodyTag else { return .sameAsBody }
+        return EditorPreferences.family(raw).map(EditorPreferences.HeadingFont.family) ?? .system
     }
 
     /// 고른 패밀리. 시스템이면 nil.
@@ -288,7 +355,8 @@ final class SettingsPanel: NSWindowController {
         picker.selectItem(at: index ?? 0)
     }
 
-    private func makeViewTab() -> NSView {
+    /// 글꼴 탭 — 본문 · 제목 · 코드 글꼴, 글자 크기, 미리보기.
+    private func makeFontTab() -> NSView {
         sizeSlider.minValue = EditorPreferences.pointSizeRange.lowerBound
         sizeSlider.maxValue = EditorPreferences.pointSizeRange.upperBound
         sizeSlider.numberOfTickMarks = Int(EditorPreferences.pointSizeRange.upperBound
@@ -299,42 +367,93 @@ final class SettingsPanel: NSWindowController {
         sizeLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
         sizeLabel.textColor = .secondaryLabelColor
 
+        bodyFontPicker.identifier = NSUserInterfaceItemIdentifier("font.body")
+        headingFontPicker.identifier = NSUserInterfaceItemIdentifier("font.heading")
+        codeFontPicker.identifier = NSUserInterfaceItemIdentifier("font.code")
+        refillFonts()
+
+        let sizeRow = NSStackView(views: [sizeSlider, sizeLabel])
+        sizeRow.orientation = .horizontal
+        sizeRow.spacing = 10
+
+        func label(_ text: String) -> NSTextField {
+            let field = NSTextField(labelWithString: text)
+            field.alignment = .right
+            return field
+        }
+        let grid = NSGridView(views: [
+            [label(String(localized: "본문")), bodyFontPicker],
+            [label(String(localized: "제목")), headingFontPicker],
+            [label(String(localized: "코드")), codeFontPicker],
+            [label(String(localized: "크기")), sizeRow],
+        ])
+        grid.rowSpacing = 8
+        grid.columnSpacing = 10
+        grid.column(at: 0).xPlacement = .trailing
+        grid.rowAlignment = .firstBaseline
+        for picker in [bodyFontPicker, headingFontPicker, codeFontPicker] {
+            picker.widthAnchor.constraint(greaterThanOrEqualToConstant: 320).isActive = true
+        }
+
+        preview.translatesAutoresizingMaskIntoConstraints = false
+        preview.textView.isEditable = false
+        preview.textView.isSelectable = false
+        preview.showsVerticalScroller = false
+        // 캐럿 줄의 마커도 숨긴다 — 미리보기에는 고칠 줄이 없다.
+        preview.isRenderingForOutput = true
+        preview.markdown = Self.previewMarkdown
+        preview.wantsLayer = true
+        preview.layer?.cornerRadius = 6
+        preview.layer?.borderWidth = 1
+        preview.layer?.borderColor = NSColor.separatorColor.cgColor
+        preview.layer?.masksToBounds = true
+
+        fontNote.font = .systemFont(ofSize: 11)
+        fontNote.textColor = .secondaryLabelColor
+        fontNote.stringValue = String(localized: "추천에서 ‘받기…’가 붙은 글꼴은 무료 배포처를 엽니다. 내려받아 설치하면 이 목록에 바로 나타납니다.")
+
+        let stack = column([
+            note(String(localized: "문서 내용은 바뀌지 않습니다. 고르는 대로 열린 창에 바로 보입니다.")),
+            grid,
+            note(String(localized: "⌘= · ⌘- · ⌘0으로도 크기를 바꿉니다. 제목 글꼴은 제목에만 쓰이고, 코드 글꼴은 고정폭만 고를 수 있습니다.")),
+            preview,
+            fontNote,
+        ])
+        NSLayoutConstraint.activate([
+            preview.leadingAnchor.constraint(equalTo: stack.leadingAnchor),
+            preview.trailingAnchor.constraint(equalTo: stack.trailingAnchor),
+            preview.heightAnchor.constraint(equalToConstant: 180),
+            fontNote.trailingAnchor.constraint(lessThanOrEqualTo: stack.trailingAnchor),
+        ])
+        return stack
+    }
+
+    /// 미리보기 글. 제목 · 본문(굵게 · 기울임) · 인라인 코드가 스크롤 없이 한눈에 들어오게. 코드는
+    /// 영문으로 둔다 — 고정폭 글꼴에는 한글이 없는 것이 많아 한글로 쓰면 코드 글꼴이 보이지 않는다.
+    static var previewMarkdown: String {
+        "## " + String(localized: "제목은 이렇게 보입니다") + "\n\n"
+            + String(localized: "본문은 이렇게 보입니다. **굵게**와 *기울임*, 코드 `let title = 42`가 섞여도 한 줄로 읽힙니다.")
+            + "\n"
+    }
+
+    /// 보기 탭 — 화면 모양과 그리는 방식.
+    private func makeViewTab() -> NSView {
         fill(appearancePicker, EditorPreferences.Appearance.allCases) { $0.label }
         fill(lineSpacingPicker, EditorPreferences.LineSpacing.allCases) { $0.label }
         fill(widthPicker, EditorPreferences.DocumentWidth.allCases) { $0.label }
-        fillFonts(bodyFontPicker, system: String(localized: "시스템 글꼴"), bundled: EditorPreferences.bundledBodyFamily,
-                  families: Self.installedFamilies(fixedPitchOnly: false))
-        fillFonts(codeFontPicker, system: String(localized: "시스템 고정폭"), bundled: EditorPreferences.bundledCodeFamily,
-                  families: Self.installedFamilies(fixedPitchOnly: true))
 
         for check in [highlightCheck, alignCheck, slantCheck, codeViewCheck] {
             check.target = self
             check.action = #selector(changed)
         }
 
-        let sizeRow = NSStackView(views: [sizeSlider, sizeLabel])
-        sizeRow.orientation = .horizontal
-        sizeRow.spacing = 10
-
-        let stack = column([
+        return column([
             note(String(localized: "문서 내용을 바꾸지 않고 읽기 화면만 조정합니다.")),
             row(String(localized: "화면 모양"), appearancePicker),
             row(String(localized: "줄 간격"), lineSpacingPicker),
             row(String(localized: "글 넓이"), widthPicker),
-            row(String(localized: "본문 글꼴"), bodyFontPicker),
-            row(String(localized: "코드 글꼴"), codeFontPicker),
-            // 코드 목록에 글꼴이 적은 이유를 화면에 적는다 — 말하지 않으면 빠진 것으로 보인다.
-            note(String(localized: "코드 글꼴은 고정폭만 고를 수 있습니다. 글자 폭이 다르면 코드의 들여쓰기와 줄 맞춤이 어긋납니다.")),
-            NSTextField(labelWithString: String(localized: "본문 글자 크기")),
-            sizeRow,
             highlightCheck, alignCheck, slantCheck, codeViewCheck,
         ])
-        // 수직 스택은 내재 폭 자식을 늘려 주지 않는다 — 슬라이더만 따로 늘린다.
-        NSLayoutConstraint.activate([
-            sizeRow.leadingAnchor.constraint(equalTo: stack.leadingAnchor),
-            sizeRow.trailingAnchor.constraint(equalTo: stack.trailingAnchor),
-        ])
-        return stack
     }
 
     private func makeGeneralTab() -> NSView {
@@ -597,14 +716,14 @@ final class SettingsPanel: NSWindowController {
         select(preferences.appearance, in: appearancePicker)
         select(preferences.lineSpacing, in: lineSpacingPicker)
         select(preferences.documentWidth, in: widthPicker)
-        selectFont(preferences.bodyFontFamily, in: bodyFontPicker)
-        selectFont(preferences.codeFontFamily, in: codeFontPicker)
+        selectFonts()
         select(preferences.printPaper, in: paperPicker)
         select(preferences.printOrientation, in: orientationPicker)
         select(preferences.printMargin, in: marginPicker)
         select(currentLanguage, in: languagePicker)
         updateSizeLabel()
         refreshAssociation()
+        preview.apply(preferences)
     }
 
     private var currentLanguage: InterfaceLanguage {
@@ -646,9 +765,11 @@ final class SettingsPanel: NSWindowController {
             printPaper: selection(paperPicker, preferences.printPaper),
             translationTarget: preferences.translationTarget,
             bodyFontFamily: fontSelection(bodyFontPicker),
-            codeFontFamily: fontSelection(codeFontPicker)
+            codeFontFamily: fontSelection(codeFontPicker),
+            headingFont: headingSelection()
         )
         updateSizeLabel()
+        preview.apply(preferences)
         store.save(preferences)
         NotificationCenter.default.post(name: PreferenceStore.didChange, object: self)
     }

@@ -46,9 +46,33 @@ final class SettingsPanelWiringTests: XCTestCase {
         }
     }
 
+    /// '받기…'가 연 주소. 브라우저를 띄우지 않는다.
+    private var opened: [URL] = []
+    /// 이 Mac에 있는 글꼴을 흉내 낸다. nil이면 이 Mac의 실제 글꼴.
+    private var fakeFonts: FakeFonts?
+
+    /// 흉내 낸 글꼴 목록. 테스트가 고쳐 '설치'한다.
+    final class FakeFonts {
+        var text: [String]
+        var code: [String]
+        init(text: [String], code: [String]) { self.text = text; self.code = code }
+        func families(fixedPitchOnly: Bool) -> [String] { fixedPitchOnly ? code : text }
+        func isUsable(_ family: String, _ use: RecommendedFont.Use) -> Bool {
+            use == .code ? code.contains(family) : text.contains(family)
+        }
+    }
+
     private func makePanel() -> SettingsPanel {
-        SettingsPanel(store: store, languageDefaults: languageDefaults, languageDomain: languageSuite,
-                      secrets: secrets, keyChecker: checker, llmDefaults: languageDefaults)
+        guard let fonts = fakeFonts else {
+            return SettingsPanel(store: store, languageDefaults: languageDefaults, languageDomain: languageSuite,
+                                 secrets: secrets, keyChecker: checker, llmDefaults: languageDefaults,
+                                 openURL: { [unowned self] in opened.append($0) })
+        }
+        return SettingsPanel(store: store, languageDefaults: languageDefaults, languageDomain: languageSuite,
+                             secrets: secrets, keyChecker: checker, llmDefaults: languageDefaults,
+                             openURL: { [unowned self] in opened.append($0) },
+                             fontFamilies: { fonts.families(fixedPitchOnly: $0) },
+                             isFontUsable: { fonts.isUsable($0, $1) })
     }
 
     override func tearDown() {
@@ -114,10 +138,19 @@ final class SettingsPanelWiringTests: XCTestCase {
 
     // MARK: 창의 모양
 
-    func testFourTabsExist() {
+    /// 글꼴이 맨 앞이다 — 설정 창에서 가장 자주 고치는 것이다.
+    func testTabsExistWithFontsFirst() {
         guard let tabs = tabView else { return XCTFail("NSTabView가 없다") }
         XCTAssertEqual(tabs.tabViewItems.map(\.label),
-                       ["보기", "일반", "PDF·프린트", "AI 교정", "정보"])
+                       ["글꼴", "보기", "일반", "PDF·프린트", "AI 교정", "정보"])
+        XCTAssertEqual(panel.selectedTab, SettingsPanel.fontTab)
+    }
+
+    func testSelectTabSwitchesTabs() {
+        panel.selectTab("print")
+        XCTAssertEqual(panel.selectedTab, "print")
+        panel.selectTab(SettingsPanel.fontTab)
+        XCTAssertEqual(panel.selectedTab, SettingsPanel.fontTab)
     }
 
     /// 고르개가 비어 있으면 사용자가 고를 것이 없다.
@@ -240,15 +273,34 @@ final class SettingsPanelWiringTests: XCTestCase {
 
     // MARK: 글꼴
 
-    /// '시스템' 항목이 든 글꼴 고르개. 앱에 든 글꼴이 등록돼 있으면 그것이 맨 위에 온다.
-    private func fontPicker(system title: String) -> NSPopUpButton? {
-        allViews.compactMap { $0 as? NSPopUpButton }.first { $0.itemArray.contains { $0.title == title } }
+    /// 글꼴 고르개 — 본문 `font.body` · 제목 `font.heading` · 코드 `font.code`.
+    private func fontPicker(_ identifier: String) -> NSPopUpButton? {
+        allViews.compactMap { $0 as? NSPopUpButton }.first { $0.identifier?.rawValue == identifier }
+    }
+
+    /// 고르개 항목을 읽기 쉬운 꼴로 — 머리는 `[제목]`, 받기는 `제목 ↓`, 고를 패밀리는 그 값.
+    private func entries(_ picker: NSPopUpButton) -> [String] {
+        picker.itemArray.compactMap { item in
+            if item.isSeparatorItem { return nil }
+            if item.isSectionHeader { return "[\(item.title)]" }
+            if let font = item.representedObject as? RecommendedFont { return font.family + " ↓" }
+            return item.representedObject as? String
+        }
+    }
+
+    /// 흉내 낸 Mac. 추천 가운데 일부만 있고, 추천이 아닌 글꼴이 하나씩 있다.
+    private func useFakeFonts() -> FakeFonts {
+        let fonts = FakeFonts(text: ["AppleMyungjo", "Apple SD Gothic Neo", "Helvetica", "Nanum Gothic", "Pretendard"],
+                              code: ["Courier", "IBM Plex Mono", "Menlo"])
+        fakeFonts = fonts
+        panel = makePanel()
+        return fonts
     }
 
     /// 두 고르개가 있고, 맨 위가 시스템이며, 이 Mac의 글꼴이 실려 있다.
     func testFontPickersListInstalledFamilies() {
-        guard let body = fontPicker(system: "시스템 글꼴"),
-              let code = fontPicker(system: "시스템 고정폭") else { return XCTFail("글꼴 고르개가 없다") }
+        guard let body = fontPicker("font.body"),
+              let code = fontPicker("font.code") else { return XCTFail("글꼴 고르개가 없다") }
         let bodyFamilies = body.itemArray.compactMap { $0.representedObject as? String }.filter { !$0.isEmpty }
         let codeFamilies = code.itemArray.compactMap { $0.representedObject as? String }.filter { !$0.isEmpty }
         XCTAssertTrue(bodyFamilies.contains("Helvetica"), "macOS에 늘 있는 글꼴이 빠졌다")
@@ -258,7 +310,7 @@ final class SettingsPanelWiringTests: XCTestCase {
 
     /// 코드 고르개에는 고정폭만 있다 — 하나라도 아니면 코드의 들여쓰기가 어긋난다.
     func testCodeFontPickerOffersOnlyFixedPitch() {
-        guard let code = fontPicker(system: "시스템 고정폭") else { return XCTFail("코드 글꼴 고르개가 없다") }
+        guard let code = fontPicker("font.code") else { return XCTFail("코드 글꼴 고르개가 없다") }
         let families = code.itemArray.compactMap { $0.representedObject as? String }.filter { !$0.isEmpty }
         XCTAssertFalse(families.contains("Helvetica"))
         for family in families {
@@ -268,8 +320,8 @@ final class SettingsPanelWiringTests: XCTestCase {
     }
 
     func testChoosingFontsReachesTheStoreAndSystemClearsIt() {
-        guard let body = fontPicker(system: "시스템 글꼴"),
-              let code = fontPicker(system: "시스템 고정폭") else { return XCTFail("글꼴 고르개가 없다") }
+        guard let body = fontPicker("font.body"),
+              let code = fontPicker("font.code") else { return XCTFail("글꼴 고르개가 없다") }
         XCTAssertNotNil(body.action)
         XCTAssertNotNil(code.action)
         select("Helvetica", in: body)
@@ -288,14 +340,14 @@ final class SettingsPanelWiringTests: XCTestCase {
         XCTAssertEqual(defaults.string(forKey: "editor.bodyFontFamily"), "")
     }
 
-    /// 앱에 든 글꼴이 등록돼 있으면 고르개 맨 위에 '기본'으로 온다.
+    /// 앱에 든 글꼴이 등록돼 있으면 추천의 맨 위에 '기본'으로 온다.
     func testBundledFontsAreListedFirst() {
         XCTAssertTrue(BundledFonts.register(from: FontPreferenceTests.repoFonts).isEmpty)
         panel = makePanel()
-        guard let body = fontPicker(system: "시스템 글꼴"),
-              let code = fontPicker(system: "시스템 고정폭") else { return XCTFail("글꼴 고르개가 없다") }
-        XCTAssertEqual(body.itemArray.first?.representedObject as? String, "Pretendard")
-        XCTAssertEqual(code.itemArray.first?.representedObject as? String, "IBM Plex Mono")
+        guard let body = fontPicker("font.body"),
+              let code = fontPicker("font.code") else { return XCTFail("글꼴 고르개가 없다") }
+        XCTAssertEqual(entries(body).prefix(2), ["[추천]", "Pretendard"])
+        XCTAssertEqual(entries(code).prefix(2), ["[추천]", "IBM Plex Mono"])
         // 처음 열면(아무것도 고른 적 없으면) 그것이 골라져 있다.
         XCTAssertEqual(body.selectedItem?.representedObject as? String, "Pretendard")
         XCTAssertEqual(code.selectedItem?.representedObject as? String, "IBM Plex Mono")
@@ -309,9 +361,168 @@ final class SettingsPanelWiringTests: XCTestCase {
         saved.bodyFontFamily = "Nonexistent Font Family 123"
         store.save(saved)
         panel = makePanel()
-        let selected = fontPicker(system: "시스템 글꼴")?.selectedItem
+        let selected = fontPicker("font.body")?.selectedItem
         XCTAssertEqual(selected?.representedObject as? String, "Nonexistent Font Family 123")
         XCTAssertTrue(selected?.title.contains("이 Mac에 없음") == true, selected?.title ?? "")
+    }
+
+    // MARK: 글꼴 — 추천 · 제목 · 받기 · 미리보기
+
+    /// 추천이 위에 오고(있는 것은 그대로, 없는 것은 받기), 그다음 시스템, 그다음 나머지. 추천에 나온
+    /// 글꼴은 아래에 다시 나오지 않는다.
+    func testRecommendedFontsComeFirst() {
+        _ = useFakeFonts()
+        guard let body = fontPicker("font.body"), let code = fontPicker("font.code") else {
+            return XCTFail("글꼴 고르개가 없다")
+        }
+        XCTAssertEqual(entries(body), [
+            "[추천]", "Pretendard", "Apple SD Gothic Neo", "Nanum Gothic", "Noto Sans KR ↓", "IBM Plex Sans KR ↓",
+            "AppleMyungjo", "Nanum Myeongjo ↓", "Noto Serif KR ↓",
+            "",
+            "[이 Mac의 글꼴]", "Helvetica",
+        ])
+        XCTAssertEqual(entries(code), [
+            "[추천]", "IBM Plex Mono", "Menlo", "D2Coding ↓", "JetBrains Mono ↓",
+            "",
+            "[이 Mac의 글꼴]", "Courier",
+        ])
+        // 받기 항목은 갈래와 '받기…'를 이름 옆에 적고, 무엇을 여는지 미리 말한다.
+        let noto = downloadItem("Noto Sans KR", in: body)
+        XCTAssertEqual(noto?.title, "Noto Sans KR  고딕 · 받기…")
+        XCTAssertEqual(noto?.toolTip?.contains("fonts.google.com"), true, noto?.toolTip ?? "")
+        // 있는 추천 글꼴은 그 글꼴로 그리고, 갈래와 출처를 적는다.
+        let gothic = body.itemArray.first { ($0.representedObject as? String) == "Apple SD Gothic Neo" }
+        XCTAssertEqual(gothic?.title, "Apple SD Gothic Neo  고딕 · macOS")
+        XCTAssertEqual((gothic?.attributedTitle?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)?.familyName,
+                       "Apple SD Gothic Neo")
+    }
+
+    private func downloadItem(_ family: String, in picker: NSPopUpButton) -> NSMenuItem? {
+        picker.itemArray.first { ($0.representedObject as? RecommendedFont)?.family == family }
+    }
+
+    /// '본문과 같음'은 제목 고르개에만 있고, 처음에는 그것이 골라져 있다.
+    func testHeadingPickerDefaultsToSameAsBody() {
+        _ = useFakeFonts()
+        guard let heading = fontPicker("font.heading"), let body = fontPicker("font.body"),
+              let code = fontPicker("font.code") else { return XCTFail("글꼴 고르개가 없다") }
+        XCTAssertEqual(entries(heading).first, FontPickerMenu.sameAsBodyTag)
+        XCTAssertEqual(heading.selectedItem?.representedObject as? String, FontPickerMenu.sameAsBodyTag)
+        XCTAssertFalse(entries(body).contains(FontPickerMenu.sameAsBodyTag))
+        XCTAssertFalse(entries(code).contains(FontPickerMenu.sameAsBodyTag))
+        XCTAssertEqual(Array(entries(heading).dropFirst()), entries(body), "그 밖의 목록은 본문과 같다")
+    }
+
+    /// 제목 글꼴의 세 길이 저장소까지 간다 — 패밀리 · 시스템 · 본문과 같음.
+    func testChoosingAHeadingFontReachesTheStore() {
+        _ = useFakeFonts()
+        guard let heading = fontPicker("font.heading") else { return XCTFail("제목 고르개가 없다") }
+        let key = "editor.headingFontFamily"
+
+        select("AppleMyungjo", in: heading)
+        fire(heading)
+        XCTAssertEqual(store.current.headingFont, .family("AppleMyungjo"))
+        XCTAssertEqual(store.current.headingFontFamily, "AppleMyungjo")
+        XCTAssertEqual(store.current.bodyFontFamily, "Pretendard", "본문은 그대로다")
+        XCTAssertEqual(defaults.string(forKey: key), "AppleMyungjo")
+
+        select(FontPickerMenu.systemTag, in: heading)
+        fire(heading)
+        XCTAssertEqual(store.current.headingFont, .system)
+        XCTAssertEqual(defaults.string(forKey: key), "")
+
+        select(FontPickerMenu.sameAsBodyTag, in: heading)
+        fire(heading)
+        XCTAssertEqual(store.current.headingFont, .sameAsBody)
+        XCTAssertNil(defaults.object(forKey: key), "본문과 같음은 키를 지운다")
+    }
+
+    /// 다시 열면 고른 제목 글꼴이 골라져 있다.
+    func testStoredHeadingFontIsLoaded() {
+        var saved = EditorPreferences.standard
+        saved.headingFont = .family("AppleMyungjo")
+        store.save(saved)
+        _ = useFakeFonts()
+        XCTAssertEqual(fontPicker("font.heading")?.selectedItem?.representedObject as? String, "AppleMyungjo")
+
+        saved.headingFont = .system
+        store.save(saved)
+        panel = makePanel()
+        XCTAssertEqual(fontPicker("font.heading")?.selectedItem?.representedObject as? String,
+                       FontPickerMenu.systemTag)
+    }
+
+    /// 없는 추천 글꼴을 고르면 배포 페이지를 열고, **설정은 그대로** 두며, 고르개도 원래 자리로 돌아간다.
+    func testChoosingADownloadItemOpensItsPageOnly() throws {
+        _ = useFakeFonts()
+        let body = try XCTUnwrap(fontPicker("font.body"))
+        let before = store.current
+        let item = try XCTUnwrap(downloadItem("Noto Sans KR", in: body))
+        let page = try XCTUnwrap((item.representedObject as? RecommendedFont)?.downloadPage)
+        body.select(item)
+        fire(body)
+
+        XCTAssertEqual(opened, [page])
+        XCTAssertEqual(page.host, "fonts.google.com")
+        XCTAssertEqual(store.current, before, "받기는 설정을 바꾸지 않는다")
+        XCTAssertEqual(body.selectedItem?.representedObject as? String, "Pretendard", "고르개가 원래 글꼴로 돌아간다")
+        XCTAssertTrue(panel.fontNote.stringValue.contains("Noto Sans KR"), panel.fontNote.stringValue)
+    }
+
+    /// 받아 설치하면 창을 다시 열지 않아도 고르개에 바로 나온다 — 받기가 사라지고, 그 글꼴을 고를 수 있다.
+    /// 저장돼 있던 이름이 '이 Mac에 없음'이었다면 이제 제 이름으로 골라진다.
+    func testInstallingAFontRefillsThePickers() throws {
+        var saved = EditorPreferences.standard
+        saved.bodyFontFamily = "Noto Sans KR"
+        store.save(saved)
+        let fonts = useFakeFonts()
+        let body = try XCTUnwrap(fontPicker("font.body"))
+        XCTAssertTrue(entries(body).contains("Noto Sans KR ↓"))
+        XCTAssertEqual(body.selectedItem?.title.contains("이 Mac에 없음"), true)
+
+        fonts.text.append("Noto Sans KR")
+        NotificationCenter.default.post(name: NSFont.fontSetChangedNotification, object: nil)
+        // 다음 차례에 다시 채운다 — 시스템 목록이 그때 갱신되기 때문이다.
+        let refilled = expectation(description: "다음 차례")
+        DispatchQueue.main.async { refilled.fulfill() }
+        wait(for: [refilled], timeout: 2)
+
+        XCTAssertFalse(entries(body).contains("Noto Sans KR ↓"))
+        XCTAssertEqual(entries(body).filter { $0 == "Noto Sans KR" }.count, 1, "추천 자리에 한 번만")
+        XCTAssertEqual(body.selectedItem?.representedObject as? String, "Noto Sans KR")
+        XCTAssertEqual(body.selectedItem?.title, "Noto Sans KR  고딕")
+        XCTAssertFalse(body.itemArray.contains { $0.title.contains("이 Mac에 없음") }, "없음 항목이 남지 않는다")
+    }
+
+    /// 미리보기는 실제 편집기다 — 고르는 대로 그 글꼴로 다시 그린다. 마커는 숨긴다.
+    func testPreviewFollowsTheChosenFonts() throws {
+        _ = useFakeFonts()
+        let body = try XCTUnwrap(fontPicker("font.body"))
+        let heading = try XCTUnwrap(fontPicker("font.heading"))
+        let code = try XCTUnwrap(fontPicker("font.code"))
+        XCTAssertTrue(panel.preview.isRenderingForOutput)
+        XCTAssertEqual(panel.preview.markdown, SettingsPanel.previewMarkdown)
+
+        select("Helvetica", in: body)
+        select("Courier", in: code)
+        select(FontPickerMenu.sameAsBodyTag, in: heading)
+        fire(body)
+        // 한글 자리는 시스템이 한글 글꼴로 바꿔 끼운다 — 고른 패밀리는 라틴 문자·문장 부호 자리에서 본다.
+        XCTAssertEqual(previewFont(at: "."), "Helvetica")
+        XCTAssertEqual(previewFont(at: "let title"), "Courier")
+        XCTAssertEqual(previewFont(at: " 이렇게"), "Helvetica", "제목이 본문을 따른다")
+
+        select("Apple SD Gothic Neo", in: heading)
+        fire(heading)
+        XCTAssertEqual(previewFont(at: " 이렇게"), "Apple SD Gothic Neo")
+        XCTAssertEqual(previewFont(at: "."), "Helvetica", "본문은 그대로다")
+    }
+
+    private func previewFont(at needle: String) -> String? {
+        guard let storage = panel.preview.textView.textStorage else { return nil }
+        let location = (storage.string as NSString).range(of: needle).location
+        guard location != NSNotFound else { return nil }
+        return (storage.attribute(.font, at: location, effectiveRange: nil) as? NSFont)?.familyName
     }
 
     /// 다른 설정을 바꿔도 번역 대상 언어를 잃지 않는다.
@@ -508,7 +719,7 @@ final class SettingsPanelWiringTests: XCTestCase {
     /// 고칠 때 설정 창이 **낡은 크기를 다시 저장한다**(모든 항목을 한 번에 저장한다).
     func testOpenPanelFollowsAChangeMadeElsewhere() throws {
         panel = makePanel()
-        let slider = try XCTUnwrap(descendants(of: root).compactMap { $0 as? NSSlider }.first)
+        let slider = try XCTUnwrap(allViews.compactMap { $0 as? NSSlider }.first)
         XCTAssertEqual(slider.doubleValue, store.current.bodyPointSize)
 
         store.save(store.current.steppingBodyPointSize(by: 3))
@@ -517,7 +728,7 @@ final class SettingsPanelWiringTests: XCTestCase {
 
         // 그 뒤 다른 항목을 고쳐도 새 크기가 남는다.
         let size = store.current.bodyPointSize
-        let check = try XCTUnwrap(descendants(of: root).compactMap { $0 as? NSButton }
+        let check = try XCTUnwrap(allViews.compactMap { $0 as? NSButton }
             .first { $0.title == String(localized: "표 열 맞추기") })
         check.performClick(nil)
         XCTAssertEqual(store.current.bodyPointSize, size)

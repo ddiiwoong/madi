@@ -17,6 +17,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(
             forName: PreferenceStore.didChange, object: nil, queue: .main
         ) { _ in Task { @MainActor in self.applyAppearance() } }
+        // 글꼴을 설치·삭제하면(설정의 '받기…'로 받아 설치한 것 등) 기억해 둔 글꼴을 버리고 열린 창을
+        // 다시 칠한다 — '이 Mac에 없음'으로 기억한 이름이 설치한 뒤에도 시스템 글꼴로 남지 않게.
+        NotificationCenter.default.addObserver(
+            forName: NSFont.fontSetChangedNotification, object: nil, queue: .main
+        ) { _ in
+            Task { @MainActor in
+                MarkdownTheme.forgetResolvedFonts()
+                NotificationCenter.default.post(name: PreferenceStore.didChange, object: nil)
+            }
+        }
     }
 
     /// 시스템을 따를 때는 `nil`을 준다 — 아무 값이나 넣으면 사용자가 시스템 모양을

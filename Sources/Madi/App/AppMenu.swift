@@ -104,6 +104,8 @@ enum AppMenu {
                     #selector(DocumentWindowController.showBlockEditor(_:)), "b",
                     [.command, .option], windowTarget: true),
             nil,
+            Command(String(localized: "글꼴…"), #selector(DocumentWindowController.showFontSettings(_:)), "",
+                    .command, windowTarget: true),
             Command(String(localized: "글자 크게"), #selector(DocumentWindowController.makeTextLargerAction(_:)), "=",
                     .command, windowTarget: true),
             Command(String(localized: "글자 작게"), #selector(DocumentWindowController.makeTextSmallerAction(_:)), "-",
