@@ -15,6 +15,14 @@ public final class MarkdownEditorView: NSView {
 
     public weak var editorDelegate: MarkdownEditorDelegate?
 
+    /// 우클릭 메뉴에 더할 항목 — 창이 **자기 편집기에만** 단다(선택한 글 번역). 나란히 보기의 번역본 칸에는
+    /// 달지 않는다: 창의 번역은 원문 편집기의 선택을 읽으므로, 번역본 칸에서 고르면 엉뚱한 글이 번역된다.
+    /// 메뉴를 열 때마다 묻는다(`contextMenu(at:)`).
+    public var contextMenuExtras: ((MarkdownEditorView) -> [NSMenuItem])?
+
+    /// 우클릭 메뉴의 '링크 주소 복사'가 쓰는 대지. 테스트가 바꾼다 — 사용자의 대지를 덮지 않게.
+    var linkPasteboard: NSPasteboard = .general
+
     /// 이 편집기만의 실행 취소 관리자. nil이면 창의 것을 쓴다. 한 창에 문서가 둘일 때(나란히
     /// 보기의 번역본) 쓴다 — 창의 것을 함께 쓰면 번역본을 고칠 때 원문이 '편집됨'이 된다.
     public var undoManagerOverride: UndoManager?
@@ -106,6 +114,9 @@ public final class MarkdownEditorView: NSView {
         }
         textView.drawingClickHandler = { [weak self] point, modifiers in
             self?.handleDrawingClick(at: point, modifiers: modifiers) ?? false
+        }
+        textView.contextMenuProvider = { [weak self] point in
+            self?.contextMenu(at: point)
         }
         textView.imageInsertHandler = { [weak self] pasteboard, range in
             self?.insertImages(from: pasteboard, replacing: range) ?? false
@@ -789,6 +800,63 @@ extension MarkdownEditorView {
               let url = tableLink(at: point) else { return false }
         editorDelegate?.markdownEditor(self, didClickLink: url)
         return true
+    }
+
+    // MARK: 우클릭 메뉴
+
+    /// 우클릭 메뉴(사용자 — "너무 많다, 필수적이고 마디에서 핵심적인 것만"). 시스템 메뉴는 항목이 열일곱(구분선
+    /// 빼고, 실측)이었고 마디에서 쓸 데 없는 것이 섞였다 — 서체(서식 없는 마크다운에 글꼴 창), 맞춤법(꺼 두었다),
+    /// 붙여넣고 스타일 일치, 자동 완성(연락처 · 암호), 서비스, 말하기, 대체, 찾아보기 · Google 검색 · 시스템 번역 ·
+    /// 공유, 글쓰기 도구.
+    ///
+    /// 남긴 것: 링크 위면 **링크 열기 · 링크 주소 복사**(⌘클릭을 몰라도 연다), 늘 **잘라내기 · 복사 · 붙여넣기**,
+    /// 그리고 창이 더한 것(`contextMenuExtras`). 빠진 것 가운데 쓸 만한 것은 메뉴 바에 그대로 있다(편집 ▸ 글쓰기
+    /// 도구 · 받아쓰기 · 이모지). 단축키는 적지 않는다 — macOS의 우클릭 메뉴는 보통 적지 않는다.
+    func contextMenu(at point: NSPoint) -> NSMenu {
+        let menu = NSMenu(title: "")
+        // 메뉴를 띄울 때 macOS가 끼워 넣는 것을 막는다 — 서비스, 그리고 글쓰기 도구(macOS 15.2 이상).
+        menu.allowsContextMenuPlugIns = false
+        if #available(macOS 15.2, *) { menu.automaticallyInsertsWritingToolsItems = false }
+
+        if let url = link(at: point) {
+            for (title, action) in [(String(localized: "링크 열기"), #selector(openContextLink(_:))),
+                                    (String(localized: "링크 주소 복사"), #selector(copyContextLink(_:)))] {
+                let item = menu.addItem(withTitle: title, action: action, keyEquivalent: "")
+                item.target = self
+                item.representedObject = url
+            }
+            menu.addItem(.separator())
+        }
+        for (title, action) in [(String(localized: "잘라내기"), #selector(NSText.cut(_:))),
+                                (String(localized: "복사"), #selector(NSText.copy(_:))),
+                                (String(localized: "붙여넣기"), #selector(NSText.paste(_:)))] {
+            menu.addItem(withTitle: title, action: action, keyEquivalent: "").target = textView
+        }
+        let extras = contextMenuExtras?(self) ?? []
+        if !extras.isEmpty {
+            menu.addItem(.separator())
+            for item in extras { menu.addItem(item) }
+        }
+        return menu
+    }
+
+    /// 점(텍스트 뷰 좌표) 아래의 링크 주소 — 글의 링크든 격자로 그린 표 칸의 링크든. ⌘클릭이 여는 것과 같다.
+    func link(at point: NSPoint) -> String? {
+        guard !styler.codeView else { return nil }
+        if let url = tableLink(at: point) { return url }
+        guard let index = textView.characterIndex(under: point), index < storage.length else { return nil }
+        return storage.attribute(.mdLinkTarget, at: index, effectiveRange: nil) as? String
+    }
+
+    @objc func openContextLink(_ sender: Any?) {
+        guard let url = (sender as? NSMenuItem)?.representedObject as? String else { return }
+        editorDelegate?.markdownEditor(self, didClickLink: url)
+    }
+
+    @objc func copyContextLink(_ sender: Any?) {
+        guard let url = (sender as? NSMenuItem)?.representedObject as? String else { return }
+        linkPasteboard.clearContents()
+        linkPasteboard.setString(url, forType: .string)
     }
 
     /// 머리 행이 `headerLine`인 표의 격자. 테스트가 칸의 자리를 잴 때 쓴다.

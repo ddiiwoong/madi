@@ -149,6 +149,9 @@
 "나란히 번역" = "Side by Side";
 "메뉴" = "Menu";
 "모든 메뉴" = "All Menus";
+"링크 열기" = "Open Link";
+"링크 주소 복사" = "Copy Link Address";
+"선택한 글 번역" = "Translate Selection";
 "메뉴 바와 같은 메뉴 · 설정" = "The menu bar’s menus · Settings";
 
 "글자 크기 %lldpt" = "Text size %lldpt";

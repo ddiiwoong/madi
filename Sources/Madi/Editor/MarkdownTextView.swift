@@ -1,8 +1,8 @@
 import AppKit
 
 /// 기본 편집기의 텍스트 뷰. 그리기는 `DecoratedTextView`가 하고, 여기서는 편집기에 먼저
-/// 묻는 것 두 가지를 받는다 — **글자 위의 클릭**(체크박스 누르기, ⌘클릭으로 링크 열기와 각주
-/// 오가기)과 **그림 넣기**(붙여넣기·끌어놓기).
+/// 묻는 것 세 가지를 받는다 — **글자 위의 클릭**(체크박스 누르기, ⌘클릭으로 링크 열기와 각주
+/// 오가기), **그림 넣기**(붙여넣기·끌어놓기), **우클릭 메뉴**.
 ///
 /// 판단은 편집기(`MarkdownEditorView`)가 한다. 여기는 클릭이 어느 글자 위인지만 잰다.
 /// 블록 편집기의 텍스트 뷰는 이것을 물려받지 않는다(그쪽은 자기 클릭 규칙이 있다).
@@ -55,6 +55,16 @@ public final class MarkdownTextView: DecoratedTextView {
     /// 이 뷰 안에서 글을 끌어 옮기는 것은 그림 넣기가 아니다.
     private func isForeign(_ info: NSDraggingInfo) -> Bool {
         (info.draggingSource as AnyObject?) !== self
+    }
+
+    /// 우클릭 메뉴를 편집기에 묻는다. 점은 뷰 좌표다. nil을 돌려주면(또는 없으면) 시스템 메뉴를 쓴다.
+    var contextMenuProvider: ((_ point: NSPoint) -> NSMenu?)?
+
+    public override func menu(for event: NSEvent) -> NSMenu? {
+        if let contextMenuProvider, let menu = contextMenuProvider(convert(event.locationInWindow, from: nil)) {
+            return menu
+        }
+        return super.menu(for: event)
     }
 
     /// 글자가 아니라 **그린 것** 위의 클릭 — 격자로 그린 표의 칸 링크. 점(뷰 좌표)과 보조 키를 받는다.

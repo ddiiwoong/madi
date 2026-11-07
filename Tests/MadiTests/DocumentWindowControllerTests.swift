@@ -366,6 +366,29 @@ final class DocumentWindowControllerTests: XCTestCase {
         XCTAssertEqual(menu.numberOfItems, 0, "닫으면 비운다")
     }
 
+    // MARK: 우클릭 메뉴의 번역
+
+    /// 원문 편집기에서 글을 고르고 우클릭하면 맨 끝에 '선택한 글 번역'(⌘⇧T와 같은 동작, 이 창으로). 고른 글이
+    /// 없으면 없다. 나란히 보기의 번역본 칸에는 없다 — 창의 번역은 원문의 선택을 읽는다.
+    func testContextMenuTranslatesTheSelectionOnlyInTheSourceEditor() throws {
+        let (_, controller, session) = openSideBySide("# 제목\n\n본문 문장\n")
+        let editor = controller.editor
+        let translate = #selector(DocumentWindowController.translateAction(_:))
+
+        editor.textView.setSelectedRange(NSRange(location: 0, length: 0))
+        XCTAssertFalse(editor.contextMenu(at: .zero).items.contains { $0.action == translate }, "고른 글이 없다")
+
+        editor.textView.setSelectedRange((editor.markdown as NSString).range(of: "본문"))
+        let item = try XCTUnwrap(editor.contextMenu(at: .zero).items.last)
+        XCTAssertEqual(item.title, "선택한 글 번역")
+        XCTAssertEqual(item.action, translate)
+        XCTAssertTrue(item.target === controller)
+
+        let pane = session.pane.editor
+        pane.textView.setSelectedRange(NSRange(location: 0, length: 3))
+        XCTAssertFalse(pane.contextMenu(at: .zero).items.contains { $0.action == translate }, "번역본 칸")
+    }
+
     /// 메뉴 바에 없는 주요 명령은 건너뛰고, 그 자리의 구분선이 겹치지 않는다. 도구 메뉴를 뺀 메뉴 바(번역 둘이 없다)로
     /// 잰다 — 앱의 메뉴 바는 건드리지 않게 복사본에서 뺀다.
     func testBurgerSkipsCommandsMissingFromTheMenuBar() throws {

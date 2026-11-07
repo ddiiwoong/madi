@@ -116,6 +116,15 @@ final class DocumentWindowController: NSWindowController {
 
     private func build() {
         editor.editorDelegate = self
+        // 우클릭 메뉴의 마디 몫 — 글을 고르고 있으면 그 자리 번역(⌘⇧T와 같다). 원문 편집기에만 단다(나란히 보기의
+        // 번역본 칸에서 고르면 원문의 선택이 번역된다).
+        editor.contextMenuExtras = { [weak self] editor in
+            guard let self, editor.textView.selectedRange().length > 0 else { return [] }
+            let item = NSMenuItem(title: String(localized: "선택한 글 번역"),
+                                  action: #selector(DocumentWindowController.translateAction(_:)), keyEquivalent: "")
+            item.target = self
+            return [item]
+        }
         outlinePanel.delegate = self
         browserPanel.delegate = self
         recentPanel.delegate = self
