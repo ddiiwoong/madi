@@ -233,29 +233,36 @@ final class DocumentWindowControllerTests: XCTestCase {
         XCTAssertFalse(copy === source, "\(path): 메뉴 바의 메뉴를 그대로 옮겨 왔다", file: file, line: line)
         XCTAssertEqual(copy.items.count, source.items.count, "\(path): 항목 수", file: file, line: line)
         for (mine, theirs) in zip(copy.items, source.items) {
-            let here = "\(path) › \(theirs.isSeparatorItem ? "—" : theirs.title)"
-            XCTAssertFalse(mine === theirs, "\(here): 같은 항목 객체", file: file, line: line)
-            XCTAssertEqual(mine.isSeparatorItem, theirs.isSeparatorItem, here, file: file, line: line)
-            XCTAssertEqual(mine.title, theirs.title, here, file: file, line: line)
-            XCTAssertEqual(mine.action, theirs.action, here, file: file, line: line)
-            XCTAssertTrue(mine.target === theirs.target, "\(here): 대상", file: file, line: line)
-            XCTAssertEqual(mine.keyEquivalent, theirs.keyEquivalent, here, file: file, line: line)
-            XCTAssertEqual(mine.keyEquivalentModifierMask, theirs.keyEquivalentModifierMask, here, file: file, line: line)
-            XCTAssertEqual(mine.isHidden, theirs.isHidden, here, file: file, line: line)
-            XCTAssertEqual(mine.state, theirs.state, "\(here): 체크", file: file, line: line)
-            XCTAssertEqual(mine.representedObject as? String, theirs.representedObject as? String, here,
+            assertSameItem(mine, theirs, path: "\(path) › \(theirs.isSeparatorItem ? "—" : theirs.title)",
                            file: file, line: line)
-            XCTAssertEqual(mine.submenu == nil, theirs.submenu == nil, "\(here): 하위 메뉴", file: file, line: line)
-            if let mineSub = mine.submenu, let theirSub = theirs.submenu {
-                assertSameMenu(mineSub, theirSub, path: here, file: file, line: line)
-            }
         }
     }
 
-    /// 버거 메뉴는 메뉴 바와 **같은 내용**이다(사용자 — "햄버거 메뉴와 상단 메뉴바 내용이 동일했으면, 설정도").
-    /// 메뉴 바의 메뉴가 같은 이름·차례의 하위 메뉴로 들어 있고, 맨 아래에 설정(`⌘,`)이 있다. 앞의 버거 메뉴는
-    /// 명령 표에서 열일곱만 골라 편집 · 테마 · 글꼴이 없었다.
-    func testBurgerMenuIsTheMenuBarPlusSettings() throws {
+    /// 두 항목이 같은가 — `assertSameMenu`의 한 칸. `checksAction`을 끄는 것은 버거 메뉴 **맨 위**의 하위 메뉴
+    /// 항목뿐이다: 끌어내림 단추가 맨 위의 동작 없는 항목에 자기 동작(`_popUpItemAction:`)을 단다(실측).
+    private func assertSameItem(_ mine: NSMenuItem, _ theirs: NSMenuItem, path here: String, checksAction: Bool = true,
+                                file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertFalse(mine === theirs, "\(here): 같은 항목 객체", file: file, line: line)
+        XCTAssertEqual(mine.isSeparatorItem, theirs.isSeparatorItem, here, file: file, line: line)
+        XCTAssertEqual(mine.title, theirs.title, here, file: file, line: line)
+        if checksAction { XCTAssertEqual(mine.action, theirs.action, here, file: file, line: line) }
+        XCTAssertTrue(mine.target === theirs.target, "\(here): 대상", file: file, line: line)
+        XCTAssertEqual(mine.keyEquivalent, theirs.keyEquivalent, here, file: file, line: line)
+        XCTAssertEqual(mine.keyEquivalentModifierMask, theirs.keyEquivalentModifierMask, here, file: file, line: line)
+        XCTAssertEqual(mine.isHidden, theirs.isHidden, here, file: file, line: line)
+        XCTAssertEqual(mine.state, theirs.state, "\(here): 체크", file: file, line: line)
+        XCTAssertEqual(mine.representedObject as? String, theirs.representedObject as? String, here,
+                       file: file, line: line)
+        XCTAssertEqual(mine.submenu == nil, theirs.submenu == nil, "\(here): 하위 메뉴", file: file, line: line)
+        if let mineSub = mine.submenu, let theirSub = theirs.submenu {
+            assertSameMenu(mineSub, theirSub, path: here, file: file, line: line)
+        }
+    }
+
+    /// 버거 메뉴는 위에서부터 **주요 명령**(사용자 — "주요 메뉴는 최상위로"), **모든 메뉴**(메뉴 바의 메뉴를 같은
+    /// 이름·차례의 하위 메뉴로 — "메뉴 바와 내용이 동일했으면"), 설정(`⌘,`)이다. 주요 명령도 메뉴 바의 같은 항목을
+    /// 복사한 것이라 이름 · 단축키 · 체크가 같다. 도구 막대에 단추가 있는 명령은 주요 명령에 넣지 않는다.
+    func testBurgerMenuIsMainCommandsThenTheMenuBarThenSettings() throws {
         let (_, controller) = open("본문\n")
         let item = try XCTUnwrap(controller.burgerItem)
         XCTAssertNotNil(item.image)
@@ -273,9 +280,37 @@ final class DocumentWindowControllerTests: XCTestCase {
         XCTAssertNil(placeholder.submenu)
         XCTAssertTrue(placeholder.isHidden, "펼침(») 메뉴에서는 같은 메뉴가 하위 메뉴로 나와 빈 줄로 보인다")
         XCTAssertTrue(controller.burgerItem?.menuFormRepresentation?.submenu === menu, "시험의 전제 — 펼침 메뉴도 이 메뉴")
-        XCTAssertEqual(menu.items.dropFirst().map { $0.isSeparatorItem ? "—" : $0.title },
-                       menus.map(\.title) + ["—", "설정…"])
-        for (mine, theirs) in zip(menu.items.dropFirst(), menus) {
+
+        let shown = Array(menu.items.dropFirst())
+        let header = try XCTUnwrap(shown.firstIndex { $0.isSectionHeader }, "'모든 메뉴' 머리가 없다")
+        XCTAssertEqual(shown[header].title, "모든 메뉴")
+
+        // 주요 명령 — 맨 위에 바로.
+        let picks = Array(shown[..<header])
+        XCTAssertEqual(picks.map { $0.isSeparatorItem ? "—" : $0.title }, [
+            "새로 만들기", "문서 열기…", "빠른 열기…", "—",
+            "저장", "다른 이름으로 저장…", "—",
+            "PDF 내보내기…", "이미지 포함 내보내기…", "프린트하기…", "—",
+            "테마", "글꼴…", "—",
+            "Apple 번역", "번역 언어 선택…", "—",
+            "명령 팔레트…", "—",
+        ])
+        let menuBarParents = menus.flatMap(\.items).filter { $0.submenu != nil }
+        for pick in picks where !pick.isSeparatorItem {
+            if pick.submenu != nil {
+                let source = try XCTUnwrap(menuBarParents.first { $0.title == pick.title }, "\(pick.title): 메뉴 바에 없다")
+                assertSameItem(pick, source, path: "맨 위 › \(pick.title)", checksAction: false)
+            } else {
+                let action = try XCTUnwrap(pick.action, "\(pick.title): 동작이 없다")
+                let source = try XCTUnwrap(AppMenu.item(for: action, in: main), "\(pick.title): 메뉴 바에 없다")
+                assertSameItem(pick, source, path: "맨 위 › \(pick.title)")
+            }
+        }
+
+        // 모든 메뉴 — 메뉴 바 그대로, 그리고 설정.
+        let rest = Array(shown[(header + 1)...])
+        XCTAssertEqual(rest.map { $0.isSeparatorItem ? "—" : $0.title }, menus.map(\.title) + ["—", "설정…"])
+        for (mine, theirs) in zip(rest, menus) {
             let sub = try XCTUnwrap(mine.submenu, "\(theirs.title)에 하위 메뉴가 없다")
             assertSameMenu(sub, theirs, path: theirs.title)
         }
@@ -329,6 +364,25 @@ final class DocumentWindowControllerTests: XCTestCase {
         delegate.menuDidClose?(menu)
         await settle()
         XCTAssertEqual(menu.numberOfItems, 0, "닫으면 비운다")
+    }
+
+    /// 메뉴 바에 없는 주요 명령은 건너뛰고, 그 자리의 구분선이 겹치지 않는다. 도구 메뉴를 뺀 메뉴 바(번역 둘이 없다)로
+    /// 잰다 — 앱의 메뉴 바는 건드리지 않게 복사본에서 뺀다.
+    func testBurgerSkipsCommandsMissingFromTheMenuBar() throws {
+        let main = try XCTUnwrap(NSApp.mainMenu?.copy() as? NSMenu)
+        let tools = try XCTUnwrap(main.items.firstIndex { $0.submenu?.title == "도구" })
+        main.removeItem(at: tools)
+        let translate = #selector(DocumentWindowController.translateAction(_:))
+        XCTAssertNil(AppMenu.item(for: translate, in: main), "시험의 전제 — 번역이 메뉴 바에 없다")
+
+        let items = AppMenu.burgerItems(mirroring: main)
+        XCTAssertFalse(items.contains { $0.action == translate })
+        XCTAssertFalse(items.first?.isSeparatorItem ?? true, "맨 앞이 구분선")
+        for (above, below) in zip(items, items.dropFirst()) {
+            XCTAssertFalse(above.isSeparatorItem && below.isSeparatorItem, "구분선 둘이 붙었다(\(below.title) 앞)")
+        }
+        XCTAssertTrue(items.contains { $0.action == #selector(DocumentWindowController.showCommandPaletteAction(_:)) },
+                      "빠진 것 다음의 주요 명령은 그대로")
     }
 
     /// 체크 표시를 `validateMenuItem`으로 달면 안 된다. 한 번 그렇게 했다가 **이 객체로 오는 모든

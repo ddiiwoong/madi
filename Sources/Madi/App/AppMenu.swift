@@ -268,16 +268,74 @@ enum AppMenu {
 
     // MARK: Burger
 
-    /// 도구 막대 버거 메뉴의 항목 — 메뉴 바와 **같은 내용**이다. 메뉴 바의 메뉴(파일 · 편집 · 보기 · 도구 · 윈도우)를
-    /// 같은 이름의 하위 메뉴로 싣고, 맨 아래에 앱 메뉴의 `설정…`을 둔다.
+    /// 버거 메뉴 맨 위에 바로 꺼내 두는 **주요 명령** 하나.
+    enum BurgerPick {
+        /// 메뉴 바에서 이 동작의 항목.
+        case command(Selector)
+        /// 이 동작의 항목들을 담은 하위 메뉴(보기 ▸ 테마처럼, 부모 항목에는 동작이 없다).
+        case submenuOf(Selector)
+        case separator
+    }
+
+    /// 버거 메뉴 맨 위의 주요 명령과 차례(사용자 — "주요 메뉴는 최상위로"). 여기에는 **무엇을, 어떤 차례로**만
+    /// 적는다. 이름 · 단축키 · 켜짐 · 체크는 메뉴 바의 같은 항목을 복사해 받으므로 메뉴 바와 어긋날 수 없다.
     ///
-    /// 따로 표를 두지 않고 **그 순간의 메뉴 바를 복사**한다(`NSMenu.copy`는 하위 메뉴까지 새로 만든다). 그래서
-    /// 체크 표시(원본 보기 · 테마)와 최근 문서 · 창 목록까지 메뉴 바와 같다. 항목은 메뉴 바처럼 대상 없이 응답자
-    /// 연쇄로 가므로 켜지고 꺼지는 것도 같다.
+    /// 도구 막대에 단추가 있는 것(사이드바 셋 · 원본 보기 · 나란히 번역 · 검색)은 넣지 않는다 — 단추 바로 옆에서
+    /// 같은 것을 또 고르게 할 까닭이 없다. 나머지는 모두 아래의 메뉴 바 전체(파일 ▸ …)에 있다.
+    static var burgerPicks: [BurgerPick] {
+        [
+            .command(#selector(NSDocumentController.newDocument(_:))),
+            .command(#selector(NSDocumentController.openDocument(_:))),
+            .command(#selector(DocumentWindowController.showQuickOpenAction(_:))),
+            .separator,
+            .command(#selector(NSDocument.save(_:))),
+            .command(#selector(NSDocument.saveAs(_:))),
+            .separator,
+            .command(#selector(DocumentWindowController.exportPDFAction(_:))),
+            .command(#selector(DocumentWindowController.exportWithImagesAction(_:))),
+            .command(#selector(DocumentWindowController.printDocumentAction(_:))),
+            .separator,
+            .submenuOf(#selector(DocumentWindowController.chooseColorThemeAction(_:))),
+            .command(#selector(DocumentWindowController.showFontSettings(_:))),
+            .separator,
+            .command(#selector(DocumentWindowController.translateAction(_:))),
+            .command(#selector(DocumentWindowController.chooseTranslationLanguageAction(_:))),
+            .separator,
+            .command(#selector(DocumentWindowController.showCommandPaletteAction(_:))),
+        ]
+    }
+
+    /// 도구 막대 버거 메뉴의 항목 — 위에서부터 **주요 명령**(`burgerPicks`), **메뉴 바 전체**(파일 · 편집 · 보기 ·
+    /// 도구 · 윈도우를 같은 이름의 하위 메뉴로), 앱 메뉴의 `설정…`.
+    ///
+    /// 따로 표를 두지 않고 **그 순간의 메뉴 바를 복사**한다(`NSMenu.copy` · `NSMenuItem.copy`는 하위 메뉴까지 새로
+    /// 만든다). 그래서 체크 표시(원본 보기 · 테마)와 최근 문서 · 창 목록까지 메뉴 바와 같다. 항목은 메뉴 바처럼
+    /// 대상 없이 응답자 연쇄로 가므로 켜지고 꺼지는 것도 같다. 메뉴 바에서 찾지 못한 주요 명령은 건너뛴다.
     ///
     /// 앱 메뉴의 나머지(마디 정보 · 가리기 · 종료)는 싣지 않는다 — 도구 막대에서 고를 까닭이 없는 시스템 항목이다.
     static func burgerItems(mirroring main: NSMenu) -> [NSMenuItem] {
         var items: [NSMenuItem] = []
+        func separate() {
+            if let last = items.last, !last.isSeparatorItem { items.append(.separator()) }
+        }
+        for pick in burgerPicks {
+            switch pick {
+            case .separator:
+                separate()
+            case .command(let action):
+                if let source = item(for: action, in: main), let copy = source.copy() as? NSMenuItem {
+                    items.append(copy)
+                }
+            case .submenuOf(let action):
+                if let entry = item(for: action, in: main), let menu = entry.menu,
+                   let source = menu.supermenu?.items.first(where: { $0.submenu === menu }),
+                   let copy = source.copy() as? NSMenuItem {
+                    items.append(copy)
+                }
+            }
+        }
+        separate()
+        items.append(.sectionHeader(title: String(localized: "모든 메뉴")))
         // 첫 칸은 앱 메뉴다(macOS가 앱 이름을 제목으로 단다).
         for top in main.items.dropFirst() {
             guard let source = top.submenu, let copy = source.copy() as? NSMenu else { continue }
@@ -292,6 +350,15 @@ enum AppMenu {
             items.append(copy)
         }
         return items
+    }
+
+    /// 메뉴 바에서 이 동작의 항목 — 메뉴 바 차례로 처음 것. 숨긴 항목(`⌘+`를 받는 글자 크게)은 건너뛴다.
+    static func item(for action: Selector, in menu: NSMenu) -> NSMenuItem? {
+        for item in menu.items where !item.isHidden {
+            if item.action == action { return item }
+            if let submenu = item.submenu, let found = self.item(for: action, in: submenu) { return found }
+        }
+        return nil
     }
 }
 
