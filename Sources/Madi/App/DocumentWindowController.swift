@@ -1486,7 +1486,8 @@ extension DocumentWindowController: NSToolbarDelegate {
 
     /// 도구 막대 아이콘의 크기(pt). 시스템 기본은 도구 막대가 키워 그려 서식 칸을 넣은 뒤 막대가 빽빽해 보였다(사용자 —
     /// "아이콘 크기들을 조금 줄여 줘"). 칸 크기 · 테두리는 시스템 그대로이고 그림만 작다.
-    static let toolbarSymbolPointSize: CGFloat = 11
+    /// 11pt로 줄였다가 한 번 더 줄였다(사용자 — "10pt로 더"). 서식 막대(`FormatBarView.symbolPointSize`)도 같은 크기다.
+    static let toolbarSymbolPointSize: CGFloat = 10
 
     /// 도구 막대의 아이콘 하나 — 크기를 `toolbarSymbolPointSize`로 고정한 SF Symbol.
     static func toolbarSymbol(_ name: String, label: String) -> NSImage {

@@ -95,6 +95,24 @@ final class FormatBarTests: XCTestCase {
         XCTAssertTrue(headings.allSatisfy { $0.target === view })
     }
 
+    /// 막대의 아이콘은 도구 막대와 같은 크기(10pt)다 — 한쪽만 고치면 둘이 달라 보인다.
+    func testIconsMatchTheToolbarSize() async throws {
+        let view = editor(source)
+        view.textView.setSelectedRange((view.markdown as NSString).range(of: "셋째"))
+        await settle()
+        let bar = try XCTUnwrap(view.formatBar)
+        bar.layoutSubtreeIfNeeded()                                    // 단추 자리는 배치가 돈 뒤에 정해진다
+        XCTAssertEqual(bar.frame.height, FormatBarView.buttonSize.height + 4, "위아래 여백 2pt씩")
+        XCTAssertEqual(FormatBarView.symbolPointSize, DocumentWindowController.toolbarSymbolPointSize)
+        let expected = NSImage.SymbolConfiguration(pointSize: FormatBarView.symbolPointSize, weight: .regular)
+        for button in bar.buttons {
+            let configuration = try XCTUnwrap(button.image?.symbolConfiguration, button.toolTip ?? "")
+            XCTAssertTrue(configuration.isEqual(expected), "\(button.toolTip ?? ""): \(configuration)")
+            // 배치는 정렬 사각형을 맞춘다 — 테두리 여백을 더한 `frame`은 그림마다 조금씩 다르다(실측 24~28pt).
+            XCTAssertEqual(button.alignmentRect(forFrame: button.frame).size, FormatBarView.buttonSize)
+        }
+    }
+
     /// 막대 위의 클릭은 막대가 받는다 — 아래의 텍스트 뷰가 아니라(그러면 캐럿이 옮겨 가 선택이 풀린다).
     func testClicksOnTheBarReachTheBar() async throws {
         let view = editor(source)

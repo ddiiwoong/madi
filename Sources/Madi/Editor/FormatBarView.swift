@@ -31,6 +31,12 @@ final class FormatBarView: NSVisualEffectView {
              action: #selector(MarkdownEditorView.formatLinkAction(_:))),
     ]
 
+    /// 아이콘 크기(pt) — 도구 막대(`DocumentWindowController.toolbarSymbolPointSize`)와 같다(사용자 — "서식 막대
+    /// 아이콘도 줄여 줘"). 전에는 SF Symbol 기본(13pt)이었다.
+    static let symbolPointSize: CGFloat = 10
+    /// 단추 하나의 크기. 아이콘을 줄이며 함께 줄였다(30 × 26 → 26 × 22).
+    static let buttonSize = NSSize(width: 26, height: 22)
+
     private(set) var buttons: [NSButton] = []
     /// 제목 단추가 여는 메뉴 — 본문 · 제목 1~6, `tag`가 단계다.
     let headingMenu = NSMenu(title: String(localized: "제목"))
@@ -63,7 +69,9 @@ final class FormatBarView: NSVisualEffectView {
         }
 
         for (index, item) in Self.items.enumerated() {
-            let image = NSImage(systemSymbolName: item.symbol, accessibilityDescription: item.title) ?? NSImage()
+            let symbol = NSImage(systemSymbolName: item.symbol, accessibilityDescription: item.title) ?? NSImage()
+            let image = symbol.withSymbolConfiguration(
+                NSImage.SymbolConfiguration(pointSize: Self.symbolPointSize, weight: .regular)) ?? symbol
             let button = NSButton(image: image, target: nil, action: nil)
             button.isBordered = false
             button.bezelStyle = .accessoryBarAction
@@ -74,8 +82,8 @@ final class FormatBarView: NSVisualEffectView {
             button.setAccessibilityLabel(item.title)
             button.translatesAutoresizingMaskIntoConstraints = false
             NSLayoutConstraint.activate([
-                button.widthAnchor.constraint(equalToConstant: 30),
-                button.heightAnchor.constraint(equalToConstant: 26),
+                button.widthAnchor.constraint(equalToConstant: Self.buttonSize.width),
+                button.heightAnchor.constraint(equalToConstant: Self.buttonSize.height),
             ])
             if let action = item.action {
                 button.target = editor
