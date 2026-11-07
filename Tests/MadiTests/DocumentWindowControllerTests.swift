@@ -170,14 +170,15 @@ final class DocumentWindowControllerTests: XCTestCase {
     }
 
     /// 도구 막대는 시스템 분할 단추 두 덩이다 — 사이드바(목차 · 폴더 · 최근) | 찾기 | 보기(원본 보기 · 나란히
-    /// 번역). 직접 만든 단추(`NSButton`)를 끼워 넣은 칸이 없다(그렇게 하면 칸마다 따로 테두리가 생겨 제각각이었다).
-    /// 사이드바 칸은 사이드바 탭과 같은 이름·차례다. '열기'와 버거 메뉴는 없다. 처음에는 아이콘만 보인다.
+    /// 번역), 그리고 맨 오른쪽 버거 메뉴. 직접 만든 단추(`NSButton`)를 끼워 넣은 칸이 없다(그렇게 하면 칸마다 따로
+    /// 테두리가 생겨 제각각이었다). 사이드바 칸은 사이드바 탭과 같은 이름·차례다. '열기'는 없다. 처음에는 아이콘만
+    /// 보인다.
     func testToolbarIsTwoSystemGroups() throws {
         let (_, controller) = open("본문\n")
         let toolbar = try XCTUnwrap(controller.window?.toolbar)
         XCTAssertEqual(toolbar.displayMode, .iconOnly, "macOS 앱의 기본 모양")
         XCTAssertEqual(toolbar.items.map(\.itemIdentifier.rawValue), [
-            "sidebar", NSToolbarItem.Identifier.flexibleSpace.rawValue, "matches", "search", "view",
+            "sidebar", NSToolbarItem.Identifier.flexibleSpace.rawValue, "matches", "search", "view", "burger",
         ])
         let sidebar = try XCTUnwrap(controller.sidebarGroup)
         let view = try XCTUnwrap(controller.viewGroup)
@@ -214,6 +215,120 @@ final class DocumentWindowControllerTests: XCTestCase {
         // 이름이 같은 도구 막대는 한 프로세스 안에서 보이기를 함께 쓴다 — 기본으로 돌려 다음 시험에 남기지 않는다.
         toolbar.displayMode = .iconOnly
         XCTAssertNil(store.toolbarDisplayMode)
+    }
+
+    // MARK: 버거 메뉴 — 메뉴 바와 같은 내용
+
+    /// 버거 메뉴를 연다 — AppKit이 메뉴를 보이기 직전에 하듯 `menuNeedsUpdate`를 부른다.
+    private func openBurger(of controller: DocumentWindowController) throws -> NSMenu {
+        let menu = try XCTUnwrap(controller.burgerItem?.menu)
+        try XCTUnwrap(menu.delegate).menuNeedsUpdate?(menu)
+        return menu
+    }
+
+    /// 두 메뉴가 같은가 — 항목마다 이름 · 동작 · 대상 · 단축키 · 숨김 · 체크 · 딸린 값, 하위 메뉴는 끝까지.
+    /// 같은 **객체**는 아니어야 한다(메뉴 바에서 항목을 빼 오면 메뉴 바가 비게 된다).
+    private func assertSameMenu(_ copy: NSMenu, _ source: NSMenu, path: String,
+                                file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertFalse(copy === source, "\(path): 메뉴 바의 메뉴를 그대로 옮겨 왔다", file: file, line: line)
+        XCTAssertEqual(copy.items.count, source.items.count, "\(path): 항목 수", file: file, line: line)
+        for (mine, theirs) in zip(copy.items, source.items) {
+            let here = "\(path) › \(theirs.isSeparatorItem ? "—" : theirs.title)"
+            XCTAssertFalse(mine === theirs, "\(here): 같은 항목 객체", file: file, line: line)
+            XCTAssertEqual(mine.isSeparatorItem, theirs.isSeparatorItem, here, file: file, line: line)
+            XCTAssertEqual(mine.title, theirs.title, here, file: file, line: line)
+            XCTAssertEqual(mine.action, theirs.action, here, file: file, line: line)
+            XCTAssertTrue(mine.target === theirs.target, "\(here): 대상", file: file, line: line)
+            XCTAssertEqual(mine.keyEquivalent, theirs.keyEquivalent, here, file: file, line: line)
+            XCTAssertEqual(mine.keyEquivalentModifierMask, theirs.keyEquivalentModifierMask, here, file: file, line: line)
+            XCTAssertEqual(mine.isHidden, theirs.isHidden, here, file: file, line: line)
+            XCTAssertEqual(mine.state, theirs.state, "\(here): 체크", file: file, line: line)
+            XCTAssertEqual(mine.representedObject as? String, theirs.representedObject as? String, here,
+                           file: file, line: line)
+            XCTAssertEqual(mine.submenu == nil, theirs.submenu == nil, "\(here): 하위 메뉴", file: file, line: line)
+            if let mineSub = mine.submenu, let theirSub = theirs.submenu {
+                assertSameMenu(mineSub, theirSub, path: here, file: file, line: line)
+            }
+        }
+    }
+
+    /// 버거 메뉴는 메뉴 바와 **같은 내용**이다(사용자 — "햄버거 메뉴와 상단 메뉴바 내용이 동일했으면, 설정도").
+    /// 메뉴 바의 메뉴가 같은 이름·차례의 하위 메뉴로 들어 있고, 맨 아래에 설정(`⌘,`)이 있다. 앞의 버거 메뉴는
+    /// 명령 표에서 열일곱만 골라 편집 · 테마 · 글꼴이 없었다.
+    func testBurgerMenuIsTheMenuBarPlusSettings() throws {
+        let (_, controller) = open("본문\n")
+        let item = try XCTUnwrap(controller.burgerItem)
+        XCTAssertNotNil(item.image)
+        XCTAssertFalse(item.showsIndicator, "아이콘이 이미 메뉴다 — 펼침 화살표를 달지 않는다")
+        XCTAssertFalse((item.toolTip ?? "").isEmpty)
+
+        let main = try XCTUnwrap(NSApp.mainMenu)
+        let menu = try openBurger(of: controller)
+        let menus = main.items.dropFirst().compactMap(\.submenu)
+        XCTAssertEqual(menus.map(\.title), ["파일", "편집", "보기", "도구", "윈도우"], "시험의 전제 — 메뉴 바의 메뉴")
+        // 맨 앞은 빈 항목이다 — 끌어내림 단추가 첫 항목을 단추 몫으로 쓰고 보이지 않는다(실측: '파일'이 빠졌다).
+        let placeholder = try XCTUnwrap(menu.items.first)
+        // 동작은 보지 않는다 — 끌어내림 단추가 동작 없는 항목에 자기 동작(`_popUpItemAction:`)을 단다(실측).
+        XCTAssertEqual(placeholder.title, "")
+        XCTAssertNil(placeholder.submenu)
+        XCTAssertTrue(placeholder.isHidden, "펼침(») 메뉴에서는 같은 메뉴가 하위 메뉴로 나와 빈 줄로 보인다")
+        XCTAssertTrue(controller.burgerItem?.menuFormRepresentation?.submenu === menu, "시험의 전제 — 펼침 메뉴도 이 메뉴")
+        XCTAssertEqual(menu.items.dropFirst().map { $0.isSeparatorItem ? "—" : $0.title },
+                       menus.map(\.title) + ["—", "설정…"])
+        for (mine, theirs) in zip(menu.items.dropFirst(), menus) {
+            let sub = try XCTUnwrap(mine.submenu, "\(theirs.title)에 하위 메뉴가 없다")
+            assertSameMenu(sub, theirs, path: theirs.title)
+        }
+        let settings = try XCTUnwrap(menu.items.last)
+        XCTAssertEqual(settings.action, #selector(DocumentWindowController.showSettings(_:)))
+        XCTAssertEqual(settings.keyEquivalent, ",")
+        XCTAssertNil(settings.target, "메뉴 바처럼 응답자 연쇄로 간다")
+        // 메뉴 바는 그대로다.
+        XCTAssertEqual(main.items.count, 6)
+        XCTAssertTrue(main.items.allSatisfy { $0.submenu?.supermenu === main })
+    }
+
+    /// 버거 메뉴는 **열 때의** 메뉴 바를 싣는다 — 원본 보기 · 테마의 체크가 메뉴 바와 같다.
+    func testBurgerMenuFollowsTheMenuBarState() throws {
+        let (_, controller) = open("본문\n")
+        controller.toggleCodeViewAction(nil)
+        let themes = #selector(DocumentWindowController.chooseColorThemeAction(_:))
+        let paper = try XCTUnwrap(menuItem(for: themes).flatMap { $0.menu?.items }?
+            .first { ($0.representedObject as? String) == EditorPreferences.ColorTheme.paper.rawValue })
+        controller.chooseColorThemeAction(paper)
+
+        let menu = try openBurger(of: controller)
+        let codeView = try XCTUnwrap(menuItem(for: #selector(DocumentWindowController.toggleCodeViewAction(_:)),
+                                              in: menu))
+        XCTAssertEqual(codeView.state, .on, "원본 보기 체크")
+        let checked = try XCTUnwrap(menuItem(for: themes, in: menu)?.menu?.items.filter { $0.state == .on })
+        XCTAssertEqual(checked.map { $0.representedObject as? String }, [EditorPreferences.ColorTheme.paper.rawValue])
+
+        controller.toggleCodeViewAction(nil)
+        let reopened = try openBurger(of: controller)
+        XCTAssertEqual(menuItem(for: #selector(DocumentWindowController.toggleCodeViewAction(_:)), in: reopened)?.state,
+                       .off, "다시 열면 지금 상태")
+        XCTAssertEqual(reopened.items.count, menu.items.count, "열 때마다 새로 채운다 — 쌓이지 않는다")
+    }
+
+    /// 단축키는 메뉴 바만 받는다. 버거 메뉴는 단축키를 묻는 물음에 늘 "없다"고 답하고, 닫히면 비운다 — 같은 키가
+    /// 두 메뉴에 걸리지 않게.
+    func testBurgerMenuLeavesShortcutsToTheMenuBar() async throws {
+        let (_, controller) = open("본문\n")
+        let menu = try XCTUnwrap(controller.burgerItem?.menu)
+        XCTAssertEqual(menu.numberOfItems, 0, "열기 전에는 비어 있다")
+        let delegate = try XCTUnwrap(menu.delegate)
+        _ = try openBurger(of: controller)
+        let event = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0, windowNumber: 0,
+            context: nil, characters: "s", charactersIgnoringModifiers: "s", isARepeat: false, keyCode: 1))
+        var target: AnyObject?
+        var action: Selector?
+        XCTAssertEqual(delegate.menuHasKeyEquivalent?(menu, for: event, target: &target, action: &action), false)
+
+        delegate.menuDidClose?(menu)
+        await settle()
+        XCTAssertEqual(menu.numberOfItems, 0, "닫으면 비운다")
     }
 
     /// 체크 표시를 `validateMenuItem`으로 달면 안 된다. 한 번 그렇게 했다가 **이 객체로 오는 모든

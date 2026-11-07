@@ -1,11 +1,12 @@
 import AppKit
 
 /// The app's commands, defined once. `mainMenu()` builds the macOS menu bar from
-/// this table, and the command palette (⇧⌘P) reads that menu bar, so the two can
-/// never drift apart.
+/// this table. The command palette (⇧⌘P) and the toolbar's burger menu both READ
+/// that menu bar, so none of the three can drift apart.
 ///
-/// 도구 막대의 버거 메뉴(더 많은 작업)는 2026-11-07에 뺐다. 항목이 모두 메뉴 바에 있었고(파일 ·
-/// 보기 · 도구), 명령 팔레트가 같은 명령을 찾아 준다 — 같은 명령을 세 곳에서 고르게 할 까닭이 없었다.
+/// 버거 메뉴는 2026-11-07에 한 번 뺐다가 같은 날 다시 넣었다(사용자 — "메뉴 바와 내용이 같았으면, 설정도").
+/// 뺀 판은 명령 표에서 열일곱을 따로 골라 만들어 편집 · 테마 · 글꼴이 없고 이름도 조금 달랐다. 다시 넣은 판은
+/// 메뉴 바를 그대로 옮겨 싣는다(`burgerItems(mirroring:)`).
 ///
 /// Shortcuts match Mark.app's where they do not fight a macOS convention:
 /// 파일 브라우저 ⌘⇧F, 최근 문서 ⌘⇧R, 목차 ⌘⇧O, 마크다운 원본 보기 ⌘E, 설정 ⌘,.
@@ -263,5 +264,68 @@ enum AppMenu {
         }
         item.submenu = menu
         return item
+    }
+
+    // MARK: Burger
+
+    /// 도구 막대 버거 메뉴의 항목 — 메뉴 바와 **같은 내용**이다. 메뉴 바의 메뉴(파일 · 편집 · 보기 · 도구 · 윈도우)를
+    /// 같은 이름의 하위 메뉴로 싣고, 맨 아래에 앱 메뉴의 `설정…`을 둔다.
+    ///
+    /// 따로 표를 두지 않고 **그 순간의 메뉴 바를 복사**한다(`NSMenu.copy`는 하위 메뉴까지 새로 만든다). 그래서
+    /// 체크 표시(원본 보기 · 테마)와 최근 문서 · 창 목록까지 메뉴 바와 같다. 항목은 메뉴 바처럼 대상 없이 응답자
+    /// 연쇄로 가므로 켜지고 꺼지는 것도 같다.
+    ///
+    /// 앱 메뉴의 나머지(마디 정보 · 가리기 · 종료)는 싣지 않는다 — 도구 막대에서 고를 까닭이 없는 시스템 항목이다.
+    static func burgerItems(mirroring main: NSMenu) -> [NSMenuItem] {
+        var items: [NSMenuItem] = []
+        // 첫 칸은 앱 메뉴다(macOS가 앱 이름을 제목으로 단다).
+        for top in main.items.dropFirst() {
+            guard let source = top.submenu, let copy = source.copy() as? NSMenu else { continue }
+            let item = NSMenuItem(title: source.title, action: nil, keyEquivalent: "")
+            item.submenu = copy
+            items.append(item)
+        }
+        let settings = #selector(DocumentWindowController.showSettings(_:))
+        if let source = main.items.first?.submenu?.items.first(where: { $0.action == settings }),
+           let copy = source.copy() as? NSMenuItem {
+            items.append(.separator())
+            items.append(copy)
+        }
+        return items
+    }
+}
+
+/// 버거 메뉴를 **열 때마다** 메뉴 바에서 새로 채우고(`AppMenu.burgerItems`), 닫으면 비운다.
+///
+/// 단축키는 메뉴 바만 받는다. 복사본에도 같은 단축키가 적혀 있어(보여 주려고 둔다) 버거 메뉴가 받기 시작하면
+/// 같은 키가 두 메뉴에 걸린다. 그래서 단축키를 묻는 물음에 늘 "없다"고 답하고(`menuHasKeyEquivalent`), 열려
+/// 있지 않은 동안에는 항목을 두지 않는다.
+@MainActor
+final class BurgerMenuFeeder: NSObject, NSMenuDelegate {
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        guard let main = NSApp.mainMenu else { return }
+        // 도구 막대의 메뉴 단추(`NSMenuToolbarItem`)는 끌어내림 단추라, 첫 항목을 단추 몫으로 쓰고 메뉴에는 보이지
+        // 않는다(실측: 맨 앞의 '파일'이 빠지고 편집부터 나왔다). 그 자리에 빈 항목을 둔다. 숨겨 두는 까닭: 창이 좁아
+        // 버거가 도구 막대의 펼침(») 메뉴로 들어가면 **같은 메뉴**가 하위 메뉴로 그대로 나오는데(실측:
+        // `menuFormRepresentation.submenu`가 이 메뉴다), 그때는 첫 항목이 빈 줄로 보인다.
+        let placeholder = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        placeholder.isHidden = true
+        menu.addItem(placeholder)
+        for item in AppMenu.burgerItems(mirroring: main) {
+            menu.addItem(item)
+        }
+    }
+
+    func menuHasKeyEquivalent(_ menu: NSMenu, for event: NSEvent,
+                              target: AutoreleasingUnsafeMutablePointer<AnyObject?>,
+                              action: UnsafeMutablePointer<Selector?>) -> Bool {
+        false
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        // 고른 항목의 동작은 메뉴가 닫힌 **뒤에** 간다. 바로 비우면 그 항목이 메뉴에서 빠진 채 가므로 한 바퀴 미룬다.
+        DispatchQueue.main.async { menu.removeAllItems() }
     }
 }

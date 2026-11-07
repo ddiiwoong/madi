@@ -147,6 +147,8 @@
 "사이드바에 이 문서의 폴더 (⌘⇧F) — 다시 누르면 닫습니다" = "This document’s folder in the sidebar (⌘⇧F) — click again to close";
 "사이드바" = "Sidebar";
 "나란히 번역" = "Side by Side";
+"메뉴" = "Menu";
+"메뉴 바와 같은 메뉴 · 설정" = "The menu bar’s menus · Settings";
 
 "글자 크기 %lldpt" = "Text size %lldpt";
 "문서 이름으로 찾기" = "Find a document by name";

@@ -58,12 +58,18 @@ final class DocumentWindowController: NSWindowController {
         static let sidebar = NSToolbarItem.Identifier("sidebar")
         /// 보기 묶음 — 원본 보기 · 나란히 번역.
         static let view = NSToolbarItem.Identifier("view")
+        /// 버거 메뉴 — 메뉴 바와 같은 메뉴, 그리고 설정.
+        static let menu = NSToolbarItem.Identifier("burger")
     }
 
     /// 사이드바 묶음. 눌린 칸이 지금 열린 사이드바 탭이다(닫혀 있으면 눌린 칸이 없다).
     private(set) var sidebarGroup: NSToolbarItemGroup?
     /// 보기 묶음. 칸 0이 원본 보기, 칸 1이 나란히 번역이고 각각 켜고 끈다.
     private(set) var viewGroup: NSToolbarItemGroup?
+    /// 버거 메뉴. 열 때마다 메뉴 바에서 채운다(`burgerFeeder`).
+    private(set) var burgerItem: NSMenuToolbarItem?
+    /// 메뉴의 `delegate`는 약하게 잡히므로 창이 붙든다.
+    private let burgerFeeder = BurgerMenuFeeder()
     /// 도구 막대의 보이기(아이콘 · 이름)를 사용자가 바꾸면 기억한다.
     private var toolbarModeObservation: NSKeyValueObservation?
 
@@ -219,12 +225,15 @@ final class DocumentWindowController: NSWindowController {
         toolbar.allowsUserCustomization = false
         if #available(macOS 15.0, *) { toolbar.allowsDisplayModeCustomization = true }
         toolbarModeObservation = toolbar.observe(\.displayMode, options: [.new]) { [weak self] toolbar, _ in
-            let mode = toolbar.displayMode
-            // 기본과 같으면 적지 않는다(지운다). AppKit이 도구 막대를 창에 붙일 때도 이 값을 다시 매겨 알림이 오는데,
-            // 그것까지 적으면 첫 실행의 기본값이 굳어 기본을 바꿔도 따라오지 않는다(실측: 이름을 보이던 판의 값이
-            // 남아 아이콘만으로 바꾼 판에서도 이름이 나왔다).
-            let stored = mode == Self.displayMode(stored: nil) ? nil : Self.stored(mode)
-            MainActor.assumeIsolated { self?.preferences.toolbarDisplayMode = stored }
+            // 도구 막대는 메인 스레드에서만 바뀐다. 읽기까지 이 안에서 한다(밖에서 읽으면 Swift 6 경고).
+            MainActor.assumeIsolated {
+                let mode = toolbar.displayMode
+                // 기본과 같으면 적지 않는다(지운다). AppKit이 도구 막대를 창에 붙일 때도 이 값을 다시 매겨 알림이
+                // 오는데, 그것까지 적으면 첫 실행의 기본값이 굳어 기본을 바꿔도 따라오지 않는다(실측: 이름을 보이던
+                // 판의 값이 남아 아이콘만으로 바꾼 판에서도 이름이 나왔다).
+                let stored = mode == Self.displayMode(stored: nil) ? nil : Self.stored(mode)
+                self?.preferences.toolbarDisplayMode = stored
+            }
         }
         window?.toolbar = toolbar
         if #available(macOS 11.0, *) { window?.toolbarStyle = .unified }
@@ -1251,7 +1260,7 @@ final class DocumentWindowController: NSWindowController {
 
 extension DocumentWindowController: NSToolbarDelegate {
     /// 차례 — 제목 옆에 **사이드바** 묶음(목차 · 폴더 · 최근), 오른쪽에 찾기와 **보기** 묶음(원본 보기 · 나란히
-    /// 번역). 묶음 둘, 단추 다섯이다.
+    /// 번역), 맨 오른쪽에 **버거 메뉴**(메뉴 바와 같은 메뉴 · 설정).
     ///
     /// 2026-11-07에 두 번 고쳤다. 처음에는 단추 일곱이 따로 놓여 사이드바 셋이 두 곳에 갈렸고, 폴더 아이콘이
     /// '문서 열기'였다(이름을 붙이고 묶어 고쳤다). 그 뒤 "아이콘 디자인이 마음에 안 든다"(사용자) — 칸마다 따로
@@ -1260,7 +1269,7 @@ extension DocumentWindowController: NSToolbarDelegate {
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         // 사이드바 위에 세우는 칸막이(`sidebarTrackingSeparator`)는 쓰지 않는다. 써 보니(실측) 사이드바를 열면 그 폭
         // (204pt)에 창 단추와 제목까지 들어가 묶음이 빈 펼침 단추로 접혔고, 닫혀 있을 때는 세로 줄만 남았다.
-        [ItemID.sidebar, .flexibleSpace, ItemID.matches, ItemID.search, ItemID.view]
+        [ItemID.sidebar, .flexibleSpace, ItemID.matches, ItemID.search, ItemID.view, ItemID.menu]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -1316,6 +1325,22 @@ extension DocumentWindowController: NSToolbarDelegate {
             syncCodeViewState()
             syncSideBySideState()
             return group
+
+        case ItemID.menu:
+            // 맨 오른쪽의 버거 메뉴 — 메뉴 바와 같은 메뉴(파일 · 편집 · 보기 · 도구 · 윈도우)와 설정. 내용은 열 때마다
+            // 메뉴 바에서 옮겨 싣는다(`AppMenu.burgerItems`). 펼침 화살표는 달지 않는다(아이콘이 이미 메뉴다).
+            let label = String(localized: "메뉴")
+            let item = NSMenuToolbarItem(itemIdentifier: identifier)
+            item.image = NSImage(systemSymbolName: "line.3.horizontal", accessibilityDescription: label)
+            item.label = label
+            item.paletteLabel = label
+            item.toolTip = String(localized: "메뉴 바와 같은 메뉴 · 설정")
+            item.showsIndicator = false
+            let menu = NSMenu(title: label)
+            menu.delegate = burgerFeeder
+            item.menu = menu
+            burgerItem = item
+            return item
 
         default:
             return nil
