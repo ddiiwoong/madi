@@ -145,9 +145,8 @@
 "사이드바에 목차 (⌘⇧O) — 다시 누르면 닫습니다" = "Outline in the sidebar (⌘⇧O) — click again to close";
 "사이드바에 최근 문서 (⌘⇧R) — 다시 누르면 닫습니다" = "Recent documents in the sidebar (⌘⇧R) — click again to close";
 "사이드바에 이 문서의 폴더 (⌘⇧F) — 다시 누르면 닫습니다" = "This document’s folder in the sidebar (⌘⇧F) — click again to close";
-"열기" = "Open";
+"사이드바" = "Sidebar";
 "나란히 번역" = "Side by Side";
-"문서 열기 (⌘O)" = "Open (⌘O)";
 
 "글자 크기 %lldpt" = "Text size %lldpt";
 "문서 이름으로 찾기" = "Find a document by name";

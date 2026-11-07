@@ -56,10 +56,24 @@ final class DocumentWindowControllerTests: XCTestCase {
         return (document, controller)
     }
 
-    /// 도구 막대 단추. 정해 둔 식별자로 찾는다.
-    private func toolbarButton(_ identifier: String, in controller: DocumentWindowController) -> NSButton? {
-        controller.window?.toolbar?.items
-            .first { $0.itemIdentifier.rawValue == identifier }?.view as? NSButton
+    /// 도구 막대의 칸이 눌려 있는가. 묶음은 사이드바(`목차 · 폴더 · 최근`)와 보기(`원본 보기 · 나란히 번역`) 둘이다.
+    private func isPressed(_ label: String, in controller: DocumentWindowController) -> Bool? {
+        for group in [controller.sidebarGroup, controller.viewGroup].compactMap({ $0 }) {
+            if let index = group.subitems.firstIndex(where: { $0.label == label }) { return group.isSelected(at: index) }
+        }
+        return nil
+    }
+
+    /// 칸을 누른다 — AppKit이 하듯 그 칸의 눌림을 뒤집고 묶음의 action을 보낸다.
+    private func press(_ label: String, in controller: DocumentWindowController) {
+        for group in [controller.sidebarGroup, controller.viewGroup].compactMap({ $0 }) {
+            guard let index = group.subitems.firstIndex(where: { $0.label == label }) else { continue }
+            group.setSelected(!group.isSelected(at: index), at: index)
+            guard let action = group.action else { return XCTFail("\(label) 묶음에 action이 없다") }
+            XCTAssertTrue(NSApp.sendAction(action, to: group.target, from: group))
+            return
+        }
+        XCTFail("\(label) 칸이 없다")
     }
 
     /// 사이드바 토글은 상태를 다음 순회에서 싣는다(접히는 움직임이 끝난 뒤의 상태를 읽는다).
@@ -81,28 +95,58 @@ final class DocumentWindowControllerTests: XCTestCase {
 
     // MARK: 도구 막대 토글
 
-    /// 목차·최근 문서·파일 브라우저는 순간 단추가 아니라 **토글**이다 — 무엇이 열려 있는지 보여야 한다.
+    /// 목차·폴더·최근은 순간 단추가 아니라 **토글**이다 — 눌린 칸이 곧 열린 사이드바 탭이다. 단축키·메뉴로 열어도
+    /// 칸이 따라온다.
     func testSidebarTogglesShowWhichPanelIsOpen() async {
         let (_, controller) = open("# 제목\n\n본문\n")
-        guard let outline = toolbarButton("outline", in: controller),
-              let recent = toolbarButton("recent", in: controller) else {
-            return XCTFail("도구 막대에 목차·최근 문서 토글이 없다")
-        }
-        XCTAssertEqual(outline.state, .off, "처음에는 사이드바가 닫혀 있다")
+        XCTAssertEqual(isPressed("목차", in: controller), false, "처음에는 사이드바가 닫혀 있다")
 
         controller.showOutlineAction(nil)
         await settle()
-        XCTAssertEqual(outline.state, .on)
-        XCTAssertEqual(recent.state, .off)
+        XCTAssertEqual(isPressed("목차", in: controller), true)
+        XCTAssertEqual(isPressed("최근", in: controller), false)
 
         controller.showRecentAction(nil)
         await settle()
-        XCTAssertEqual(outline.state, .off, "다른 패널로 바꾸면 앞의 토글이 풀린다")
-        XCTAssertEqual(recent.state, .on)
+        XCTAssertEqual(isPressed("목차", in: controller), false, "다른 탭으로 바꾸면 앞의 칸이 풀린다")
+        XCTAssertEqual(isPressed("최근", in: controller), true)
 
         controller.showRecentAction(nil)
         await settle()
-        XCTAssertEqual(recent.state, .off, "같은 토글을 다시 누르면 닫힌다")
+        XCTAssertEqual(isPressed("최근", in: controller), false, "같은 칸을 다시 누르면 닫힌다")
+    }
+
+    /// 칸을 **눌러서**: 목차를 누르면 열리고, 폴더를 누르면 폴더 탭으로 바뀌며(한 칸만 눌린다), 눌린 칸을 다시
+    /// 누르면 닫힌다.
+    func testPressingSidebarSegmentsOpensSwitchesAndCloses() async {
+        let (_, controller) = open("# 제목\n\n본문\n")
+        press("목차", in: controller)
+        await settle()
+        XCTAssertEqual(controller.openSidebarTab, 0)
+        XCTAssertEqual(["목차", "폴더", "최근"].map { isPressed($0, in: controller) }, [true, false, false])
+
+        press("폴더", in: controller)
+        await settle()
+        XCTAssertEqual(controller.openSidebarTab, 1)
+        XCTAssertEqual(["목차", "폴더", "최근"].map { isPressed($0, in: controller) }, [false, true, false],
+                       "두 칸이 함께 눌리지 않는다")
+
+        press("폴더", in: controller)
+        await settle()
+        XCTAssertNil(controller.openSidebarTab, "닫혔다")
+        XCTAssertEqual(["목차", "폴더", "최근"].map { isPressed($0, in: controller) }, [false, false, false])
+    }
+
+    /// 보기 묶음의 원본 보기 칸을 누르면 원본 보기가 켜지고 꺼진다.
+    func testPressingTheSourceSegmentTogglesCodeView() {
+        let (_, controller) = open("**굵게**\n")
+        press("원본 보기", in: controller)
+        XCTAssertTrue(controller.editor.isCodeView)
+        XCTAssertEqual(isPressed("원본 보기", in: controller), true)
+        XCTAssertEqual(isPressed("나란히 번역", in: controller), false, "다른 칸은 그대로")
+        press("원본 보기", in: controller)
+        XCTAssertFalse(controller.editor.isCodeView)
+        XCTAssertEqual(isPressed("원본 보기", in: controller), false)
     }
 
     // MARK: 원본 보기 — 세 곳이 같은 상태
@@ -110,69 +154,66 @@ final class DocumentWindowControllerTests: XCTestCase {
     func testCodeViewIsShownOnEverySurface() {
         let (_, controller) = open("**굵게**\n")
         let toggle = #selector(DocumentWindowController.toggleCodeViewAction(_:))
-        guard let button = toolbarButton("codeView", in: controller),
-              let item = menuItem(for: toggle) else { return XCTFail("원본 보기 토글·메뉴 항목이 없다") }
+        guard let item = menuItem(for: toggle) else { return XCTFail("원본 보기 메뉴 항목이 없다") }
 
         controller.toggleCodeViewAction(nil)
         XCTAssertTrue(controller.editor.isCodeView)
-        XCTAssertEqual(button.state, .on, "도구 막대")
+        XCTAssertEqual(isPressed("원본 보기", in: controller), true, "도구 막대")
         XCTAssertEqual(item.state, .on, "메뉴 체크")
         XCTAssertEqual(controller.window?.subtitle, "원본 보기", "창 부제")
 
         controller.toggleCodeViewAction(nil)
         XCTAssertFalse(controller.editor.isCodeView)
-        XCTAssertEqual(button.state, .off)
+        XCTAssertEqual(isPressed("원본 보기", in: controller), false)
         XCTAssertEqual(item.state, .off)
         XCTAssertEqual(controller.window?.subtitle, "")
     }
 
-    /// 도구 막대는 하는 일로 묶이고 단추마다 이름이 보인다 — 열기 | 찾기 | 보기 둘 | 사이드바 셋. 사이드바
-    /// 셋은 사이드바 탭과 같은 이름·같은 차례이고, 폴더 아이콘은 사이드바의 '폴더' 하나만 쓴다. 버거 메뉴는 없다.
-    func testToolbarIsGroupedAndLabeled() throws {
+    /// 도구 막대는 시스템 분할 단추 두 덩이다 — 사이드바(목차 · 폴더 · 최근) | 찾기 | 보기(원본 보기 · 나란히
+    /// 번역). 직접 만든 단추(`NSButton`)를 끼워 넣은 칸이 없다(그렇게 하면 칸마다 따로 테두리가 생겨 제각각이었다).
+    /// 사이드바 칸은 사이드바 탭과 같은 이름·차례다. '열기'와 버거 메뉴는 없다. 처음에는 아이콘만 보인다.
+    func testToolbarIsTwoSystemGroups() throws {
         let (_, controller) = open("본문\n")
         let toolbar = try XCTUnwrap(controller.window?.toolbar)
-        XCTAssertEqual(toolbar.displayMode, .iconAndLabel, "처음에는 이름이 보인다")
+        XCTAssertEqual(toolbar.displayMode, .iconOnly, "macOS 앱의 기본 모양")
         XCTAssertEqual(toolbar.items.map(\.itemIdentifier.rawValue), [
-            "open", NSToolbarItem.Identifier.flexibleSpace.rawValue, "matches", "search",
-            NSToolbarItem.Identifier.space.rawValue, "codeView", "sideBySide",
-            NSToolbarItem.Identifier.space.rawValue, "outline", "browser", "recent",
+            "sidebar", NSToolbarItem.Identifier.flexibleSpace.rawValue, "matches", "search", "view",
         ])
-        func item(_ id: String) throws -> NSToolbarItem {
-            try XCTUnwrap(toolbar.items.first { $0.itemIdentifier.rawValue == id })
+        let sidebar = try XCTUnwrap(controller.sidebarGroup)
+        let view = try XCTUnwrap(controller.viewGroup)
+        XCTAssertEqual(sidebar.subitems.map(\.label), ["목차", "폴더", "최근"])
+        XCTAssertEqual(view.subitems.map(\.label), ["원본 보기", "나란히 번역"])
+        XCTAssertEqual(sidebar.selectionMode, .selectAny, "사이드바가 닫히면 눌린 칸이 없어야 한다")
+        for group in [sidebar, view] {
+            XCTAssertNil(group.view, "시스템이 그리는 분할 단추다")
+            XCTAssertTrue(group.subitems.allSatisfy { $0.image != nil && $0.view == nil && !($0.toolTip ?? "").isEmpty })
         }
-        XCTAssertEqual(try ["open", "codeView", "sideBySide", "outline", "browser", "recent"].map { try item($0).label },
-                       ["열기", "원본 보기", "나란히 번역", "목차", "폴더", "최근"])
-        XCTAssertEqual(try item("matches").label, "", "찾는 동안에만 숫자가 뜨는 자리라 이름이 없다")
-        // 사이드바 단추의 이름은 사이드바 탭의 이름과 같다.
+        // 사이드바 칸의 이름은 사이드바 탭의 이름과 같다.
         let tabs = try XCTUnwrap(controller.window?.contentView.map(Self.views)?.compactMap { $0 as? NSTabView }
             .first { $0.tabViewItems.count == 3 })
-        XCTAssertEqual(tabs.tabViewItems.map(\.label), try ["outline", "browser", "recent"].map { try item($0).label })
-        // 폴더 아이콘은 사이드바의 '폴더'만 쓴다 — 전에는 '문서 열기'가 폴더였다.
-        func picture(_ id: String) throws -> Data? {
-            (try item(id).view as? NSButton)?.image?.tiffRepresentation
-        }
-        let folder = NSImage(systemSymbolName: "folder", accessibilityDescription: nil)?.tiffRepresentation
-        XCTAssertEqual(try picture("browser"), folder)
-        XCTAssertNotEqual(try picture("open"), folder)
-        XCTAssertFalse(toolbar.items.contains { $0.itemIdentifier.rawValue == "burger" })
+        XCTAssertEqual(tabs.tabViewItems.map(\.label), sidebar.subitems.map(\.label))
+        XCTAssertFalse(toolbar.items.contains { $0.view is NSButton }, "직접 만든 단추가 없다")
     }
 
     private static func views(_ view: NSView) -> [NSView] {
         [view] + view.subviews.flatMap(views)
     }
 
-    /// 도구 막대를 우클릭해 '아이콘만'으로 바꾸면 기억해, 다음 창도 그렇게 연다.
+    /// 도구 막대를 우클릭해 '아이콘과 텍스트'로 바꾸면 기억해, 다음 창도 그렇게 연다. 기본(아이콘만)으로 돌리면
+    /// 적어 둔 값을 지운다 — 기본을 적어 두면 기본이 바뀌어도 따라오지 않는다(실측: 이름을 보이던 판의 값이 남았다).
     func testToolbarDisplayModeIsRemembered() throws {
         let store = PreferenceStore(defaults: MemoryDefaults())
         let (_, first) = open("본문\n", store: store)
+        XCTAssertNil(store.toolbarDisplayMode, "창을 여는 것만으로는 적지 않는다")
         let toolbar = try XCTUnwrap(first.window?.toolbar)
-        toolbar.displayMode = .iconOnly
-        XCTAssertEqual(store.toolbarDisplayMode, "iconOnly")
-        let (_, second) = open("본문\n", store: store)
-        XCTAssertEqual(second.window?.toolbar?.displayMode, .iconOnly)
-        if #available(macOS 15.0, *) { XCTAssertTrue(toolbar.allowsDisplayModeCustomization) }
-        // 이름이 같은 도구 막대는 한 프로세스 안에서 보이기를 함께 쓴다 — 다음 시험에 남기지 않는다.
         toolbar.displayMode = .iconAndLabel
+        XCTAssertEqual(store.toolbarDisplayMode, "iconAndLabel")
+        let (_, second) = open("본문\n", store: store)
+        XCTAssertEqual(second.window?.toolbar?.displayMode, .iconAndLabel)
+        if #available(macOS 15.0, *) { XCTAssertTrue(toolbar.allowsDisplayModeCustomization) }
+        // 이름이 같은 도구 막대는 한 프로세스 안에서 보이기를 함께 쓴다 — 기본으로 돌려 다음 시험에 남기지 않는다.
+        toolbar.displayMode = .iconOnly
+        XCTAssertNil(store.toolbarDisplayMode)
     }
 
     /// 체크 표시를 `validateMenuItem`으로 달면 안 된다. 한 번 그렇게 했다가 **이 객체로 오는 모든
@@ -202,7 +243,7 @@ final class DocumentWindowControllerTests: XCTestCase {
         preferences.openInCodeView = true
         let (_, controller) = open("본문\n", preferences: preferences)
         XCTAssertTrue(controller.editor.isCodeView)
-        XCTAssertEqual(toolbarButton("codeView", in: controller)?.state, .on)
+        XCTAssertEqual(isPressed("원본 보기", in: controller), true)
 
         let (_, plain) = open("본문\n")
         XCTAssertFalse(plain.editor.isCodeView)
@@ -438,7 +479,7 @@ final class DocumentWindowControllerTests: XCTestCase {
         XCTAssertTrue(NSDocumentController.shared.documents.contains { $0 === session.document },
                       "문서 관리자가 안다 — 앱을 끝낼 때 저장 안 한 번역본을 묻는다")
         XCTAssertEqual(session.pane.editor.markdown, "# Title\n\nBody\n")
-        XCTAssertEqual(toolbarButton("sideBySide", in: controller)?.state, .on)
+        XCTAssertEqual(isPressed("나란히 번역", in: controller), true)
 
         controller.window?.layoutIfNeeded()
         let left = try XCTUnwrap(controller.contentSplit.arrangedSubviews.first).frame.width
@@ -518,7 +559,7 @@ final class DocumentWindowControllerTests: XCTestCase {
         XCTAssertFalse(NSDocumentController.shared.documents.contains { $0 === session.document },
                        "번역본 문서를 닫는다")
         XCTAssertEqual(controller.window?.frame, before, "넓힌 창을 원래대로")
-        XCTAssertEqual(toolbarButton("sideBySide", in: controller)?.state, .off)
+        XCTAssertEqual(isPressed("나란히 번역", in: controller), false)
     }
 
     func testClosingAnEditedTranslationAsksFirst() throws {

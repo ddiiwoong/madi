@@ -54,24 +54,25 @@ final class DocumentWindowController: NSWindowController {
     private enum ItemID {
         static let search = NSToolbarItem.Identifier("search")
         static let matches = NSToolbarItem.Identifier("matches")
-        static let outline = NSToolbarItem.Identifier("outline")
-        static let recent = NSToolbarItem.Identifier("recent")
-        static let open = NSToolbarItem.Identifier("open")
-        static let browser = NSToolbarItem.Identifier("browser")
-        static let codeView = NSToolbarItem.Identifier("codeView")
-        static let sideBySide = NSToolbarItem.Identifier("sideBySide")
+        /// 사이드바 묶음 — 목차 · 폴더 · 최근(사이드바 탭과 같은 차례, `Tab`의 raw 값이 칸 번호다).
+        static let sidebar = NSToolbarItem.Identifier("sidebar")
+        /// 보기 묶음 — 원본 보기 · 나란히 번역.
+        static let view = NSToolbarItem.Identifier("view")
     }
 
-    private var toggleButtons: [Tab: NSButton] = [:]
-    /// 도구 막대의 보이기(이름 · 아이콘)를 사용자가 바꾸면 기억한다.
+    /// 사이드바 묶음. 눌린 칸이 지금 열린 사이드바 탭이다(닫혀 있으면 눌린 칸이 없다).
+    private(set) var sidebarGroup: NSToolbarItemGroup?
+    /// 보기 묶음. 칸 0이 원본 보기, 칸 1이 나란히 번역이고 각각 켜고 끈다.
+    private(set) var viewGroup: NSToolbarItemGroup?
+    /// 도구 막대의 보이기(아이콘 · 이름)를 사용자가 바꾸면 기억한다.
     private var toolbarModeObservation: NSKeyValueObservation?
 
-    /// 저장된 도구 막대 보이기. 없으면 아이콘과 이름이다.
+    /// 저장된 도구 막대 보이기. 없으면 아이콘만이다(macOS 앱의 기본 모양).
     static func displayMode(stored: String?) -> NSToolbar.DisplayMode {
         switch stored {
-        case "iconOnly": .iconOnly
+        case "iconAndLabel": .iconAndLabel
         case "labelOnly": .labelOnly
-        default: .iconAndLabel
+        default: .iconOnly
         }
     }
 
@@ -83,10 +84,6 @@ final class DocumentWindowController: NSWindowController {
         default: nil
         }
     }
-    /// 원본 보기 토글. 사이드바 탭과 달리 `Tab`에 묶이지 않으므로 따로 들고 있는다.
-    private weak var codeViewButton: NSButton?
-    private weak var sideBySideButton: NSButton?
-
     convenience init() {
         self.init(preferences: PreferenceStore(), autosavesFrame: true)
     }
@@ -216,15 +213,18 @@ final class DocumentWindowController: NSWindowController {
 
         let toolbar = NSToolbar(identifier: "MdToolbar")
         toolbar.delegate = self
-        // 단추 아래에 이름을 적는다. 아이콘만으로는 무엇을 하는 단추인지 알 수 없었다(사용자). 도구 막대를
-        // 우클릭해 '아이콘만'으로 바꿀 수 있고(macOS 15 이상), 고른 것은 기억한다 — 이름이 같은 도구 막대는
-        // 창끼리 함께 바뀐다.
+        // 아이콘만(macOS 앱의 기본 모양). 도구 막대를 우클릭해 '아이콘과 텍스트'로 바꾸면 칸마다 이름이 나오고
+        // (macOS 15 이상), 고른 것은 기억한다 — 이름이 같은 도구 막대는 창끼리 함께 바뀐다.
         toolbar.displayMode = Self.displayMode(stored: preferences.toolbarDisplayMode)
         toolbar.allowsUserCustomization = false
         if #available(macOS 15.0, *) { toolbar.allowsDisplayModeCustomization = true }
         toolbarModeObservation = toolbar.observe(\.displayMode, options: [.new]) { [weak self] toolbar, _ in
             let mode = toolbar.displayMode
-            MainActor.assumeIsolated { self?.preferences.toolbarDisplayMode = Self.stored(mode) }
+            // 기본과 같으면 적지 않는다(지운다). AppKit이 도구 막대를 창에 붙일 때도 이 값을 다시 매겨 알림이 오는데,
+            // 그것까지 적으면 첫 실행의 기본값이 굳어 기본을 바꿔도 따라오지 않는다(실측: 이름을 보이던 판의 값이
+            // 남아 아이콘만으로 바꾼 판에서도 이름이 나왔다).
+            let stored = mode == Self.displayMode(stored: nil) ? nil : Self.stored(mode)
+            MainActor.assumeIsolated { self?.preferences.toolbarDisplayMode = stored }
         }
         window?.toolbar = toolbar
         if #available(macOS 11.0, *) { window?.toolbarStyle = .unified }
@@ -331,19 +331,53 @@ final class DocumentWindowController: NSWindowController {
         case .browser: browserPanel.show(folderOf: markdownDocument?.fileURL)
         case .recent: recentPanel.reload()
         }
-        // The animation finishes after this turn, so read the target state.
+        // 접고 펴는 움직임은 이 차례 뒤에 끝나므로 isCollapsed를 다시 읽지 않고 목표를 바로 싣는다.
+        markSidebarGroup(open: alreadyShowing ? nil : tab)
         DispatchQueue.main.async { [weak self] in self?.updateToggleStates() }
     }
 
-    /// Mark.app's toolbar reports panel state: 목차 / 최근 문서 / 파일 브라우저 are
-    /// toggles, not momentary buttons, so the user can see what is open.
+    /// 지금 열린 사이드바 탭. 닫혀 있으면 nil.
+    var openSidebarTab: Int? {
+        guard !sidebarItem.isCollapsed, let item = sidebarTabs.selectedTabViewItem else { return nil }
+        return sidebarTabs.indexOfTabViewItem(item)
+    }
+
+    /// 사이드바 묶음이 지금 열린 탭을 보이게 한다 — 눌린 칸이 곧 열린 탭이다(Mark.app의 도구 막대처럼
+    /// 순간 단추가 아니라 토글이라, 무엇이 열려 있는지 보인다).
     private func updateToggleStates() {
-        let open = !sidebarItem.isCollapsed
-        let selected = sidebarTabs.selectedTabViewItem
-            .map { sidebarTabs.indexOfTabViewItem($0) } ?? -1
-        for (tab, button) in toggleButtons {
-            button.state = (open && selected == tab.rawValue) ? .on : .off
+        markSidebarGroup(open: openSidebarTab.flatMap(Tab.init(rawValue:)))
+    }
+
+    private func markSidebarGroup(open tab: Tab?) {
+        guard let group = sidebarGroup else { return }
+        for index in group.subitems.indices {
+            group.setSelected(index == tab?.rawValue, at: index)
         }
+    }
+
+    /// 사이드바 묶음의 칸을 눌렀다. 묶음은 여러 칸이 눌릴 수 있는 꼴(`selectAny`)이라, AppKit이 바꿔 둔
+    /// 칸과 지금 열린 탭을 견주어 **누른 칸**을 찾는다 — 열린 탭의 칸을 누르면 닫고, 다른 칸을 누르면 그 탭으로.
+    /// 한 칸만 눌리는 꼴(`selectOne`)을 쓰지 않는 까닭: 사이드바가 닫혀 있으면 눌린 칸이 없어야 하고, 눌린
+    /// 칸을 다시 눌러 닫을 수 있어야 한다.
+    @objc func sidebarGroupClicked(_ sender: NSToolbarItemGroup) {
+        let open = openSidebarTab
+        let clicked = sender.subitems.indices.first { sender.isSelected(at: $0) != (open == $0) }
+        guard let clicked, let tab = Tab(rawValue: clicked) else { return updateToggleStates() }
+        show(tab)
+    }
+
+    /// 보기 묶음의 칸을 눌렀다. 사이드바 묶음과 같은 방식으로 누른 칸을 찾는다. 나란히 번역은 바로 켜지지
+    /// 않을 수 있다(언어 시트, 번역 중) — 그래서 누른 뒤 지금 상태로 되돌려 싣고, 켜지면 그때 눌린다.
+    @objc func viewGroupClicked(_ sender: NSToolbarItemGroup) {
+        let state = [editor.isCodeView, sideBySide != nil]
+        let clicked = sender.subitems.indices.first { $0 < state.count && sender.isSelected(at: $0) != state[$0] }
+        switch clicked {
+        case 0: toggleCodeViewAction(sender)
+        case 1: toggleSideBySideAction(sender)
+        default: break
+        }
+        syncCodeViewState()
+        syncSideBySideState()
     }
 
     // MARK: Actions
@@ -355,10 +389,6 @@ final class DocumentWindowController: NSWindowController {
     @objc func focusSearchAction(_ sender: Any?) {
         window?.makeFirstResponder(searchField)
         searchField.selectText(nil)
-    }
-
-    @objc func openDocumentAction(_ sender: Any?) {
-        NSDocumentController.shared.openDocument(sender)
     }
 
     // MARK: 빠른 열기 · 명령 팔레트
@@ -439,8 +469,8 @@ final class DocumentWindowController: NSWindowController {
     private func syncCodeViewState() {
         let isOn = editor.isCodeView
         window?.subtitle = isOn ? String(localized: "원본 보기") : ""
-        codeViewButton?.state = isOn ? .on : .off
-        codeViewButton?.toolTip = Self.codeViewTip(isOn: isOn)
+        viewGroup?.setSelected(isOn, at: 0)
+        viewGroup?.subitems.first?.toolTip = Self.codeViewTip(isOn: isOn)
         if let main = NSApp.mainMenu { Self.markCodeView(in: main, isOn: isOn) }
     }
 
@@ -968,8 +998,8 @@ final class DocumentWindowController: NSWindowController {
     /// 도구 막대 토글과 메뉴 체크 표시를 지금 상태로.
     func syncSideBySideState() {
         let isOn = sideBySide != nil
-        sideBySideButton?.state = isOn ? .on : .off
-        sideBySideButton?.toolTip = Self.sideBySideTip(isOn: isOn)
+        viewGroup?.setSelected(isOn, at: 1)
+        if let group = viewGroup, group.subitems.count > 1 { group.subitems[1].toolTip = Self.sideBySideTip(isOn: isOn) }
         if window?.isKeyWindow ?? false, let main = NSApp.mainMenu {
             Self.mark(#selector(toggleSideBySideAction(_:)), in: main, isOn: isOn)
         }
@@ -1220,15 +1250,17 @@ final class DocumentWindowController: NSWindowController {
 // MARK: - Toolbar
 
 extension DocumentWindowController: NSToolbarDelegate {
-    /// 차례 — 하는 일로 묶는다. `열기`는 창 제목 옆(문서 일), 그다음 찾기, **보기** 둘(원본 · 나란히 번역),
-    /// **사이드바** 셋(목차 · 폴더 · 최근 — 사이드바 탭과 같은 이름, 같은 차례). 묶음 사이는 틈으로 가른다.
+    /// 차례 — 제목 옆에 **사이드바** 묶음(목차 · 폴더 · 최근), 오른쪽에 찾기와 **보기** 묶음(원본 보기 · 나란히
+    /// 번역). 묶음 둘, 단추 다섯이다.
     ///
-    /// 전에는 이름 없이 아이콘만 있었고, 사이드바 셋이 두 묶음으로 갈려 있었으며(`파일 브라우저`만 따로),
-    /// 폴더 아이콘이 '문서 열기'이고 사이드바 아이콘이 '파일 브라우저'라 짐작과 반대였다.
+    /// 2026-11-07에 두 번 고쳤다. 처음에는 단추 일곱이 따로 놓여 사이드바 셋이 두 곳에 갈렸고, 폴더 아이콘이
+    /// '문서 열기'였다(이름을 붙이고 묶어 고쳤다). 그 뒤 "아이콘 디자인이 마음에 안 든다"(사용자) — 칸마다 따로
+    /// 둥근 테두리가 생기고 '열기'만 테두리가 없어 제각각이었다. 시스템 분할 단추 둘로 바꾸고 '열기'는 뺐다
+    /// (`⌘O`, 파일 메뉴, 빠른 열기 `⌥⌘O`가 있다).
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [ItemID.open, .flexibleSpace, ItemID.matches, ItemID.search, .space,
-         ItemID.codeView, ItemID.sideBySide, .space,
-         ItemID.outline, ItemID.browser, ItemID.recent]
+        // 사이드바 위에 세우는 칸막이(`sidebarTrackingSeparator`)는 쓰지 않는다. 써 보니(실측) 사이드바를 열면 그 폭
+        // (204pt)에 창 단추와 제목까지 들어가 묶음이 빈 펼침 단추로 접혔고, 닫혀 있을 때는 세로 줄만 남았다.
+        [ItemID.sidebar, .flexibleSpace, ItemID.matches, ItemID.search, ItemID.view]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -1256,107 +1288,60 @@ extension DocumentWindowController: NSToolbarDelegate {
             item.visibilityPriority = .low
             return item
 
-        // 사이드바 셋. 이름은 사이드바의 탭 이름과 같다 — 누르면 그 탭이 열리고, 다시 누르면 닫힌다.
-        case ItemID.outline:
-            return toggle(identifier, tab: .outline, symbol: "list.bullet.indent",
-                          label: String(localized: "목차"),
-                          tip: String(localized: "사이드바에 목차 (⌘⇧O) — 다시 누르면 닫습니다"),
-                          action: #selector(showOutlineAction(_:)))
+        case ItemID.sidebar:
+            // 사이드바 셋을 **한 덩이**로 — 목차 · 폴더 · 최근. 창 왼쪽(제목 옆)에 두어 왼쪽 사이드바를 연다는
+            // 것을 자리로 알린다. 칸 차례와 이름은 사이드바 탭과 같다. 누르면 그 탭이 열리고, 눌린 칸을 다시
+            // 누르면 닫힌다.
+            let group = segmentedGroup(identifier, label: String(localized: "사이드바"), parts: [
+                ("list.bullet.indent", String(localized: "목차"),
+                 String(localized: "사이드바에 목차 (⌘⇧O) — 다시 누르면 닫습니다")),
+                ("folder", String(localized: "폴더"),
+                 String(localized: "사이드바에 이 문서의 폴더 (⌘⇧F) — 다시 누르면 닫습니다")),
+                ("clock", String(localized: "최근"),
+                 String(localized: "사이드바에 최근 문서 (⌘⇧R) — 다시 누르면 닫습니다")),
+            ], action: #selector(sidebarGroupClicked(_:)))
+            sidebarGroup = group
+            updateToggleStates()
+            return group
 
-        case ItemID.browser:
-            return toggle(identifier, tab: .browser, symbol: "folder",
-                          label: String(localized: "폴더"),
-                          tip: String(localized: "사이드바에 이 문서의 폴더 (⌘⇧F) — 다시 누르면 닫습니다"),
-                          action: #selector(showBrowserAction(_:)))
-
-        case ItemID.recent:
-            return toggle(identifier, tab: .recent, symbol: "clock",
-                          label: String(localized: "최근"),
-                          tip: String(localized: "사이드바에 최근 문서 (⌘⇧R) — 다시 누르면 닫습니다"),
-                          action: #selector(showRecentAction(_:)))
-
-        case ItemID.codeView:
-            // 켜짐/꺼짐이 곧 어느 보기인지다. 도구 막대의 다른 토글과 같은 꼴이어서
-            // 눌린 모양이 상태를 말한다 — 메뉴 명령만 있던 때는 창 부제를 읽어야
-            // 알 수 있었다.
-            let item = NSToolbarItem(itemIdentifier: identifier)
-            let control = button(symbol: "chevron.left.forwardslash.chevron.right",
-                                 label: String(localized: "원본 보기"), tip: Self.codeViewTip(isOn: false),
-                                 action: #selector(toggleCodeViewAction(_:)))
-            control.setButtonType(.pushOnPushOff)
-            control.state = editor.isCodeView ? .on : .off
-            item.view = control
-            item.label = String(localized: "원본 보기")
-            item.paletteLabel = String(localized: "원본 보기")
-            item.toolTip = Self.codeViewTip(isOn: editor.isCodeView)
-            codeViewButton = control
-            return item
-
-        case ItemID.sideBySide:
-            // 원본 보기와 같은 꼴의 토글이다. 눌린 모양이 곧 "이 창이 나란히 보기에 끼어
-            // 있다"이고, 원문 창과 번역본 창 양쪽에서 같이 눌려 있다.
-            let item = NSToolbarItem(itemIdentifier: identifier)
-            let control = button(symbol: "rectangle.split.2x1",
-                                 label: String(localized: "나란히 번역"), tip: Self.sideBySideTip(isOn: false),
-                                 action: #selector(toggleSideBySideAction(_:)))
-            control.setButtonType(.pushOnPushOff)
-            control.state = sideBySide != nil ? .on : .off
-            item.view = control
-            // '나란히 보기'로는 무엇을 나란히 보는지 알 수 없다 — 번역이 이 단추의 일이다.
-            item.label = String(localized: "나란히 번역")
-            item.paletteLabel = String(localized: "원문·번역 나란히 보기")
-            item.toolTip = Self.sideBySideTip(isOn: sideBySide != nil)
-            sideBySideButton = control
-            return item
-
-        case ItemID.open:
-            // 폴더 아이콘은 사이드바의 '폴더'가 쓴다 — 둘 다 폴더면 무엇이 무엇인지 모른다.
-            return push(identifier, symbol: "doc.text", label: String(localized: "열기"),
-                        tip: String(localized: "문서 열기 (⌘O)"), action: #selector(openDocumentAction(_:)))
+        case ItemID.view:
+            // 보기 둘 — 원본 보기 · 나란히 번역. 각각 켜고 끄며, 눌린 칸이 지금 보기다. 나란히 번역의
+            // 아이콘은 번역 기호다 — 전의 '두 칸 사각형'으로는 무엇을 나란히 보는지 알 수 없었다.
+            let group = segmentedGroup(identifier, label: String(localized: "보기"), parts: [
+                ("chevron.left.forwardslash.chevron.right", String(localized: "원본 보기"),
+                 Self.codeViewTip(isOn: editor.isCodeView)),
+                ("translate", String(localized: "나란히 번역"), Self.sideBySideTip(isOn: sideBySide != nil)),
+            ], action: #selector(viewGroupClicked(_:)))
+            viewGroup = group
+            syncCodeViewState()
+            syncSideBySideState()
+            return group
 
         default:
             return nil
         }
     }
 
-    private func button(symbol: String, label: String, tip: String, action: Selector) -> NSButton {
-        let button = NSButton(frame: NSRect(x: 0, y: 0, width: 30, height: 24))
-        button.bezelStyle = .texturedRounded
-        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
-        button.imageScaling = .scaleProportionallyDown
-        button.title = ""
-        button.target = self
-        button.action = action
-        button.toolTip = tip
-        button.setAccessibilityLabel(label)
-        return button
-    }
-
-    private func push(_ identifier: NSToolbarItem.Identifier, symbol: String, label: String,
-                      tip: String, action: Selector) -> NSToolbarItem {
-        let item = NSToolbarItem(itemIdentifier: identifier)
-        let control = button(symbol: symbol, label: label, tip: tip, action: action)
-        control.isBordered = false
-        item.view = control
-        item.label = label
-        item.paletteLabel = label
-        item.toolTip = tip
-        return item
-    }
-
-    /// A toggle, so the toolbar shows which panel is open.
-    private func toggle(_ identifier: NSToolbarItem.Identifier, tab: Tab, symbol: String,
-                        label: String, tip: String, action: Selector) -> NSToolbarItem {
-        let item = NSToolbarItem(itemIdentifier: identifier)
-        let control = button(symbol: symbol, label: label, tip: tip, action: action)
-        control.setButtonType(.pushOnPushOff)
-        control.state = .off
-        item.view = control
-        item.label = label
-        item.paletteLabel = label
-        item.toolTip = tip
-        toggleButtons[tab] = control
-        return item
+    /// 아이콘 칸 여럿을 한 덩이로 — 시스템이 그리는 분할 단추(`NSToolbarItemGroup`)다. 전에는 칸마다 직접 만든
+    /// 단추(`NSButton`)를 끼워 넣어, macOS 26 도구 막대에서 칸마다 따로 둥근 테두리가 생기고 '열기'만 테두리가
+    /// 없어 모양이 제각각이었다. 시스템 단추는 다른 macOS 앱과 같은 모양·크기·눌린 표시를 받는다.
+    ///
+    /// 여러 칸이 눌릴 수 있는 꼴(`selectAny`)로 두고, 눌린 칸은 이 창이 지금 상태로 싣는다.
+    private func segmentedGroup(_ identifier: NSToolbarItem.Identifier, label: String,
+                                parts: [(symbol: String, label: String, tip: String)],
+                                action: Selector) -> NSToolbarItemGroup {
+        let images = parts.map { part in
+            NSImage(systemSymbolName: part.symbol, accessibilityDescription: part.label) ?? NSImage()
+        }
+        let group = NSToolbarItemGroup(itemIdentifier: identifier, images: images, selectionMode: .selectAny,
+                                       labels: parts.map(\.label), target: self, action: action)
+        group.label = label
+        group.paletteLabel = label
+        for (item, part) in zip(group.subitems, parts) {
+            item.toolTip = part.tip
+            item.paletteLabel = part.label
+        }
+        return group
     }
 }
 
