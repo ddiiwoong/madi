@@ -172,6 +172,24 @@
 "제목 단계 (⌘1~⌘6, 본문 ⌥⌘0)" = "Heading level (⌘1–⌘6, body ⌥⌘0)";
 "목록 · 인용 · 코드 블록 · 표 · 구분선" = "Lists · Quote · Code block · Table · Rule";
 "서식 막대" = "Format bar";
+
+"madi:// 주소가 아닙니다." = "Not a madi:// address.";
+"모르는 명령입니다: %@ — open · new · append 중 하나를 씁니다." = "Unknown command: %@ — use open, new, or append.";
+"'%@' 값이 없습니다." = "The '%@' value is missing.";
+"경로는 /로 시작하는 절대 경로나 ~/로 적습니다: %@" = "Write the path as an absolute path starting with / or with ~/: %@";
+"마크다운 · 글 파일(.md · .markdown · .txt 등)만 엽니다: %@" = "Only Markdown and text files (.md, .markdown, .txt, …) can be opened: %@";
+"줄 번호는 1 이상의 정수입니다: %@" = "The line number must be a whole number of 1 or more: %@";
+"명령이 없습니다 — madi://open?path=… 처럼 씁니다." = "No command — write it like madi://open?path=….";
+"madi:// 링크를 열 수 없습니다" = "Can’t open the madi:// link";
+"링크가 이 문서 끝에 글을 더하려 합니다" = "A link wants to add text to the end of this document";
+"%@에 더할 글:\n\n%@" = "Text to add to %@:\n\n%@";
+"더하기" = "Add";
+"madi:// 링크를 받았습니다" = "Received a madi:// link";
+"파일이 없습니다: %@" = "No such file: %@";
+"링크의 글 더하기를 취소했습니다" = "Cancelled adding text from a link";
+"문서 창을 찾지 못했습니다." = "Couldn’t find the document window.";
+"링크로 더하기" = "Add from Link";
+"링크로 받은 글을 끝에 더했습니다 — ⌘Z로 되돌립니다" = "Added the text from the link to the end — ⌘Z undoes it";
 "메뉴 바와 같은 메뉴 · 설정" = "The menu bar’s menus · Settings";
 
 "글자 크기 %lldpt" = "Text size %lldpt";

@@ -364,6 +364,42 @@ final class DocumentWindowController: NSWindowController {
         return frontMatter.joined(withBody: editor.markdown)
     }
 
+    // MARK: madi:// 링크 (`URLCommandRunner`가 부른다)
+
+    /// 파일의 `line`번째 줄(1부터)로 캐럿을 옮긴다. 파일의 줄 번호라 front matter도 센다 — `grep -n` 같은 도구가 주는
+    /// 번호 그대로 쓸 수 있게. front matter 안의 줄이면 본문 첫 줄로.
+    func goToFileLine(_ line: Int) {
+        let composed = composedMarkdown()
+        let body = editor.markdown
+        var frontMatterLines = 0
+        if composed.hasSuffix(body) {
+            let prefix = composed.utf16.dropLast(body.utf16.count)
+            frontMatterLines = prefix.filter { $0 == 0x0A }.count
+        }
+        let bodyLine = MadiURL.bodyLine(forFileLine: line, frontMatterLines: frontMatterLines)
+        let location = MadiURL.location(ofLine: bodyLine, in: body as NSString)
+        window?.makeFirstResponder(editor.textView)
+        editor.moveCaret(to: NSRange(location: location, length: 0))
+    }
+
+    /// 검색 칸에 `query`를 넣고 바로 찾는다 — 첫 일치로 간다(⌘F로 친 것과 같다, 기다림 없이).
+    func startSearch(_ query: String) {
+        searchField.stringValue = query
+        let matches = editor.applySearch(query: query)
+        updateMatchLabel(count: matches.count, query: query)
+        if let first = matches.first { editor.reveal(first) }
+    }
+
+    /// 링크(`madi://append`)로 받은 글을 문서 끝에 더한다(띄우는 규칙은 `MadiURL.appendEdit`). 실행 취소 한 번에
+    /// 되돌아간다. 묻는 것은 부른 쪽(`URLCommandRunner`)이 먼저 한다.
+    @discardableResult
+    func appendFromLink(_ text: String) -> Bool {
+        let edit = MadiURL.appendEdit(text, to: editor.markdown)
+        guard editor.perform(edit, actionName: String(localized: "링크로 더하기")) else { return false }
+        report(String(localized: "링크로 받은 글을 끝에 더했습니다 — ⌘Z로 되돌립니다"))
+        return true
+    }
+
     private func refreshOutline() {
         outlinePanel.update(entries: editor.outline)
     }

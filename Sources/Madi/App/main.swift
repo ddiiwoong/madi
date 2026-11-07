@@ -4,8 +4,18 @@ import AppKit
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let preferences = PreferenceStore()
+    private let urlRunner = URLCommandRunner()
+    /// 켜는 동안 받은 링크. 켜기가 끝난 뒤에 실행한다 — 먼저 실행하면 그 뒤에 되살아나는 창(지난번에 열어 둔 문서)이
+    /// 링크의 창을 덮어, `append`가 묻는 시트가 가려진다(앱에서 처음 본 것).
+    private var pendingLinks: [URL] = []
+    private var finishedLaunching = false
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        // `madi://` 링크. 끝나기 전(will)에 단다 — 링크로 앱이 켜질 때 그 링크가 첫 사건으로 온다.
+        // `application(_:open:)`을 쓰지 않는다: 그것을 두면 파일 열기까지 그쪽으로 와 문서 관리자의 열기를 떠맡게 된다.
+        NSAppleEventManager.shared().setEventHandler(
+            self, andSelector: #selector(handleGetURL(_:withReplyEvent:)),
+            forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
         // 앱에 든 글꼴은 **창을 만들기 전에** 등록한다 — 먼저 만든 창은 시스템 글꼴로 그린다.
         for failure in BundledFonts.register() {
             AppLog.warning(String(localized: "앱에 든 글꼴을 등록하지 못했습니다 — 시스템 글꼴로 그립니다"),
@@ -44,6 +54,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
+        finishedLaunching = true
+        // 되살린 문서는 다 읽은 뒤에 창을 띄운다 — 한 차례 뒤에 돌려 그 창들보다 나중에 앞으로 오게.
+        DispatchQueue.main.async { [self] in
+            let links = pendingLinks
+            pendingLinks = []
+            for link in links { urlRunner.handle(link) }
+        }
     }
 
     /// Open an untitled document on launch when nothing was restored, so the
@@ -53,6 +70,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }
+
+    /// `madi://…` — 실행은 `URLCommandRunner`.
+    @objc private func handleGetURL(_ event: NSAppleEventDescriptor, withReplyEvent reply: NSAppleEventDescriptor) {
+        guard let text = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
+              let url = MadiURL.url(from: text) else { return }
+        if finishedLaunching {
+            urlRunner.handle(url)
+        } else {
+            pendingLinks.append(url)
+        }
+    }
 }
 
 // `@main` with an AppKit document app: NSDocumentController is created lazily by
