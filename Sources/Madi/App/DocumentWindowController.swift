@@ -1333,6 +1333,7 @@ extension DocumentWindowController: NSToolbarDelegate {
             item.visibilityPriority = .high
             item.label = String(localized: "검색")
             item.toolTip = String(localized: "문서 내 검색 (⌘F)")
+            // 줄어든 돋보기 단추는 시스템이 그린다 — `image`를 줘도 크기가 바뀌지 않았다(실측). 다른 칸보다 조금 크다.
             return item
 
         case ItemID.matches:
@@ -1380,7 +1381,7 @@ extension DocumentWindowController: NSToolbarDelegate {
             // 메뉴 바에서 옮겨 싣는다(`AppMenu.burgerItems`). 펼침 화살표는 달지 않는다(아이콘이 이미 메뉴다).
             let label = String(localized: "메뉴")
             let item = NSMenuToolbarItem(itemIdentifier: identifier)
-            item.image = NSImage(systemSymbolName: "line.3.horizontal", accessibilityDescription: label)
+            item.image = Self.toolbarSymbol("line.3.horizontal", label: label)
             item.label = label
             item.paletteLabel = label
             item.toolTip = String(localized: "메뉴 바와 같은 메뉴 · 설정")
@@ -1417,7 +1418,7 @@ extension DocumentWindowController: NSToolbarDelegate {
         case ItemID.format:
             // 글자 꾸밈 — 누르면 그 자리에서 한 번(눌린 채 남지 않는다). 고른 글을 감싸고, 다시 누르면 푼다.
             let images = Self.formatButtons.map { button in
-                NSImage(systemSymbolName: button.symbol, accessibilityDescription: button.label) ?? NSImage()
+                Self.toolbarSymbol(button.symbol, label: button.label)
             }
             let group = NSToolbarItemGroup(itemIdentifier: identifier, images: images, selectionMode: .momentary,
                                            labels: Self.formatButtons.map(\.label), target: self,
@@ -1467,7 +1468,7 @@ extension DocumentWindowController: NSToolbarDelegate {
                                 parts: [(symbol: String, label: String, tip: String)],
                                 action: Selector) -> NSToolbarItemGroup {
         let images = parts.map { part in
-            NSImage(systemSymbolName: part.symbol, accessibilityDescription: part.label) ?? NSImage()
+            Self.toolbarSymbol(part.symbol, label: part.label)
         }
         let group = NSToolbarItemGroup(itemIdentifier: identifier, images: images, selectionMode: .selectAny,
                                        labels: parts.map(\.label), target: self, action: action)
@@ -1483,13 +1484,24 @@ extension DocumentWindowController: NSToolbarDelegate {
         return group
     }
 
+    /// 도구 막대 아이콘의 크기(pt). 시스템 기본은 도구 막대가 키워 그려 서식 칸을 넣은 뒤 막대가 빽빽해 보였다(사용자 —
+    /// "아이콘 크기들을 조금 줄여 줘"). 칸 크기 · 테두리는 시스템 그대로이고 그림만 작다.
+    static let toolbarSymbolPointSize: CGFloat = 11
+
+    /// 도구 막대의 아이콘 하나 — 크기를 `toolbarSymbolPointSize`로 고정한 SF Symbol.
+    static func toolbarSymbol(_ name: String, label: String) -> NSImage {
+        let image = NSImage(systemSymbolName: name, accessibilityDescription: label) ?? NSImage()
+        let configuration = NSImage.SymbolConfiguration(pointSize: toolbarSymbolPointSize, weight: .regular)
+        return image.withSymbolConfiguration(configuration) ?? image
+    }
+
     /// 메뉴를 여는 아이콘 칸(제목 ▾ · 블록 ▾). 끌어내림 단추라 첫 항목을 단추 몫으로 쓴다 — 숨긴 빈 항목을 맨 앞에 둔다
     /// (버거 메뉴에서 실측한 것과 같다).
     private func menuItem(_ identifier: NSToolbarItem.Identifier, symbol: String, label: String, tip: String,
                           menu: NSMenu) -> NSMenuToolbarItem {
         menu.insertItem(NSMenuItem(title: "", action: nil, keyEquivalent: ""), at: 0)
         let item = NSMenuToolbarItem(itemIdentifier: identifier)
-        item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
+        item.image = Self.toolbarSymbol(symbol, label: label)
         item.label = label
         item.paletteLabel = label
         item.toolTip = tip

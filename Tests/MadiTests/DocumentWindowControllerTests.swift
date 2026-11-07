@@ -487,6 +487,28 @@ final class DocumentWindowControllerTests: XCTestCase {
         XCTAssertFalse(narrow.contains("heading"), "서식 칸이 먼저 펼침 메뉴로")
     }
 
+    /// 도구 막대의 아이콘은 모두 같은 작은 크기(13pt)로 그린다(사용자 — "아이콘 크기들을 조금 줄여 줘"). 칸마다 크기를
+    /// 따로 두지 않는다 — 하나만 크면 그 칸만 튀어 보인다.
+    func testToolbarIconsShareTheSmallerSymbolSize() throws {
+        let (_, controller) = open("본문\n")
+        let toolbar = try XCTUnwrap(controller.window?.toolbar)
+        let expected = NSImage.SymbolConfiguration(pointSize: DocumentWindowController.toolbarSymbolPointSize,
+                                                   weight: .regular)
+        var images: [(String, NSImage?)] = []
+        for item in toolbar.items {
+            if let group = item as? NSToolbarItemGroup {
+                images += group.subitems.map { ($0.label, $0.image) }
+            } else if item is NSMenuToolbarItem {
+                images.append((item.label, item.image))
+            }
+        }
+        XCTAssertEqual(images.count, 3 + 5 + 2 + 2 + 1, "시험의 전제 — 사이드바 · 서식 · 보기 · 제목 · 블록 · 버거")
+        for (label, image) in images {
+            let configuration = try XCTUnwrap(image?.symbolConfiguration, "\(label)에 크기가 없다")
+            XCTAssertTrue(configuration.isEqual(expected), "\(label)의 크기가 다르다: \(configuration)")
+        }
+    }
+
     /// 도구 막대의 서식은 **캐럿이 있는 편집기**를 고친다. 캐럿이 검색 칸에 있으면 원문 편집기로 돌아가서 한다.
     func testToolbarFormatGoesToTheFocusedEditor() throws {
         let (_, controller) = open("제목\n\n본문 글\n")
