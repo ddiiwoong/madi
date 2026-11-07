@@ -986,6 +986,64 @@ extension MarkdownEditorView {
         runLineEdit(LineEditing.delete, name: String(localized: "줄 지우기"))
     }
 
+    // MARK: 서식 (메뉴의 서식)
+
+    @objc func formatBoldAction(_ sender: Any?) {
+        runLineEdit({ MarkdownFormatting.toggle(.bold, in: $0, selection: $1) }, name: String(localized: "굵게"))
+    }
+
+    @objc func formatItalicAction(_ sender: Any?) {
+        runLineEdit({ MarkdownFormatting.toggle(.italic, in: $0, selection: $1) }, name: String(localized: "기울임"))
+    }
+
+    @objc func formatStrikethroughAction(_ sender: Any?) {
+        runLineEdit({ MarkdownFormatting.toggle(.strikethrough, in: $0, selection: $1) },
+                    name: String(localized: "취소선"))
+    }
+
+    @objc func formatInlineCodeAction(_ sender: Any?) {
+        runLineEdit({ MarkdownFormatting.toggle(.code, in: $0, selection: $1) }, name: String(localized: "인라인 코드"))
+    }
+
+    /// 제목 단계는 메뉴 항목의 `tag`가 든다 — 0이 본문, 1~6이 제목.
+    @objc func formatHeadingAction(_ sender: Any?) {
+        let level = (sender as? NSMenuItem)?.tag ?? 0
+        runLineEdit({ MarkdownFormatting.heading(level, in: $0, selection: $1) }, name: String(localized: "제목"))
+    }
+
+    @objc func formatLinkAction(_ sender: Any?) {
+        runLineEdit({ MarkdownFormatting.link(in: $0, selection: $1) }, name: String(localized: "링크"))
+    }
+
+    @objc func formatBulletListAction(_ sender: Any?) {
+        runLineEdit({ MarkdownFormatting.toggle(.bullet, in: $0, selection: $1) }, name: String(localized: "글머리 목록"))
+    }
+
+    @objc func formatNumberedListAction(_ sender: Any?) {
+        runLineEdit({ MarkdownFormatting.toggle(.numbered, in: $0, selection: $1) }, name: String(localized: "번호 목록"))
+    }
+
+    @objc func formatTaskListAction(_ sender: Any?) {
+        runLineEdit({ MarkdownFormatting.toggle(.task, in: $0, selection: $1) }, name: String(localized: "할 일 목록"))
+    }
+
+    @objc func formatQuoteAction(_ sender: Any?) {
+        runLineEdit({ MarkdownFormatting.toggle(.quote, in: $0, selection: $1) }, name: String(localized: "인용"))
+    }
+
+    @objc func formatCodeBlockAction(_ sender: Any?) {
+        runLineEdit({ MarkdownFormatting.codeBlock(in: $0, selection: $1) }, name: String(localized: "코드 블록"))
+    }
+
+    @objc func formatTableAction(_ sender: Any?) {
+        runLineEdit({ MarkdownFormatting.table(in: $0, selection: $1, columnTitle: { String(localized: "열 \($0)") }) },
+                    name: String(localized: "표"))
+    }
+
+    @objc func formatRuleAction(_ sender: Any?) {
+        runLineEdit({ MarkdownFormatting.rule(in: $0, selection: $1) }, name: String(localized: "구분선"))
+    }
+
     private func runLineEdit(_ rule: (NSString, NSRange) -> TextEdit?, name: String) {
         guard !textView.hasMarkedText(),
               let edit = rule(storage.string as NSString, textView.selectedRange()) else {

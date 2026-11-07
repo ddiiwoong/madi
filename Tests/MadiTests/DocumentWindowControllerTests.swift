@@ -272,7 +272,8 @@ final class DocumentWindowControllerTests: XCTestCase {
         let main = try XCTUnwrap(NSApp.mainMenu)
         let menu = try openBurger(of: controller)
         let menus = main.items.dropFirst().compactMap(\.submenu)
-        XCTAssertEqual(menus.map(\.title), ["파일", "편집", "보기", "도구", "윈도우"], "시험의 전제 — 메뉴 바의 메뉴")
+        XCTAssertEqual(menus.map(\.title), ["파일", "편집", "서식", "보기", "도구", "윈도우"],
+                       "시험의 전제 — 메뉴 바의 메뉴")
         // 맨 앞은 빈 항목이다 — 끌어내림 단추가 첫 항목을 단추 몫으로 쓰고 보이지 않는다(실측: '파일'이 빠졌다).
         let placeholder = try XCTUnwrap(menu.items.first)
         // 동작은 보지 않는다 — 끌어내림 단추가 동작 없는 항목에 자기 동작(`_popUpItemAction:`)을 단다(실측).
@@ -319,7 +320,7 @@ final class DocumentWindowControllerTests: XCTestCase {
         XCTAssertEqual(settings.keyEquivalent, ",")
         XCTAssertNil(settings.target, "메뉴 바처럼 응답자 연쇄로 간다")
         // 메뉴 바는 그대로다.
-        XCTAssertEqual(main.items.count, 6)
+        XCTAssertEqual(main.items.count, 7)
         XCTAssertTrue(main.items.allSatisfy { $0.submenu?.supermenu === main })
     }
 
@@ -364,6 +365,79 @@ final class DocumentWindowControllerTests: XCTestCase {
         delegate.menuDidClose?(menu)
         await settle()
         XCTAssertEqual(menu.numberOfItems, 0, "닫으면 비운다")
+    }
+
+    // MARK: 서식 메뉴
+
+    /// 메뉴 바의 서식 — 편집 다음. 항목은 대상 없이 응답자 연쇄로 편집기에 닿고(검색 칸에 캐럿이 있으면 회색),
+    /// 단축키는 널리 쓰는 것이다. 제목 ▸은 본문 · 제목 1~6이고 `tag`가 단계다.
+    func testFormatMenuSitsAfterEditWithCommonShortcuts() throws {
+        let main = try XCTUnwrap(NSApp.mainMenu)
+        let titles = main.items.dropFirst().compactMap(\.submenu?.title)
+        XCTAssertEqual(Array(titles.prefix(3)), ["파일", "편집", "서식"])
+        let format = try XCTUnwrap(main.items.first { $0.submenu?.title == "서식" }?.submenu)
+        let entries = format.items.filter { !$0.isSeparatorItem }
+        XCTAssertEqual(entries.map(\.title), ["제목", "굵게", "기울임", "취소선", "인라인 코드", "링크",
+                                              "글머리 목록", "번호 목록", "할 일 목록", "인용", "코드 블록", "표", "구분선"])
+        func shortcut(_ item: NSMenuItem) -> String {
+            var s = ""
+            if item.keyEquivalentModifierMask.contains(.control) { s += "⌃" }
+            if item.keyEquivalentModifierMask.contains(.option) { s += "⌥" }
+            if item.keyEquivalentModifierMask.contains(.shift) { s += "⇧" }
+            if item.keyEquivalentModifierMask.contains(.command), !item.keyEquivalent.isEmpty { s += "⌘" }
+            return s + item.keyEquivalent.uppercased()
+        }
+        XCTAssertEqual(entries.dropFirst().map(shortcut),
+                       ["⌘B", "⌘I", "⇧⌘X", "⇧⌘C", "⌘K", "⇧⌘8", "⇧⌘7", "⇧⌘9", "⌥⌘Q", "⌥⌘C", "", ""])
+        // 하위 메뉴를 단 항목(제목 ▸)은 AppKit이 그 하위 메뉴를 대상으로 단다 — 명령 항목만 본다.
+        XCTAssertTrue(entries.filter { $0.submenu == nil }.allSatisfy { $0.target == nil }, "응답자 연쇄로 편집기에 간다")
+
+        let headings = try XCTUnwrap(entries.first?.submenu)
+        XCTAssertEqual(headings.items.map(\.title), ["본문", "제목 1", "제목 2", "제목 3", "제목 4", "제목 5", "제목 6"])
+        XCTAssertEqual(headings.items.map(\.tag), Array(0...6))
+        XCTAssertEqual(headings.items.map(shortcut), ["⌥⌘0", "⌘1", "⌘2", "⌘3", "⌘4", "⌘5", "⌘6"])
+
+        // 같은 단축키가 메뉴 바의 다른 곳에 없다.
+        var seen: [String: String] = [:]
+        func walk(_ menu: NSMenu) {
+            for item in menu.items where !item.keyEquivalent.isEmpty && !item.isHidden {
+                let key = shortcut(item)
+                XCTAssertNil(seen[key], "\(key)가 \(seen[key] ?? "")과 \(item.title)에 겹친다")
+                seen[key] = item.title
+            }
+            for item in menu.items { if let sub = item.submenu { walk(sub) } }
+        }
+        walk(main)
+    }
+
+    /// 메뉴의 서식이 편집기에서 원문을 고치고, 실행 취소 한 번에 되돌아간다.
+    func testFormatCommandsEditTheSourceAndUndoInOneStep() throws {
+        let (_, controller) = open("제목\n\n본문 글\n")
+        let editor = controller.editor
+        // 앱에서는 메뉴를 고를 때마다 이벤트가 따로라 실행 취소 묶음도 따로다. 시험은 한 차례 안에서 돌아 이벤트 묶음이
+        // 둘을 한데 싸므로, 이벤트로 묶지 않는 관리자를 주고 직접 묶는다.
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        editor.undoManagerOverride = undo
+        XCTAssertTrue(editor.textView.undoManager === undo, "시험의 전제 — 편집기가 이 관리자를 쓴다")
+        func step(_ body: () -> Void) {
+            undo.beginUndoGrouping()
+            body()
+            undo.endUndoGrouping()
+        }
+        editor.textView.setSelectedRange((editor.markdown as NSString).range(of: "글"))
+        step { editor.formatBoldAction(nil) }
+        XCTAssertEqual(editor.markdown, "제목\n\n본문 **글**\n")
+
+        editor.textView.setSelectedRange(NSRange(location: 0, length: 0))
+        let item = NSMenuItem(title: "제목 2", action: nil, keyEquivalent: "")
+        item.tag = 2
+        step { editor.formatHeadingAction(item) }
+        XCTAssertEqual(editor.markdown, "## 제목\n\n본문 **글**\n")
+
+        XCTAssertEqual(undo.undoActionName, "제목")
+        undo.undo()
+        XCTAssertEqual(editor.markdown, "제목\n\n본문 **글**\n", "제목 한 단계만 되돌린다")
     }
 
     // MARK: 우클릭 메뉴의 번역

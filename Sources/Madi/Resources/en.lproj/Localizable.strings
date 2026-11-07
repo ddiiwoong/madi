@@ -152,6 +152,22 @@
 "링크 열기" = "Open Link";
 "링크 주소 복사" = "Copy Link Address";
 "선택한 글 번역" = "Translate Selection";
+
+"서식" = "Format";
+"제목 %lld" = "Heading %lld";
+"굵게" = "Bold";
+"기울임" = "Italic";
+"취소선" = "Strikethrough";
+"인라인 코드" = "Inline Code";
+"링크" = "Link";
+"글머리 목록" = "Bulleted List";
+"번호 목록" = "Numbered List";
+"할 일 목록" = "Task List";
+"인용" = "Quote";
+"코드 블록" = "Code Block";
+"표" = "Table";
+"구분선" = "Horizontal Rule";
+"열 %lld" = "Column %lld";
 "메뉴 바와 같은 메뉴 · 설정" = "The menu bar’s menus · Settings";
 
 "글자 크기 %lldpt" = "Text size %lldpt";

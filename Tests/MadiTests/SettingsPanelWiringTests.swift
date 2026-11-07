@@ -169,7 +169,7 @@ final class SettingsPanelWiringTests: XCTestCase {
 
     /// 고르개가 비어 있으면 사용자가 고를 것이 없다.
     func testEveryPickerIsPopulated() {
-        XCTAssertEqual(picker(for: EditorPreferences.ColorTheme.self)?.numberOfItems, 5)
+        XCTAssertEqual(picker(for: EditorPreferences.ColorTheme.self)?.numberOfItems, 8)
         XCTAssertEqual(picker(for: EditorPreferences.Appearance.self)?.numberOfItems, 3)
         XCTAssertEqual(picker(for: EditorPreferences.LineSpacing.self)?.numberOfItems, 3)
         XCTAssertEqual(picker(for: EditorPreferences.DocumentWidth.self)?.numberOfItems, 4)

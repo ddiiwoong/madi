@@ -93,6 +93,41 @@ enum AppMenu {
         ]
     }
 
+    /// 서식 — 마크다운 원문에 표식을 넣고 뺀다(`MarkdownFormatting`). 다시 누르면 풀린다. 맨 위의 `제목 ▸`은
+    /// `addHeadingMenu`가 넣는다.
+    ///
+    /// 단축키는 널리 쓰는 것을 따랐다: 굵게 `⌘B` · 기울임 `⌘I` · 링크 `⌘K`(거의 모든 편집기), 취소선 `⇧⌘X` ·
+    /// 번호 `⇧⌘7` · 글머리 `⇧⌘8` · 할 일 `⇧⌘9`(Google 문서), 인라인 코드 `⇧⌘C`(Slack), 인용 `⌥⌘Q` · 코드 블록
+    /// `⌥⌘C`(Typora). 인라인 코드에 흔히 쓰는 `⌘E`는 마크다운 원본 보기가 쓴다. Steno 도움말에는 서식 메뉴가
+    /// 적혀 있지 않아 따라 할 표가 없었다.
+    private static var formatCommands: [Command?] {
+        [
+            nil,
+            Command(String(localized: "굵게"), #selector(MarkdownEditorView.formatBoldAction(_:)), "b"),
+            Command(String(localized: "기울임"), #selector(MarkdownEditorView.formatItalicAction(_:)), "i"),
+            Command(String(localized: "취소선"), #selector(MarkdownEditorView.formatStrikethroughAction(_:)), "x",
+                    [.command, .shift]),
+            Command(String(localized: "인라인 코드"), #selector(MarkdownEditorView.formatInlineCodeAction(_:)), "c",
+                    [.command, .shift]),
+            nil,
+            Command(String(localized: "링크"), #selector(MarkdownEditorView.formatLinkAction(_:)), "k"),
+            nil,
+            Command(String(localized: "글머리 목록"), #selector(MarkdownEditorView.formatBulletListAction(_:)), "8",
+                    [.command, .shift]),
+            Command(String(localized: "번호 목록"), #selector(MarkdownEditorView.formatNumberedListAction(_:)), "7",
+                    [.command, .shift]),
+            Command(String(localized: "할 일 목록"), #selector(MarkdownEditorView.formatTaskListAction(_:)), "9",
+                    [.command, .shift]),
+            Command(String(localized: "인용"), #selector(MarkdownEditorView.formatQuoteAction(_:)), "q",
+                    [.command, .option]),
+            nil,
+            Command(String(localized: "코드 블록"), #selector(MarkdownEditorView.formatCodeBlockAction(_:)), "c",
+                    [.command, .option]),
+            Command(String(localized: "표"), #selector(MarkdownEditorView.formatTableAction(_:))),
+            Command(String(localized: "구분선"), #selector(MarkdownEditorView.formatRuleAction(_:))),
+        ]
+    }
+
     private static var viewCommands: [Command?] {
         [
             Command(String(localized: "명령 팔레트…"), #selector(DocumentWindowController.showCommandPaletteAction(_:)),
@@ -171,6 +206,9 @@ enum AppMenu {
 
         main.addItem(submenu(String(localized: "파일"), fileCommands, insertRecentAfter: String(localized: "문서 열기…")))
         main.addItem(submenu(String(localized: "편집"), editCommands))
+        let format = submenu(String(localized: "서식"), formatCommands)
+        if let menu = format.submenu { addHeadingMenu(to: menu) }
+        main.addItem(format)
         let view = submenu(String(localized: "보기"), viewCommands)
         if let menu = view.submenu {
             addHiddenPlusShortcut(to: menu)
@@ -225,6 +263,26 @@ enum AppMenu {
         }
         item.submenu = themes
         menu.insertItem(item, at: index)
+    }
+
+    /// 서식 ▸ 제목 — 본문(`⌥⌘0`)과 제목 1~6(`⌘1`~`⌘6`). 항목의 `tag`가 단계다. `⌘0`은 글자 기본 크기가 쓰고
+    /// 있어 본문은 `⌥⌘0`이다. 서식 메뉴 맨 위에 둔다.
+    private static func addHeadingMenu(to menu: NSMenu) {
+        let title = String(localized: "제목")
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        let headings = NSMenu(title: title)
+        let action = #selector(MarkdownEditorView.formatHeadingAction(_:))
+        let body = headings.addItem(withTitle: String(localized: "본문"), action: action, keyEquivalent: "0")
+        body.keyEquivalentModifierMask = [.command, .option]
+        body.tag = 0
+        for level in 1...6 {
+            let entry = headings.addItem(withTitle: String(localized: "제목 \(level)"), action: action,
+                                         keyEquivalent: "\(level)")
+            entry.keyEquivalentModifierMask = [.command]
+            entry.tag = level
+        }
+        item.submenu = headings
+        menu.insertItem(item, at: 0)
     }
 
     /// 테마 메뉴의 체크 — 지금 테마 하나에만. 앱이 설정이 바뀔 때마다 부른다.

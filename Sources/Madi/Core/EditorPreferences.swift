@@ -38,20 +38,30 @@ public struct EditorPreferences: Equatable, Sendable {
     public enum ColorTheme: String, CaseIterable, Sendable {
         /// 시스템 색. 테마를 고르기 전의 모양 그대로다.
         case standard
-        /// 따뜻한 미색 바탕에 짙은 갈색 글 — 긴 원고를 읽기 편하다.
-        case paper
+        /// Notion 페이지의 색 — 흰 바탕(다크는 #191919)에 따뜻한 먹색 글, 링크는 글 색에 밑줄, 인용 막대도 글 색.
+        case notion
+        /// Confluence 페이지의 색 — Atlassian 디자인 토큰(2025년에 바뀐 판)의 글 · 링크 · 회색 바탕.
+        case confluence
         /// GitHub 문서와 같은 색. 올렸을 때의 모양으로 본다.
         case github
+        /// Obsidian 기본 테마의 색 — 보라 강조색의 링크와 인용 막대, 다크는 #1E1E1E.
+        case obsidian
+        /// 따뜻한 미색 바탕에 짙은 갈색 글 — 긴 원고를 읽기 편하다.
+        case paper
         /// Solarized 색 조합. 글자 대비를 4.5 : 1 위로 맞추려고 강조색을 조금 진하게(다크는 밝게) 했다.
         case solarized
         /// 흰 바탕에 검은 글(다크는 반대). 밝은 곳이나 눈이 피로할 때.
         case highContrast
 
+        /// 고르개 · 메뉴의 차례가 이 선언 차례다. 저장하는 값은 raw 문자열이라 차례를 바꿔도 고른 테마는 그대로다.
         public var label: String {
             switch self {
             case .standard: return String(localized: "theme.standard", defaultValue: "기본")
-            case .paper: return String(localized: "종이")
+            case .notion: return "Notion"
+            case .confluence: return "Confluence"
             case .github: return "GitHub"
+            case .obsidian: return "Obsidian"
+            case .paper: return String(localized: "종이")
             case .solarized: return "Solarized"
             case .highContrast: return String(localized: "고대비")
             }

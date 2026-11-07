@@ -6,9 +6,13 @@ import AppKit
 /// 않아도 그리는 때의 외관으로 풀린다. `기본`만 시스템 의미색을 쓴다 — 테마를 고르기 전의 모양 그대로다.
 ///
 /// 값을 고른 규칙: 글자는 바탕과 **4.5 : 1 이상**(코드 글자는 코드 바탕 위에서), 마커는 3 : 1 이상,
-/// 인용 글은 본문보다 옅되 4.5 : 1 이상. `MarkdownThemeContrastTests`가 다섯 테마의 두 벌 모두를 지킨다.
+/// 인용 글은 본문보다 옅되 4.5 : 1 이상. `MarkdownThemeContrastTests`가 모든 테마의 두 벌을 지킨다.
 /// Solarized는 원래 강조색이 중간 밝기라 흰 바탕 위 글자로 쓰면 3~4 : 1이다 — 색상은 지키고 밝기만
 /// 옮겨 기준을 넘겼다. GitHub는 Primer의 색(github.com 문서 화면)을 그대로 썼다.
+///
+/// Notion · Confluence · Obsidian은 그 앱의 **바탕 · 글 · 링크 · 코드 바탕**을 따랐다(Notion은 공개된 색표,
+/// Confluence는 Atlassian 디자인 토큰, Obsidian은 기본 테마). 그 앱들이 정하지 않은 자리(코드 강조색 다섯, 알림
+/// 다섯)는 그 앱의 색표에서 가까운 색을 골라 대비 기준까지 밝기만 옮겼다. 글꼴은 테마가 아니라 글꼴 탭이 정한다.
 @MainActor
 struct ThemePalette {
     var background: NSColor
@@ -55,7 +59,7 @@ struct ThemePalette {
         }
     }
 
-    // MARK: 다섯 테마
+    // MARK: 테마 여덟
 
     /// 테마의 색. 처음 물을 때 만들어 기억한다 — 색이 같은 객체여야 다시 칠할 때 그림이 바뀌었다고 보지 않는다.
     static func palette(for theme: EditorPreferences.ColorTheme) -> ThemePalette {
@@ -88,6 +92,63 @@ struct ThemePalette {
                 note: pair(0x0A_52_A1, 0x6C_B6_FF), tip: pair(0x1A_65_32, 0x5E_D2_86),
                 important: pair(0x6A_2D_9E, 0xC2_97_FF), warning: pair(0x8A_52_00, 0xE3_B3_41),
                 caution: pair(0xA3_1C_1C, 0xFF_81_82))
+
+        case .notion:
+            // 글 #37352F · 다크 #D4D4D4(바탕 #191919), 코드 블록 바탕 #F7F6F3. 링크는 글 색에 밑줄이고 인용 막대도
+            // 글 색이다(Notion이 그렇게 그린다). 알림은 Notion 글 색표(파랑 · 초록 · 보라 · 주황 · 빨강)에서.
+            return ThemePalette(
+                background: pair(0xFF_FF_FF, 0x19_19_19), text: pair(0x37_35_2F, 0xD4_D4_D4),
+                dim: pair(0x86_85_7F, 0x8C_8C_8C),
+                quote: pair(0x55_53_4E, 0xB4_B4_B4), quoteBar: pair(0x37_35_2F, 0xD4_D4_D4),
+                link: pair(0x37_35_2F, 0xD4_D4_D4),
+                codeText: pair(0x37_35_2F, 0xD4_D4_D4), codeBackground: pair(0xF7_F6_F3, 0x25_25_25),
+                rule: pair(0xE3_E2_E0, 0x37_37_37),
+                tableLine: pair(0xDC_DB_D7, 0x3A_3A_3A), tableHeaderBackground: pair(0xF7_F6_F3, 0x20_20_20),
+                selection: pair(0xC1_DC_F7, 0x24_40_5E),
+                keyword: pair(0x07_67_9A, 0xCC_99_CD), type: pair(0xB8_30_4F, 0x6F_A8_DC),
+                string: pair(0x4E_7A_00, 0x7E_C6_99), comment: pair(0x5F_6B_76, 0x99_99_99),
+                number: pair(0x99_00_55, 0xF0_8D_49),
+                note: pair(0x2B_6E_95, 0x4A_A6_DD), tip: pair(0x3B_75_56, 0x5B_AE_7E),
+                important: pair(0x84_57_A6, 0xAF_7E_E0), warning: pair(0xA8_5A_0A, 0xD3_8B_55),
+                caution: pair(0xC0_40_3B, 0xE8_66_64))
+
+        case .confluence:
+            // Atlassian 토큰: text #292A2E · #CECFD2, link #1868DB · #669DF1, surface #FFFFFF · #1F1F21,
+            // background.neutral(코드 · 표 머리)을 바탕 위에 섞은 색. 알림은 Atlassian 색표의 파랑 · 초록 · 보라 · 주황 · 빨강.
+            return ThemePalette(
+                background: pair(0xFF_FF_FF, 0x1F_1F_21), text: pair(0x29_2A_2E, 0xCE_CF_D2),
+                dim: pair(0x6B_6E_76, 0x96_99_9E),
+                quote: pair(0x50_52_58, 0xA9_AB_AF), quoteBar: pair(0xC9_CB_CF, 0x4B_4D_51),
+                link: pair(0x18_68_DB, 0x66_9D_F1),
+                codeText: pair(0x29_2A_2E, 0xCE_CF_D2), codeBackground: pair(0xF0_F1_F2, 0x2B_2C_2F),
+                rule: pair(0xDD_DE_E1, 0x3D_3F_43),
+                tableLine: pair(0xC9_CB_CF, 0x4B_4D_51), tableHeaderBackground: pair(0xF0_F1_F2, 0x2B_2C_2F),
+                selection: pair(0xD6_E5_FB, 0x1C_2B_42),
+                keyword: pair(0x5E_4D_B2, 0xB8_AC_F6), type: pair(0x20_6A_83, 0x9D_D9_EE),
+                string: pair(0x21_6E_4E, 0x7E_E2_B8), comment: pair(0x62_65_6C, 0x96_99_9E),
+                number: pair(0xAE_2E_24, 0xFD_98_91),
+                note: pair(0x18_68_DB, 0x66_9D_F1), tip: pair(0x21_6E_4E, 0x7E_E2_B8),
+                important: pair(0x5E_4D_B2, 0xB8_AC_F6), warning: pair(0xA5_48_00, 0xFE_C5_7B),
+                caution: pair(0xAE_2E_24, 0xFD_98_91))
+
+        case .obsidian:
+            // 기본 테마: 글 #222222 · #DADADA, 바탕 #FFFFFF · #1E1E1E, 옅은 글 #5C5C5C · #B3B3B3. 강조색(보라)이 링크와
+            // 인용 막대다 — 흰 바탕의 링크는 대비를 맞추려고 조금 짙게(#6E46DC) 했다.
+            return ThemePalette(
+                background: pair(0xFF_FF_FF, 0x1E_1E_1E), text: pair(0x22_22_22, 0xDA_DA_DA),
+                dim: pair(0x8A_8A_8A, 0x8A_8A_8A),
+                quote: pair(0x5C_5C_5C, 0xB3_B3_B3), quoteBar: pair(0x8A_5C_F5, 0xA8_8B_FA),
+                link: pair(0x6E_46_DC, 0xA8_8B_FA),
+                codeText: pair(0x2E_2E_2E, 0xDA_DA_DA), codeBackground: pair(0xF6_F6_F6, 0x26_26_26),
+                rule: pair(0xE0_E0_E0, 0x36_36_36),
+                tableLine: pair(0xD4_D4_D4, 0x40_40_40), tableHeaderBackground: pair(0xFA_FA_FA, 0x26_26_26),
+                selection: pair(0xE3_DA_FD, 0x3B_31_59),
+                keyword: pair(0xBC_2A_73, 0xFA_99_CD), type: pair(0x00_77_7A, 0x53_DF_DD),
+                string: pair(0x08_7A_35, 0x44_CF_6E), comment: pair(0x6B_6B_6B, 0x92_92_92),
+                number: pair(0x6A_44_D8, 0xA8_82_FF),
+                note: pair(0x08_60_C4, 0x5A_A4_FF), tip: pair(0x00_76_72, 0x53_DF_DD),
+                important: pair(0x6E_46_DC, 0xA8_82_FF), warning: pair(0xA6_52_00, 0xE9_97_3F),
+                caution: pair(0xC8_21_3A, 0xFB_64_69))
 
         case .paper:
             return ThemePalette(

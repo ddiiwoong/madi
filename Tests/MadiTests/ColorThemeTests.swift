@@ -30,12 +30,45 @@ final class ColorThemeTests: XCTestCase {
         XCTAssertEqual(PreferenceStore(defaults: defaults).current.colorTheme, .standard)
     }
 
+    /// 여덟 — 많이 쓰는 문서 도구의 모양(Notion · Confluence · GitHub · Obsidian)이 기본 다음에 온다(사용자 —
+    /// "노션, 컨플루언스 등 많이 쓰는 디자인으로"). 저장 값(raw)은 차례와 상관없다.
     func testThemesHaveDistinctNamesAndPalettes() {
         let themes = EditorPreferences.ColorTheme.allCases
-        XCTAssertEqual(themes.count, 5)
-        XCTAssertEqual(Set(themes.map(\.label)).count, 5)
-        XCTAssertEqual(Set(themes.map { ObjectIdentifier(ThemePalette.palette(for: $0).background) }).count, 5,
-                       "테마마다 바탕이 다르다")
+        XCTAssertEqual(themes.map(\.label),
+                       ["기본", "Notion", "Confluence", "GitHub", "Obsidian", "종이", "Solarized", "고대비"])
+        XCTAssertEqual(themes.map(\.rawValue),
+                       ["standard", "notion", "confluence", "github", "obsidian", "paper", "solarized", "highContrast"],
+                       "앞 판이 적어 둔 값(paper · github · solarized · highContrast)은 그대로 읽힌다")
+        XCTAssertEqual(Set(themes.map { ObjectIdentifier(ThemePalette.palette(for: $0).background) }).count,
+                       themes.count, "테마마다 바탕이 다르다")
+    }
+
+    /// 새 테마 셋의 바탕 · 글 · 링크가 그 앱의 색이다(라이트 · 다크). 링크가 글 색인 것은 Notion이 그렇게 그려서다.
+    func testNewThemesUseTheirAppsColors() throws {
+        func hex(_ color: NSColor, _ name: NSAppearance.Name) throws -> UInt32 {
+            var resolved: NSColor?
+            try XCTUnwrap(NSAppearance(named: name)).performAsCurrentDrawingAppearance {
+                resolved = color.usingColorSpace(.sRGB)
+            }
+            let c = try XCTUnwrap(resolved)
+            return UInt32((c.redComponent * 255).rounded()) << 16 | UInt32((c.greenComponent * 255).rounded()) << 8
+                | UInt32((c.blueComponent * 255).rounded())
+        }
+        let expected: [(EditorPreferences.ColorTheme, background: (UInt32, UInt32), text: (UInt32, UInt32),
+                        link: (UInt32, UInt32))] = [
+            (.notion, (0xFFFFFF, 0x191919), (0x37352F, 0xD4D4D4), (0x37352F, 0xD4D4D4)),
+            (.confluence, (0xFFFFFF, 0x1F1F21), (0x292A2E, 0xCECFD2), (0x1868DB, 0x669DF1)),
+            (.obsidian, (0xFFFFFF, 0x1E1E1E), (0x222222, 0xDADADA), (0x6E46DC, 0xA88BFA)),
+        ]
+        for (theme, background, text, link) in expected {
+            let palette = ThemePalette.palette(for: theme)
+            for (name, pick) in [(NSAppearance.Name.aqua, 0), (.darkAqua, 1)] {
+                func value(_ pair: (UInt32, UInt32)) -> UInt32 { pick == 0 ? pair.0 : pair.1 }
+                XCTAssertEqual(try hex(palette.background, name), value(background), "\(theme) 바탕 \(name.rawValue)")
+                XCTAssertEqual(try hex(palette.text, name), value(text), "\(theme) 글 \(name.rawValue)")
+                XCTAssertEqual(try hex(palette.link, name), value(link), "\(theme) 링크 \(name.rawValue)")
+            }
+        }
     }
 
     // MARK: 편집기
