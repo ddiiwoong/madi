@@ -168,6 +168,10 @@
 "표" = "Table";
 "구분선" = "Horizontal Rule";
 "열 %lld" = "Column %lld";
+"블록" = "Blocks";
+"제목 단계 (⌘1~⌘6, 본문 ⌥⌘0)" = "Heading level (⌘1–⌘6, body ⌥⌘0)";
+"목록 · 인용 · 코드 블록 · 표 · 구분선" = "Lists · Quote · Code block · Table · Rule";
+"서식 막대" = "Format bar";
 "메뉴 바와 같은 메뉴 · 설정" = "The menu bar’s menus · Settings";
 
 "글자 크기 %lldpt" = "Text size %lldpt";

@@ -110,6 +110,13 @@ final class PrintAndPDFTests: XCTestCase {
         preferences.colorTheme = .paper
         let controller = open("본문 글 한 줄\n", preferences: preferences)
         controller.window?.appearance = NSAppearance(named: .darkAqua)
+        // PDF는 텍스트 뷰를 쪽 폭에 맞춰 줄인다(`horizontalPagination = .fit`) — 창이 넓을수록 글자가 작고 옅게 찍힌다.
+        // 아래 밝기 기준은 860pt 창에서 정한 것이라 그 폭으로 둔다(새 창이 960pt가 되며 0.35로 기준을 넘었다). 쪽 폭에 맞춰
+        // 놓지 않는 것은 TODO에 있다.
+        if let window = controller.window {
+            window.setFrame(NSRect(origin: window.frame.origin, size: NSSize(width: 860, height: window.frame.height)),
+                            display: true)
+        }
         let url = folder.appendingPathComponent("종이.pdf")
         XCTAssertTrue(controller.exportPDF(to: url, showsProgress: false))
 

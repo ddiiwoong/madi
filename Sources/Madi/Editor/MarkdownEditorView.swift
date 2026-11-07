@@ -23,6 +23,13 @@ public final class MarkdownEditorView: NSView {
     /// 우클릭 메뉴의 '링크 주소 복사'가 쓰는 대지. 테스트가 바꾼다 — 사용자의 대지를 덮지 않게.
     var linkPasteboard: NSPasteboard = .general
 
+    /// 글을 고르면 그 위에 뜨는 서식 막대(`FormatBarView`). 처음 고를 때 만든다.
+    private(set) var formatBar: FormatBarView?
+    /// 고르기가 멈춘 뒤에 띄운다 — 끄는 동안 막대가 따라다니며 깜빡이지 않게.
+    private var formatBarWork: DispatchWorkItem?
+    /// 막대를 띄우기까지 기다리는 시간. 테스트가 0으로 둔다.
+    var formatBarDelay: TimeInterval = 0.18
+
     /// 이 편집기만의 실행 취소 관리자. nil이면 창의 것을 쓴다. 한 창에 문서가 둘일 때(나란히
     /// 보기의 번역본) 쓴다 — 창의 것을 함께 쓰면 번역본을 고칠 때 원문이 '편집됨'이 된다.
     public var undoManagerOverride: UndoManager?
@@ -248,6 +255,8 @@ public final class MarkdownEditorView: NSView {
             theme.isForOutput = isRenderingForOutput
             textView.appearance = isRenderingForOutput ? NSAppearance(named: .aqua) : nil
             applyColors()
+            // 서식 막대도 텍스트 뷰 안에 있다 — 내보내는 동안 거둔다.
+            if isRenderingForOutput { hideFormatBar() }
             // 머리(메타데이터 카드)는 내보내지 않는다 — 텍스트 뷰 안에 있어 숨기지 않으면 함께 찍힌다.
             if let headerView {
                 if isRenderingForOutput {
@@ -840,6 +849,67 @@ extension MarkdownEditorView {
         return menu
     }
 
+    // MARK: 서식 막대
+
+    /// 고르기가 바뀌었다 — 고른 글이 있으면 잠깐 뒤에 막대를 띄우고(끄는 동안은 따라다니지 않는다), 없으면 바로 거둔다.
+    private func scheduleFormatBar() {
+        formatBarWork?.cancel()
+        formatBarWork = nil
+        guard textView.selectedRange().length > 0, !textView.hasMarkedText(), !isRenderingForOutput else {
+            hideFormatBar()
+            return
+        }
+        let work = DispatchWorkItem { [weak self] in self?.updateFormatBar() }
+        formatBarWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + formatBarDelay, execute: work)
+    }
+
+    func hideFormatBar() {
+        formatBarWork?.cancel()
+        formatBarWork = nil
+        formatBar?.isHidden = true
+    }
+
+    /// 막대를 고른 글의 **첫 줄 위**에 놓는다. 위에 자리가 없으면(보이는 칸의 맨 위) 마지막 줄 아래에. 가로는 고른 글의
+    /// 첫 줄 가운데에 맞추되 보이는 칸을 넘지 않게.
+    func updateFormatBar() {
+        let selection = textView.selectedRange()
+        guard selection.length > 0, !textView.hasMarkedText(), !isRenderingForOutput,
+              let layout = textView.layoutManager, let container = textView.textContainer else {
+            hideFormatBar()
+            return
+        }
+        let bar = formatBar ?? {
+            let made = FormatBarView(editor: self)
+            textView.addSubview(made)
+            formatBar = made
+            return made
+        }()
+        let glyphs = layout.glyphRange(forCharacterRange: selection, actualCharacterRange: nil)
+        guard glyphs.length > 0 else { return hideFormatBar() }
+        layout.ensureLayout(forGlyphRange: glyphs)
+        let origin = textView.textContainerOrigin
+        func lineRect(at glyph: Int) -> NSRect {
+            var line = NSRange()
+            layout.lineFragmentRect(forGlyphAt: glyph, effectiveRange: &line)
+            let part = NSIntersectionRange(line, glyphs)
+            return layout.boundingRect(forGlyphRange: part.length > 0 ? part : line, in: container)
+                .offsetBy(dx: origin.x, dy: origin.y)
+        }
+        let first = lineRect(at: glyphs.location)
+        let size = bar.fittingSize
+        let visible = textView.visibleRect
+        let gap: CGFloat = 6
+        var top = first.minY - size.height - gap
+        if top < visible.minY + 2 {
+            top = lineRect(at: NSMaxRange(glyphs) - 1).maxY + gap
+        }
+        var left = first.midX - size.width / 2
+        left = min(max(left, visible.minX + 4), visible.maxX - size.width - 4)
+        bar.frame = NSRect(x: left.rounded(), y: top.rounded(), width: size.width, height: size.height)
+        bar.isHidden = false
+    }
+
     /// 점(텍스트 뷰 좌표) 아래의 링크 주소 — 글의 링크든 격자로 그린 표 칸의 링크든. ⌘클릭이 여는 것과 같다.
     func link(at point: NSPoint) -> String? {
         guard !styler.codeView else { return nil }
@@ -1095,6 +1165,12 @@ extension MarkdownEditorView: NSTextViewDelegate {
         let new = caretLine()
         restyleCaretTransition(from: lastCaretLine, to: new)
         lastCaretLine = new
+        scheduleFormatBar()
+    }
+
+    /// 다른 곳(검색 칸 등)으로 캐럿이 가면 서식 막대를 거둔다.
+    public func textDidEndEditing(_ notification: Notification) {
+        hideFormatBar()
     }
 
     /// Enter · Tab · ⇧Tab을 목록 규칙에 먼저 묻는다(`ListEditing`). 한글을 조합하는 중에는

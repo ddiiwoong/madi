@@ -60,7 +60,39 @@ final class DocumentWindowController: NSWindowController {
         static let view = NSToolbarItem.Identifier("view")
         /// 버거 메뉴 — 메뉴 바와 같은 메뉴, 그리고 설정.
         static let menu = NSToolbarItem.Identifier("burger")
+        /// 서식 — 제목 ▾ · 글자 꾸밈 묶음(굵게 · 기울임 · 취소선 · 인라인 코드 · 링크) · 블록 ▾.
+        static let heading = NSToolbarItem.Identifier("heading")
+        static let format = NSToolbarItem.Identifier("format")
+        static let blocks = NSToolbarItem.Identifier("blocks")
     }
+
+    /// 도구 막대의 글자 꾸밈 묶음 — 칸 차례대로 (아이콘, 이름, 단축키, 편집기의 명령).
+    static let formatButtons: [(symbol: String, label: String, shortcut: String, action: Selector)] = [
+        ("bold", String(localized: "굵게"), "⌘B", #selector(MarkdownEditorView.formatBoldAction(_:))),
+        ("italic", String(localized: "기울임"), "⌘I", #selector(MarkdownEditorView.formatItalicAction(_:))),
+        ("strikethrough", String(localized: "취소선"), "⇧⌘X",
+         #selector(MarkdownEditorView.formatStrikethroughAction(_:))),
+        ("curlybraces", String(localized: "인라인 코드"), "⇧⌘C",
+         #selector(MarkdownEditorView.formatInlineCodeAction(_:))),
+        ("link", String(localized: "링크"), "⌘K", #selector(MarkdownEditorView.formatLinkAction(_:))),
+    ]
+
+    /// 도구 막대의 블록 ▾ 메뉴 — 이름과 편집기의 명령. nil은 구분선.
+    static let blockCommands: [(label: String, action: Selector)?] = [
+        (String(localized: "글머리 목록"), #selector(MarkdownEditorView.formatBulletListAction(_:))),
+        (String(localized: "번호 목록"), #selector(MarkdownEditorView.formatNumberedListAction(_:))),
+        (String(localized: "할 일 목록"), #selector(MarkdownEditorView.formatTaskListAction(_:))),
+        (String(localized: "인용"), #selector(MarkdownEditorView.formatQuoteAction(_:))),
+        nil,
+        (String(localized: "코드 블록"), #selector(MarkdownEditorView.formatCodeBlockAction(_:))),
+        (String(localized: "표"), #selector(MarkdownEditorView.formatTableAction(_:))),
+        (String(localized: "구분선"), #selector(MarkdownEditorView.formatRuleAction(_:))),
+    ]
+
+    /// 도구 막대의 서식 단추들. 시험이 쓴다.
+    private(set) var headingItem: NSMenuToolbarItem?
+    private(set) var formatGroup: NSToolbarItemGroup?
+    private(set) var blocksItem: NSMenuToolbarItem?
 
     /// 사이드바 묶음. 눌린 칸이 지금 열린 사이드바 탭이다(닫혀 있으면 눌린 칸이 없다).
     private(set) var sidebarGroup: NSToolbarItemGroup?
@@ -210,7 +242,10 @@ final class DocumentWindowController: NSWindowController {
         // 다시 돌 때마다 창이 860×752로 되돌아갔다 — 나란히 보기에서 반씩 놓은 두 창이
         // 0.3초 만에 되돌아갔고, 되돌린 호출이 `_changeWindowFrameFromConstraintsIfNecessary`
         // 였다. 나중에 `.zero`로 바꿔도 걸린 제약은 풀리지 않았다.
-        window?.setContentSize(NSSize(width: 860, height: 700))
+        //
+        // 폭 960은 도구 막대가 칸을 모두 펼쳐 보이는 폭이다(시험이 잰다 — `testToolbarFitsAtTheDefaultWidth`). 서식 단추를
+        // 넣기 전에는 860이었는데, 860에서는 제목 ▾ · 블록 ▾ · 일치 개수가 펼침(») 메뉴로 들어갔다.
+        window?.setContentSize(NSSize(width: 960, height: 700))
         // 이름이 Md → Madi로 바뀌어도 이 문자열은 그대로 둔다. 자동 저장 이름과
         // 도구 막대 식별자는 **저장된 상태를 찾는 열쇠**이고 사람이 읽는 이름이
         // 아니다. 바꾸면 기존 사용자의 창 위치·크기와 도구 막대 구성이 한 번
@@ -1278,7 +1313,9 @@ extension DocumentWindowController: NSToolbarDelegate {
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         // 사이드바 위에 세우는 칸막이(`sidebarTrackingSeparator`)는 쓰지 않는다. 써 보니(실측) 사이드바를 열면 그 폭
         // (204pt)에 창 단추와 제목까지 들어가 묶음이 빈 펼침 단추로 접혔고, 닫혀 있을 때는 세로 줄만 남았다.
-        [ItemID.sidebar, .flexibleSpace, ItemID.matches, ItemID.search, ItemID.view, ItemID.menu]
+        // 서식 셋(제목 ▾ · 글자 꾸밈 · 블록 ▾)은 가운데 — 양옆의 빈 칸이 가운데로 민다(사용자 — "서식 아이콘이 보이도록").
+        [ItemID.sidebar, .flexibleSpace, ItemID.heading, ItemID.format, ItemID.blocks, .flexibleSpace,
+         ItemID.matches, ItemID.search, ItemID.view, ItemID.menu]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -1293,6 +1330,7 @@ extension DocumentWindowController: NSToolbarDelegate {
             item.searchField = searchField
             item.resignsFirstResponderWithCancel = true
             item.preferredWidthForSearchField = 220
+            item.visibilityPriority = .high
             item.label = String(localized: "검색")
             item.toolTip = String(localized: "문서 내 검색 (⌘F)")
             return item
@@ -1318,6 +1356,7 @@ extension DocumentWindowController: NSToolbarDelegate {
                 ("clock", String(localized: "최근"),
                  String(localized: "사이드바에 최근 문서 (⌘⇧R) — 다시 누르면 닫습니다")),
             ], action: #selector(sidebarGroupClicked(_:)))
+            group.visibilityPriority = .high                // 자리가 모자라도 남긴다(`toolbarDefaultItemIdentifiers`)
             sidebarGroup = group
             updateToggleStates()
             return group
@@ -1330,6 +1369,7 @@ extension DocumentWindowController: NSToolbarDelegate {
                  Self.codeViewTip(isOn: editor.isCodeView)),
                 ("translate", String(localized: "나란히 번역"), Self.sideBySideTip(isOn: sideBySide != nil)),
             ], action: #selector(viewGroupClicked(_:)))
+            group.visibilityPriority = .high
             viewGroup = group
             syncCodeViewState()
             syncSideBySideState()
@@ -1348,7 +1388,69 @@ extension DocumentWindowController: NSToolbarDelegate {
             let menu = NSMenu(title: label)
             menu.delegate = burgerFeeder
             item.menu = menu
+            item.visibilityPriority = .high
             burgerItem = item
+            return item
+
+        case ItemID.heading:
+            // 제목 ▾ — 본문 · 제목 1~6. 메뉴 바의 서식 ▸ 제목과 같은 명령이다(`tag`가 단계).
+            let menu = NSMenu(title: String(localized: "제목"))
+            let body = menu.addItem(withTitle: String(localized: "본문"),
+                                    action: #selector(toolbarFormatAction(_:)), keyEquivalent: "")
+            body.tag = 0
+            for level in 1...6 {
+                let entry = menu.addItem(withTitle: String(localized: "제목 \(level)"),
+                                         action: #selector(toolbarFormatAction(_:)), keyEquivalent: "")
+                entry.tag = level
+            }
+            for entry in menu.items {
+                entry.target = self
+                entry.representedObject = NSStringFromSelector(#selector(MarkdownEditorView.formatHeadingAction(_:)))
+            }
+            // 아이콘은 `#`(마크다운의 제목 표식). `textformat.size`는 한국어 화면에서 '가가'로 그려져 글자 크기처럼 보였다(실측).
+            let item = menuItem(identifier, symbol: "number", label: String(localized: "제목"),
+                                tip: String(localized: "제목 단계 (⌘1~⌘6, 본문 ⌥⌘0)"), menu: menu)
+            item.visibilityPriority = .low                 // 자리가 모자라면 먼저 펼침(») 메뉴로
+            headingItem = item
+            return item
+
+        case ItemID.format:
+            // 글자 꾸밈 — 누르면 그 자리에서 한 번(눌린 채 남지 않는다). 고른 글을 감싸고, 다시 누르면 푼다.
+            let images = Self.formatButtons.map { button in
+                NSImage(systemSymbolName: button.symbol, accessibilityDescription: button.label) ?? NSImage()
+            }
+            let group = NSToolbarItemGroup(itemIdentifier: identifier, images: images, selectionMode: .momentary,
+                                           labels: Self.formatButtons.map(\.label), target: self,
+                                           action: #selector(formatGroupClicked(_:)))
+            group.label = String(localized: "서식")
+            group.paletteLabel = String(localized: "서식")
+            // 늘 펼친 꼴. 자동이면 자리가 모자랄 때 끌어내림 하나로 접히는데, 눌린 칸이 없는 묶음이라 빈 단추가 됐다(실측,
+            // 창 960pt). 펼친 꼴이 자리를 못 받으면 펼침(») 메뉴로 간다.
+            group.controlRepresentation = .expanded
+            for (item, button) in zip(group.subitems, Self.formatButtons) {
+                item.toolTip = "\(button.label) (\(button.shortcut))"
+                item.paletteLabel = button.label
+            }
+            formatGroup = group
+            return group
+
+        case ItemID.blocks:
+            // 블록 ▾ — 목록 셋 · 인용, 코드 블록 · 표 · 구분선.
+            let menu = NSMenu(title: String(localized: "블록"))
+            for command in Self.blockCommands {
+                guard let command else {
+                    menu.addItem(.separator())
+                    continue
+                }
+                let entry = menu.addItem(withTitle: command.label, action: #selector(toolbarFormatAction(_:)),
+                                         keyEquivalent: "")
+                entry.target = self
+                entry.representedObject = NSStringFromSelector(command.action)
+            }
+            let item = menuItem(identifier, symbol: "list.bullet", label: String(localized: "블록"),
+                                tip: String(localized: "목록 · 인용 · 코드 블록 · 표 · 구분선"), menu: menu)
+            item.visibilityPriority = .low
+            blocksItem = item
             return item
 
         default:
@@ -1371,11 +1473,51 @@ extension DocumentWindowController: NSToolbarDelegate {
                                        labels: parts.map(\.label), target: self, action: action)
         group.label = label
         group.paletteLabel = label
+        // 늘 펼친 꼴 — 자동이면 자리가 모자랄 때 끌어내림 하나로 접히는데, 눌린 칸이 없으면 빈 단추가 됐다(실측: 서식
+        // 단추를 넣은 뒤 창 960pt에서 사이드바 묶음이 그렇게 접혔다).
+        group.controlRepresentation = .expanded
         for (item, part) in zip(group.subitems, parts) {
             item.toolTip = part.tip
             item.paletteLabel = part.label
         }
         return group
+    }
+
+    /// 메뉴를 여는 아이콘 칸(제목 ▾ · 블록 ▾). 끌어내림 단추라 첫 항목을 단추 몫으로 쓴다 — 숨긴 빈 항목을 맨 앞에 둔다
+    /// (버거 메뉴에서 실측한 것과 같다).
+    private func menuItem(_ identifier: NSToolbarItem.Identifier, symbol: String, label: String, tip: String,
+                          menu: NSMenu) -> NSMenuToolbarItem {
+        menu.insertItem(NSMenuItem(title: "", action: nil, keyEquivalent: ""), at: 0)
+        let item = NSMenuToolbarItem(itemIdentifier: identifier)
+        item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
+        item.label = label
+        item.paletteLabel = label
+        item.toolTip = tip
+        item.menu = menu
+        // 메뉴를 달 때 끌어내림 단추가 첫 항목의 숨김을 푼다(실측) — 단 뒤에 숨긴다. 펼침(») 메뉴에서 빈 줄이 안 보이게.
+        item.menu.items.first?.isHidden = true
+        return item
+    }
+
+    /// 글자 꾸밈 묶음의 칸을 눌렀다 — 그 칸의 명령을 편집기로.
+    @objc func formatGroupClicked(_ sender: Any?) {
+        guard let group = sender as? NSToolbarItemGroup,
+              Self.formatButtons.indices.contains(group.selectedIndex) else { return }
+        forwardFormat(Self.formatButtons[group.selectedIndex].action, from: group)
+    }
+
+    /// 제목 ▾ · 블록 ▾ 메뉴의 항목 — `representedObject`가 편집기 명령의 이름이다. 제목은 항목의 `tag`가 단계다.
+    @objc func toolbarFormatAction(_ sender: Any?) {
+        guard let name = (sender as? NSMenuItem)?.representedObject as? String else { return }
+        forwardFormat(NSSelectorFromString(name), from: sender)
+    }
+
+    /// 서식 명령을 **캐럿이 있는 편집기**로 보낸다(나란히 보기의 번역본 칸이면 그쪽). 캐럿이 편집기 밖(검색 칸 등)에
+    /// 있으면 원문 편집기로 돌아가서 한다 — 도구 막대의 서식 단추는 문서를 가리킨다.
+    func forwardFormat(_ action: Selector, from sender: Any?) {
+        if let responder = window?.firstResponder, responder.tryToPerform(action, with: sender) { return }
+        window?.makeFirstResponder(editor.textView)
+        if !editor.tryToPerform(action, with: sender) { NSSound.beep() }
     }
 }
 

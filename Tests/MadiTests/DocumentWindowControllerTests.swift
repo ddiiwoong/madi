@@ -177,8 +177,9 @@ final class DocumentWindowControllerTests: XCTestCase {
         let (_, controller) = open("본문\n")
         let toolbar = try XCTUnwrap(controller.window?.toolbar)
         XCTAssertEqual(toolbar.displayMode, .iconOnly, "macOS 앱의 기본 모양")
+        let flexible = NSToolbarItem.Identifier.flexibleSpace.rawValue
         XCTAssertEqual(toolbar.items.map(\.itemIdentifier.rawValue), [
-            "sidebar", NSToolbarItem.Identifier.flexibleSpace.rawValue, "matches", "search", "view", "burger",
+            "sidebar", flexible, "heading", "format", "blocks", flexible, "matches", "search", "view", "burger",
         ])
         let sidebar = try XCTUnwrap(controller.sidebarGroup)
         let view = try XCTUnwrap(controller.viewGroup)
@@ -438,6 +439,79 @@ final class DocumentWindowControllerTests: XCTestCase {
         XCTAssertEqual(undo.undoActionName, "제목")
         undo.undo()
         XCTAssertEqual(editor.markdown, "제목\n\n본문 **글**\n", "제목 한 단계만 되돌린다")
+    }
+
+    // MARK: 도구 막대의 서식 단추
+
+    /// 도구 막대 가운데에 서식 셋 — 제목 ▾(본문 · 제목 1~6), 글자 꾸밈 묶음(굵게 · 기울임 · 취소선 · 인라인 코드 · 링크,
+    /// 눌린 채 남지 않는다), 블록 ▾(목록 셋 · 인용 · 코드 블록 · 표 · 구분선). 마우스를 올리면 이름과 단축키.
+    func testToolbarHasFormatButtons() throws {
+        let (_, controller) = open("본문\n")
+        let heading = try XCTUnwrap(controller.headingItem)
+        XCTAssertEqual(heading.menu.items.filter { !$0.isHidden }.map(\.title),
+                       ["본문", "제목 1", "제목 2", "제목 3", "제목 4", "제목 5", "제목 6"])
+        XCTAssertTrue(heading.menu.items.first?.isHidden ?? false, "끌어내림 단추가 첫 항목을 쓴다 — 숨긴 빈 항목")
+        let group = try XCTUnwrap(controller.formatGroup)
+        XCTAssertEqual(group.selectionMode, .momentary, "누르면 한 번 — 눌린 채 남지 않는다")
+        XCTAssertEqual(group.subitems.map(\.label), ["굵게", "기울임", "취소선", "인라인 코드", "링크"])
+        XCTAssertEqual(group.subitems.map { $0.toolTip ?? "" },
+                       ["굵게 (⌘B)", "기울임 (⌘I)", "취소선 (⇧⌘X)", "인라인 코드 (⇧⌘C)", "링크 (⌘K)"])
+        XCTAssertTrue(group.subitems.allSatisfy { $0.image != nil })
+        let blocks = try XCTUnwrap(controller.blocksItem)
+        XCTAssertEqual(blocks.menu.items.filter { !$0.isHidden }.map { $0.isSeparatorItem ? "—" : $0.title },
+                       ["글머리 목록", "번호 목록", "할 일 목록", "인용", "—", "코드 블록", "표", "구분선"])
+    }
+
+    /// 새 창(960pt)에서는 도구 막대의 칸이 모두 보인다. 창을 좁히면 서식 칸이 먼저 펼침(») 메뉴로 가고, 사이드바 · 검색 ·
+    /// 보기 · 버거는 남는다(우선순위). 서식 단추를 넣고 860pt였을 때는 제목 ▾ · 블록 ▾가 빠졌고, 그보다 좁으면 보기 ·
+    /// 버거가 먼저 빠졌다(실측).
+    func testToolbarFitsAtTheDefaultWidthAndDropsFormatFirst() throws {
+        let (_, controller) = open("본문\n")
+        let window = try XCTUnwrap(controller.window)
+        let toolbar = try XCTUnwrap(window.toolbar)
+        let flexible = NSToolbarItem.Identifier.flexibleSpace.rawValue
+        func visible(at width: CGFloat) -> [String] {
+            var frame = window.frame
+            frame.size.width = width
+            window.setFrame(frame, display: true)
+            window.layoutIfNeeded()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+            return toolbar.visibleItems?.map(\.itemIdentifier.rawValue).filter { $0 != flexible } ?? []
+        }
+        XCTAssertEqual(window.frame.width, 960, "새 창의 폭")
+        XCTAssertEqual(visible(at: 960),
+                       ["sidebar", "heading", "format", "blocks", "matches", "search", "view", "burger"])
+        let narrow = visible(at: 700)
+        XCTAssertEqual(narrow.filter { ["sidebar", "search", "view", "burger"].contains($0) },
+                       ["sidebar", "search", "view", "burger"], "좁혀도 남는다")
+        XCTAssertFalse(narrow.contains("heading"), "서식 칸이 먼저 펼침 메뉴로")
+    }
+
+    /// 도구 막대의 서식은 **캐럿이 있는 편집기**를 고친다. 캐럿이 검색 칸에 있으면 원문 편집기로 돌아가서 한다.
+    func testToolbarFormatGoesToTheFocusedEditor() throws {
+        let (_, controller) = open("제목\n\n본문 글\n")
+        let window = try XCTUnwrap(controller.window)
+        let editor = controller.editor
+        window.makeFirstResponder(editor.textView)
+        editor.textView.setSelectedRange((editor.markdown as NSString).range(of: "글"))
+        let group = try XCTUnwrap(controller.formatGroup)
+        group.selectedIndex = 0                                         // 굵게
+        controller.formatGroupClicked(group)
+        XCTAssertEqual(editor.markdown, "제목\n\n본문 **글**\n")
+
+        // 블록 ▾ 의 글머리 목록 — 캐럿 줄에.
+        let blocks = try XCTUnwrap(controller.blocksItem)
+        let bullet = try XCTUnwrap(blocks.menu.items.first { $0.title == "글머리 목록" })
+        controller.toolbarFormatAction(bullet)
+        XCTAssertEqual(editor.markdown, "제목\n\n- 본문 **글**\n")
+
+        // 캐럿이 검색 칸에 있어도 원문 편집기로 — 제목 ▾ 의 제목 1.
+        window.makeFirstResponder(nil)
+        editor.textView.setSelectedRange(NSRange(location: 0, length: 0))
+        let heading = try XCTUnwrap(controller.headingItem?.menu.items.first { $0.title == "제목 1" })
+        controller.toolbarFormatAction(heading)
+        XCTAssertEqual(editor.markdown, "# 제목\n\n- 본문 **글**\n")
+        XCTAssertTrue(window.firstResponder === editor.textView, "편집기로 돌아온다")
     }
 
     // MARK: 우클릭 메뉴의 번역
