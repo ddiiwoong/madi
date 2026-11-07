@@ -461,4 +461,16 @@ public final class PreferenceStore {
     }
 
     static let frontMatterCollapsedKey = "frontMatter.collapsed"
+
+    /// 도구 막대 보이기 — `iconAndLabel`(기본, nil) · `iconOnly` · `labelOnly`. 사용자가 도구 막대를 우클릭해
+    /// 고른 것이다. 카드 접힘과 같은 화면 상태라 `기본값으로`가 되돌리지 않는다.
+    public var toolbarDisplayMode: String? {
+        get { defaults.string(forKey: Self.toolbarDisplayModeKey) }
+        set {
+            if let newValue { defaults.set(newValue, forKey: Self.toolbarDisplayModeKey) }
+            else { defaults.removeObject(forKey: Self.toolbarDisplayModeKey) }
+        }
+    }
+
+    static let toolbarDisplayModeKey = "toolbar.displayMode"
 }

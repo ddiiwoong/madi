@@ -156,14 +156,15 @@ public struct MarkdownTheme {
     }
 
     /// Amber, matching the colour family a markdown editor conventionally uses
-    /// for find-in-document highlighting.
-    public var searchHighlight: NSColor {
-        NSColor(calibratedRed: 0.973, green: 0.871, blue: 0.455, alpha: 0.82)
-    }
+    /// for find-in-document highlighting. 테마와 상관없이 같은 호박색이고 **불투명**하다 — 반투명이면
+    /// 바탕(종이의 미색, 다크의 검정)이 섞여 찾은 곳의 색이 테마마다 달라진다.
+    public var searchHighlight: NSColor { Self.rgb(0xF9_D6_5C) }
 
-    public var currentSearchHighlight: NSColor {
-        NSColor(calibratedRed: 0.965, green: 0.780, blue: 0.267, alpha: 0.95)
-    }
+    public var currentSearchHighlight: NSColor { Self.rgb(0xF2_A5_1F) }
+
+    /// 찾은 글자의 색. 호박색 바탕은 밝아서, 다크 테마의 흰 글자를 그대로 두면 대비가 1.4 : 1이었다
+    /// (실측). 찾은 곳의 글자는 테마와 상관없이 이 짙은 색으로 칠한다 — 12.9 : 1, 지금 찾은 곳 위에서 8.8 : 1.
+    public var searchText: NSColor { Self.rgb(0x1A_15_00) }
 
     public var insertionPoint: NSColor { palette.text }
 

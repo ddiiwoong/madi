@@ -126,15 +126,53 @@ final class DocumentWindowControllerTests: XCTestCase {
         XCTAssertEqual(controller.window?.subtitle, "")
     }
 
-    /// 도구 막대에는 버거 메뉴(더 많은 작업)가 없다 — 그 항목은 모두 메뉴 바와 명령 팔레트에 있다.
-    /// 마지막 단추는 파일 브라우저다.
-    func testToolbarHasNoBurgerMenu() throws {
+    /// 도구 막대는 하는 일로 묶이고 단추마다 이름이 보인다 — 열기 | 찾기 | 보기 둘 | 사이드바 셋. 사이드바
+    /// 셋은 사이드바 탭과 같은 이름·같은 차례이고, 폴더 아이콘은 사이드바의 '폴더' 하나만 쓴다. 버거 메뉴는 없다.
+    func testToolbarIsGroupedAndLabeled() throws {
         let (_, controller) = open("본문\n")
         let toolbar = try XCTUnwrap(controller.window?.toolbar)
-        let identifiers = toolbar.items.map(\.itemIdentifier.rawValue)
-        XCTAssertFalse(identifiers.contains("burger"), "\(identifiers)")
-        XCTAssertEqual(identifiers.last, "browser")
-        XCTAssertFalse(toolbar.items.contains { $0.label == "더 많은 작업" })
+        XCTAssertEqual(toolbar.displayMode, .iconAndLabel, "처음에는 이름이 보인다")
+        XCTAssertEqual(toolbar.items.map(\.itemIdentifier.rawValue), [
+            "open", NSToolbarItem.Identifier.flexibleSpace.rawValue, "matches", "search",
+            NSToolbarItem.Identifier.space.rawValue, "codeView", "sideBySide",
+            NSToolbarItem.Identifier.space.rawValue, "outline", "browser", "recent",
+        ])
+        func item(_ id: String) throws -> NSToolbarItem {
+            try XCTUnwrap(toolbar.items.first { $0.itemIdentifier.rawValue == id })
+        }
+        XCTAssertEqual(try ["open", "codeView", "sideBySide", "outline", "browser", "recent"].map { try item($0).label },
+                       ["열기", "원본 보기", "나란히 번역", "목차", "폴더", "최근"])
+        XCTAssertEqual(try item("matches").label, "", "찾는 동안에만 숫자가 뜨는 자리라 이름이 없다")
+        // 사이드바 단추의 이름은 사이드바 탭의 이름과 같다.
+        let tabs = try XCTUnwrap(controller.window?.contentView.map(Self.views)?.compactMap { $0 as? NSTabView }
+            .first { $0.tabViewItems.count == 3 })
+        XCTAssertEqual(tabs.tabViewItems.map(\.label), try ["outline", "browser", "recent"].map { try item($0).label })
+        // 폴더 아이콘은 사이드바의 '폴더'만 쓴다 — 전에는 '문서 열기'가 폴더였다.
+        func picture(_ id: String) throws -> Data? {
+            (try item(id).view as? NSButton)?.image?.tiffRepresentation
+        }
+        let folder = NSImage(systemSymbolName: "folder", accessibilityDescription: nil)?.tiffRepresentation
+        XCTAssertEqual(try picture("browser"), folder)
+        XCTAssertNotEqual(try picture("open"), folder)
+        XCTAssertFalse(toolbar.items.contains { $0.itemIdentifier.rawValue == "burger" })
+    }
+
+    private static func views(_ view: NSView) -> [NSView] {
+        [view] + view.subviews.flatMap(views)
+    }
+
+    /// 도구 막대를 우클릭해 '아이콘만'으로 바꾸면 기억해, 다음 창도 그렇게 연다.
+    func testToolbarDisplayModeIsRemembered() throws {
+        let store = PreferenceStore(defaults: MemoryDefaults())
+        let (_, first) = open("본문\n", store: store)
+        let toolbar = try XCTUnwrap(first.window?.toolbar)
+        toolbar.displayMode = .iconOnly
+        XCTAssertEqual(store.toolbarDisplayMode, "iconOnly")
+        let (_, second) = open("본문\n", store: store)
+        XCTAssertEqual(second.window?.toolbar?.displayMode, .iconOnly)
+        if #available(macOS 15.0, *) { XCTAssertTrue(toolbar.allowsDisplayModeCustomization) }
+        // 이름이 같은 도구 막대는 한 프로세스 안에서 보이기를 함께 쓴다 — 다음 시험에 남기지 않는다.
+        toolbar.displayMode = .iconAndLabel
     }
 
     /// 체크 표시를 `validateMenuItem`으로 달면 안 된다. 한 번 그렇게 했다가 **이 객체로 오는 모든

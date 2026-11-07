@@ -129,6 +129,22 @@ public final class MarkdownStyler {
     /// 이번 패스의 인용 막대(위치 순, 같은 자리에서는 바깥 막대가 먼저).
     public private(set) var quoteBars: [QuoteBar] = []
 
+    /// 알림 상자의 머리 — 표식 `[!NOTE]` 자리에 GitHub처럼 아이콘과 제목(`Note`)을 그린다.
+    ///
+    /// 표식 글자는 문서에 그대로 두고 투명하게 칠한 뒤, 그 폭을 제목 폭에 맞춘다(마지막 글자의 `.kern`).
+    /// 상자로 그리는 체크박스와 같은 길이다 — 글자를 숨기면(폭 0) 그릴 자리가 없고, 글자를 바꾸면 원문이
+    /// 달라진다. 캐럿이 그 줄에 오면 표식을 원문으로 보인다(다른 마커와 같다).
+    public struct AlertTitle: Equatable {
+        /// 표식 글자(`[!NOTE]`, 앞뒤 공백 뺌).
+        public let range: NSRange
+        public let alert: GithubAlert
+    }
+
+    /// 이번 패스에서 그릴 알림 머리(위치 순).
+    public private(set) var alertTitles: [AlertTitle] = []
+    /// 알림 머리를 그릴지. 기본 편집기만 켠다(블록 편집기는 그리는 쪽을 잇지 않았다).
+    public var drawsAlertTitles = false
+
     /// 인용 한 겹의 들여쓰기, 막대가 글 칸 왼쪽에서 들어간 자리, 막대 굵기.
     static let quoteIndentStep: CGFloat = 16
     static let quoteBarInset: CGFloat = 2
@@ -197,6 +213,7 @@ public final class MarkdownStyler {
             imagePlacements = []
             taskBoxes = []
             quoteBars = []
+            alertTitles = []
             drawnTables = []
             let style = NSMutableParagraphStyle()
             style.lineSpacing = theme.lineSpacing * 0.5
@@ -217,10 +234,7 @@ public final class MarkdownStyler {
             }
             for (index, range) in search.ranges.enumerated()
             where NSMaxRange(range) <= text.length && NSIntersectionRange(range, writeRange).length > 0 {
-                storage.addAttribute(.backgroundColor,
-                                     value: index == search.currentIndex
-                                        ? theme.currentSearchHighlight : theme.searchHighlight,
-                                     range: range)
+                highlightMatch(range, isCurrent: index == search.currentIndex, in: storage)
             }
             return
         }
@@ -238,6 +252,7 @@ public final class MarkdownStyler {
         // 알 수 없어서(덩이의 첫 줄이 종류를 말한다) 미리 한 번 훑는다.
         let alerts = GithubAlert.map(lines: lines, in: text)
         quoteBars = Self.quoteBars(in: lines, alerts: alerts)
+        alertTitles = drawsAlertTitles ? Self.alertTitles(in: lines, alerts: alerts, caretLine: caretLine, text: text) : []
         for (index, line) in lines.enumerated() {
             guard line.range.length == 0 || NSIntersectionRange(line.range, writeRange).length > 0
                     || NSLocationInRange(line.range.location, writeRange) else { continue }
@@ -280,10 +295,19 @@ public final class MarkdownStyler {
         for (index, range) in search.ranges.enumerated()
         where NSMaxRange(range) <= text.length && NSIntersectionRange(range, writeRange).length > 0
             && !foldedTableRanges.contains(where: { NSIntersectionRange($0, range).length > 0 }) {
-            let isCurrent = index == search.currentIndex
-            storage.addAttribute(.backgroundColor,
-                                 value: isCurrent ? theme.currentSearchHighlight : theme.searchHighlight,
-                                 range: range)
+            highlightMatch(range, isCurrent: index == search.currentIndex, in: storage)
+        }
+    }
+
+    /// 찾은 곳 하나 — 호박색 바탕에 짙은 글자. 글자 색을 함께 바꾸는 까닭은 `MarkdownTheme.searchText`.
+    /// 투명하게 칠해 둔 글자(상자로 그리는 체크박스의 `[ ]`)는 그대로 둔다 — 칠하면 상자 위에 글자가 보인다.
+    private func highlightMatch(_ range: NSRange, isCurrent: Bool, in storage: NSTextStorage) {
+        storage.addAttribute(.backgroundColor,
+                             value: isCurrent ? theme.currentSearchHighlight : theme.searchHighlight,
+                             range: range)
+        storage.enumerateAttribute(.foregroundColor, in: range) { value, run, _ in
+            if let color = value as? NSColor, color == .clear { return }
+            storage.addAttribute(.foregroundColor, value: theme.searchText, range: run)
         }
     }
 
@@ -895,22 +919,26 @@ public final class MarkdownStyler {
             styleInline(in: storage, text: text, content: line.contentRange, onCaretLine: onCaretLine)
 
         case .quote:
+            var titleRange: NSRange?
             if let alert {
-                // 알림 상자. 글은 본문 색으로 읽히게 두고 **막대와 표식만** 종류 색으로
+                // 알림 상자. 글은 본문 색으로 읽히게 두고 **막대와 머리만** 종류 색으로
                 // 칠한다 — 글 전체를 색칠하면 읽기 어려워진다.
                 storage.addAttributes([.foregroundColor: theme.text], range: line.range)
-                if GithubAlert.marker(inQuoteContent: line.contentRange.length > 0
-                                        ? text.substring(with: line.contentRange) : "") != nil {
+                if Self.isAlertMarkerLine(line, in: text) {
                     storage.addAttributes([
                         .foregroundColor: theme.alertColor(for: alert),
                         .font: theme.semiboldBodyFont,
                     ], range: line.contentRange)
+                    if drawsAlertTitles, !onCaretLine { titleRange = trimmedRange(line.contentRange, in: text) }
                 }
             } else {
                 storage.addAttributes([.foregroundColor: theme.quote], range: line.range)
             }
 
             styleInline(in: storage, text: text, content: line.contentRange, onCaretLine: onCaretLine)
+            if let alert, let titleRange, titleRange.length > 0 {
+                reserveAlertTitle(alert, over: titleRange, in: storage, text: text)
+            }
 
         case let .listItem(_, checked):
             styleInline(in: storage, text: text, content: line.contentRange, onCaretLine: onCaretLine)
@@ -1020,6 +1048,44 @@ public final class MarkdownStyler {
         if drawsTaskBoxes, !onCaretLine, let box = Self.taskBoxRange(of: line), NSMaxRange(box) <= text.length {
             storage.addAttribute(.foregroundColor, value: NSColor.clear, range: box)
         }
+    }
+
+    // MARK: 알림 머리
+
+    /// 이 인용 줄의 내용이 알림 표식(`[!NOTE]`)인가.
+    static func isAlertMarkerLine(_ line: LineToken, in text: NSString) -> Bool {
+        guard line.contentRange.length > 0, NSMaxRange(line.contentRange) <= text.length else { return false }
+        return GithubAlert.marker(inQuoteContent: text.substring(with: line.contentRange)) != nil
+    }
+
+    /// 그릴 알림 머리 — 알림 덩이의 표식 줄 가운데 캐럿이 없는 줄. 문서 전체로 만든다(그리는 쪽이 읽는다).
+    static func alertTitles(in lines: [LineToken], alerts: [Int: GithubAlert], caretLine: Int?,
+                            text: NSString) -> [AlertTitle] {
+        lines.enumerated().compactMap { index, line in
+            guard let alert = alerts[index], line.lineNumber != caretLine,
+                  isAlertMarkerLine(line, in: text) else { return nil }
+            var start = line.contentRange.location
+            var end = NSMaxRange(line.contentRange)
+            while start < end, [0x20, 0x09].contains(text.character(at: start)) { start += 1 }
+            while end > start, [0x20, 0x09].contains(text.character(at: end - 1)) { end -= 1 }
+            guard end > start else { return nil }
+            return AlertTitle(range: NSRange(location: start, length: end - start), alert: alert)
+        }
+    }
+
+    /// 표식 글자를 투명하게 하고 그 폭을 머리(아이콘 + 제목) 폭에 맞춘다. 그리기는 `DecoratedTextView`.
+    private func reserveAlertTitle(_ alert: GithubAlert, over range: NSRange, in storage: NSTextStorage,
+                                   text: NSString) {
+        guard NSMaxRange(range) <= text.length else { return }
+        storage.removeAttribute(.kern, range: range)
+        storage.addAttribute(.foregroundColor, value: NSColor.clear, range: range)
+        let font = storage.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont ?? theme.semiboldBodyFont
+        // 저장소의 속성 그대로 잰다(`visibleWidth`와 같은 이유) — 글꼴만으로 재면 놓인 폭과 어긋난다.
+        let natural = storage.attributedSubstring(from: range).size().width
+        let wanted = DecoratedTextView.alertTitleWidth(alert, font: font)
+        // 모든 글자에 나눠 준다. 마지막 글자 하나에 몰면 줄일 때 그 글자의 폭(`]`는 5pt 안팎)보다 더 줄일 수 없어
+        // 남는다(실측: `[!WARNING]`을 80pt로 맞추려다 82.7pt에서 멈췄다).
+        storage.addAttribute(.kern, value: (wanted - natural) / CGFloat(range.length), range: range)
     }
 
     /// 체크박스 줄의 `[ ]` 범위. 줄 판정의 두 번째 마커다(`MarkdownSyntax`).

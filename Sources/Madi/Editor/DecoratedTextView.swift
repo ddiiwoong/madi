@@ -57,8 +57,17 @@ public class DecoratedTextView: NSTextView {
         }
     }
 
-    /// 막대의 색. 알림 상자(`> [!NOTE]`)의 바깥 막대는 그 종류의 색이다.
+    /// 막대의 색. 알림 상자(`> [!NOTE]`)의 바깥 막대는 그 종류의 색이다. 알림 머리도 이 색으로 그린다.
     public var quoteBarColor: (GithubAlert?) -> NSColor = { _ in .separatorColor }
+
+    /// 알림 머리 — 표식 자리에 그리는 아이콘과 제목. `MarkdownStyler`가 계산해 넘긴다(표식 글자는 투명하다).
+    public var alertTitles: [MarkdownStyler.AlertTitle] = [] {
+        didSet {
+            guard alertTitles != oldValue else { return }
+            drawnDecorations = drawnDecorations.filter { $0.key.level != Decoration.alertTitle }
+            needsDisplay = true
+        }
+    }
 
     // MARK: 글 위의 자리
 
@@ -98,6 +107,7 @@ public class DecoratedTextView: NSTextView {
         guard let visible = visibleCharacterRange(in: rect) else { return }
         drawCodeBlocks(in: rect, visible: visible)
         drawQuoteBars(in: rect, visible: visible)
+        drawAlertTitles(in: rect, visible: visible)
         drawTaskBoxes(in: rect, visible: visible)
         drawImages(in: rect, visible: visible)
     }
@@ -173,11 +183,12 @@ public class DecoratedTextView: NSTextView {
 
     // MARK: 옮겨 간 장식
 
-    /// 그린 장식 하나 — 코드 블록(`level` 0), 인용 막대(`level` = 겹), 그림·표 격자(`image`).
+    /// 그린 장식 하나 — 코드 블록(`level` 0), 인용 막대(`level` = 겹), 그림·표 격자(`image`), 알림 머리.
     struct Decoration: Hashable {
         let range: NSRange
         let level: Int
         static let image = -1
+        static let alertTitle = -2
     }
 
     /// 마지막으로 그린 자리. 레이아웃이 자리를 고친 뒤 옛 자리를 지우는 데 쓴다(`revalidateDecorations`).
@@ -193,11 +204,13 @@ public class DecoratedTextView: NSTextView {
         let bars = Dictionary(quoteBars.map { (Decoration(range: $0.range, level: $0.level), $0) },
                               uniquingKeysWith: { first, _ in first })
         let images = Dictionary(imagePlacements.map { ($0.lineRange, $0) }, uniquingKeysWith: { first, _ in first })
+        let titles = Dictionary(alertTitles.map { ($0.range, $0) }, uniquingKeysWith: { first, _ in first })
         for (key, old) in drawnDecorations {
             let current: NSRect?
             switch key.level {
             case 0: current = codeBlockFrame(key.range)
             case Decoration.image: current = images[key.range].flatMap(frame(of:))
+            case Decoration.alertTitle: current = titles[key.range].flatMap(alertTitleFrame)
             default: current = bars[key].flatMap(quoteBarFrame)
             }
             guard current != old else { continue }
@@ -243,6 +256,79 @@ public class DecoratedTextView: NSTextView {
         let last = layoutManager.lineFragmentUsedRect(forGlyphAt: NSMaxRange(glyphs) - 1, effectiveRange: nil)
         return Self.quoteBarFrame(level: bar.level, top: first.minY + origin.y, bottom: last.maxY + origin.y,
                                   textLeft: origin.x + textContainer.lineFragmentPadding)
+    }
+
+    // MARK: 알림 머리
+
+    /// GitHub의 알림 아이콘(Octicons)에 가장 가까운 SF Symbols — 원, 전구, 말풍선, 세모, 팔각형.
+    static func alertSymbol(_ alert: GithubAlert) -> String {
+        switch alert {
+        case .note: "info.circle"
+        case .tip: "lightbulb"
+        case .important: "exclamationmark.bubble"
+        case .warning: "exclamationmark.triangle"
+        case .caution: "exclamationmark.octagon"
+        }
+    }
+
+    /// 머리의 폭 — 아이콘, 틈, 제목. 스타일러가 표식 글자의 폭을 이만큼으로 맞춘다.
+    static func alertTitleWidth(_ alert: GithubAlert, font: NSFont) -> CGFloat {
+        let icon = (font.capHeight * 1.35).rounded()
+        let title = NSAttributedString(string: alert.title, attributes: [.font: font]).size().width
+        return icon + gap(for: font) + ceil(title)
+    }
+
+    private static func gap(for font: NSFont) -> CGFloat { (font.pointSize * 0.4).rounded() }
+
+    /// 머리 하나의 자리(뷰 좌표) — 투명한 표식 글자가 차지한 자리.
+    private func alertTitleFrame(_ title: MarkdownStyler.AlertTitle) -> NSRect? {
+        guard title.range.length > 0, NSMaxRange(title.range) <= (textStorage?.length ?? 0),
+              let layoutManager, let textContainer else { return nil }
+        let glyphs = layoutManager.glyphRange(forCharacterRange: title.range, actualCharacterRange: nil)
+        guard glyphs.length > 0 else { return nil }
+        var bounds = layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer)
+        bounds.origin.x += textContainerOrigin.x
+        bounds.origin.y += textContainerOrigin.y
+        return bounds
+    }
+
+    private func drawAlertTitles(in rect: NSRect, visible: NSRange) {
+        guard !alertTitles.isEmpty, let layoutManager, let storage = textStorage else { return }
+        for title in alertTitles
+        where NSIntersectionRange(title.range, visible).length > 0 || NSLocationInRange(title.range.location, visible) {
+            guard let frame = alertTitleFrame(title), frame.intersects(rect) else { continue }
+            drawnDecorations[Decoration(range: title.range, level: Decoration.alertTitle)] = frame
+            let glyph = layoutManager.glyphIndexForCharacter(at: title.range.location)
+            let fragment = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+            let baseline = fragment.minY + layoutManager.location(forGlyphAt: glyph).y + textContainerOrigin.y
+            let font = storage.attribute(.font, at: title.range.location, effectiveRange: nil) as? NSFont
+                ?? .systemFont(ofSize: NSFont.systemFontSize, weight: .semibold)
+            Self.drawAlertTitle(title.alert, at: NSPoint(x: frame.minX, y: baseline), font: font,
+                                color: quoteBarColor(title.alert))
+        }
+    }
+
+    /// 머리 하나 — 기준선(`origin.y`, 뒤집힌 좌표) 위에 아이콘과 제목을 그 종류의 색으로.
+    static func drawAlertTitle(_ alert: GithubAlert, at origin: NSPoint, font: NSFont, color: NSColor) {
+        let side = (font.capHeight * 1.35).rounded()
+        let iconRect = NSRect(x: origin.x, y: (origin.y - font.capHeight / 2 - side / 2).rounded(),
+                              width: side, height: side)
+        let configuration = NSImage.SymbolConfiguration(pointSize: side, weight: .semibold)
+            .applying(.init(paletteColors: [color]))
+        if let icon = NSImage(systemSymbolName: alertSymbol(alert), accessibilityDescription: alert.title)?
+            .withSymbolConfiguration(configuration) {
+            // 기호마다 비율이 달라(세모는 넓고 전구는 좁다) 정사각형 안에 비율대로 맞춘다.
+            let size = icon.size
+            let scale = min(side / max(size.width, 1), side / max(size.height, 1))
+            let drawn = NSSize(width: size.width * scale, height: size.height * scale)
+            let target = NSRect(x: iconRect.midX - drawn.width / 2, y: iconRect.midY - drawn.height / 2,
+                                width: drawn.width, height: drawn.height)
+            icon.draw(in: target, from: .zero, operation: .sourceOver, fraction: 1,
+                      respectFlipped: true, hints: nil)
+        }
+        let text = NSAttributedString(string: alert.title, attributes: [.font: font, .foregroundColor: color])
+        // `draw(at:)`은 글줄의 위(ascender)를 기준으로 놓는다 — 기준선이 표식 글자와 맞게 그만큼 올린다.
+        text.draw(at: NSPoint(x: origin.x + side + gap(for: font), y: origin.y - font.ascender))
     }
 
     // MARK: 체크박스

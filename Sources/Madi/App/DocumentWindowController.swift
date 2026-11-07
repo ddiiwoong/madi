@@ -63,6 +63,26 @@ final class DocumentWindowController: NSWindowController {
     }
 
     private var toggleButtons: [Tab: NSButton] = [:]
+    /// 도구 막대의 보이기(이름 · 아이콘)를 사용자가 바꾸면 기억한다.
+    private var toolbarModeObservation: NSKeyValueObservation?
+
+    /// 저장된 도구 막대 보이기. 없으면 아이콘과 이름이다.
+    static func displayMode(stored: String?) -> NSToolbar.DisplayMode {
+        switch stored {
+        case "iconOnly": .iconOnly
+        case "labelOnly": .labelOnly
+        default: .iconAndLabel
+        }
+    }
+
+    static func stored(_ mode: NSToolbar.DisplayMode) -> String? {
+        switch mode {
+        case .iconOnly: "iconOnly"
+        case .labelOnly: "labelOnly"
+        case .iconAndLabel: "iconAndLabel"
+        default: nil
+        }
+    }
     /// 원본 보기 토글. 사이드바 탭과 달리 `Tab`에 묶이지 않으므로 따로 들고 있는다.
     private weak var codeViewButton: NSButton?
     private weak var sideBySideButton: NSButton?
@@ -196,8 +216,16 @@ final class DocumentWindowController: NSWindowController {
 
         let toolbar = NSToolbar(identifier: "MdToolbar")
         toolbar.delegate = self
-        toolbar.displayMode = .iconOnly
+        // 단추 아래에 이름을 적는다. 아이콘만으로는 무엇을 하는 단추인지 알 수 없었다(사용자). 도구 막대를
+        // 우클릭해 '아이콘만'으로 바꿀 수 있고(macOS 15 이상), 고른 것은 기억한다 — 이름이 같은 도구 막대는
+        // 창끼리 함께 바뀐다.
+        toolbar.displayMode = Self.displayMode(stored: preferences.toolbarDisplayMode)
         toolbar.allowsUserCustomization = false
+        if #available(macOS 15.0, *) { toolbar.allowsDisplayModeCustomization = true }
+        toolbarModeObservation = toolbar.observe(\.displayMode, options: [.new]) { [weak self] toolbar, _ in
+            let mode = toolbar.displayMode
+            MainActor.assumeIsolated { self?.preferences.toolbarDisplayMode = Self.stored(mode) }
+        }
         window?.toolbar = toolbar
         if #available(macOS 11.0, *) { window?.toolbarStyle = .unified }
         NotificationCenter.default.addObserver(
@@ -1192,9 +1220,15 @@ final class DocumentWindowController: NSWindowController {
 // MARK: - Toolbar
 
 extension DocumentWindowController: NSToolbarDelegate {
+    /// 차례 — 하는 일로 묶는다. `열기`는 창 제목 옆(문서 일), 그다음 찾기, **보기** 둘(원본 · 나란히 번역),
+    /// **사이드바** 셋(목차 · 폴더 · 최근 — 사이드바 탭과 같은 이름, 같은 차례). 묶음 사이는 틈으로 가른다.
+    ///
+    /// 전에는 이름 없이 아이콘만 있었고, 사이드바 셋이 두 묶음으로 갈려 있었으며(`파일 브라우저`만 따로),
+    /// 폴더 아이콘이 '문서 열기'이고 사이드바 아이콘이 '파일 브라우저'라 짐작과 반대였다.
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.flexibleSpace, ItemID.matches, ItemID.search, ItemID.codeView, ItemID.sideBySide, ItemID.outline,
-         ItemID.recent, ItemID.open, ItemID.browser]
+        [ItemID.open, .flexibleSpace, ItemID.matches, ItemID.search, .space,
+         ItemID.codeView, ItemID.sideBySide, .space,
+         ItemID.outline, ItemID.browser, ItemID.recent]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -1216,22 +1250,30 @@ extension DocumentWindowController: NSToolbarDelegate {
         case ItemID.matches:
             let item = NSToolbarItem(itemIdentifier: identifier)
             item.view = matchLabel
-            item.label = String(localized: "일치")
+            // 이름을 적지 않는다 — 찾는 동안에만 `3/12`가 뜨는 자리라, 이름만 남으면 빈 단추처럼 보인다.
+            item.label = ""
+            item.paletteLabel = String(localized: "일치")
             item.visibilityPriority = .low
             return item
 
+        // 사이드바 셋. 이름은 사이드바의 탭 이름과 같다 — 누르면 그 탭이 열리고, 다시 누르면 닫힌다.
         case ItemID.outline:
             return toggle(identifier, tab: .outline, symbol: "list.bullet.indent",
-                          label: String(localized: "목차"), tip: String(localized: "목차 (⌘⇧O)"), action: #selector(showOutlineAction(_:)))
-
-        case ItemID.recent:
-            return toggle(identifier, tab: .recent, symbol: "clock.arrow.circlepath",
-                          label: String(localized: "최근 문서"), tip: String(localized: "최근 문서 (⌘⇧R)"), action: #selector(showRecentAction(_:)))
+                          label: String(localized: "목차"),
+                          tip: String(localized: "사이드바에 목차 (⌘⇧O) — 다시 누르면 닫습니다"),
+                          action: #selector(showOutlineAction(_:)))
 
         case ItemID.browser:
-            return toggle(identifier, tab: .browser, symbol: "sidebar.left",
-                          label: String(localized: "파일 브라우저"), tip: String(localized: "파일 브라우저 (⌘⇧F)"),
+            return toggle(identifier, tab: .browser, symbol: "folder",
+                          label: String(localized: "폴더"),
+                          tip: String(localized: "사이드바에 이 문서의 폴더 (⌘⇧F) — 다시 누르면 닫습니다"),
                           action: #selector(showBrowserAction(_:)))
+
+        case ItemID.recent:
+            return toggle(identifier, tab: .recent, symbol: "clock",
+                          label: String(localized: "최근"),
+                          tip: String(localized: "사이드바에 최근 문서 (⌘⇧R) — 다시 누르면 닫습니다"),
+                          action: #selector(showRecentAction(_:)))
 
         case ItemID.codeView:
             // 켜짐/꺼짐이 곧 어느 보기인지다. 도구 막대의 다른 토글과 같은 꼴이어서
@@ -1255,19 +1297,21 @@ extension DocumentWindowController: NSToolbarDelegate {
             // 있다"이고, 원문 창과 번역본 창 양쪽에서 같이 눌려 있다.
             let item = NSToolbarItem(itemIdentifier: identifier)
             let control = button(symbol: "rectangle.split.2x1",
-                                 label: String(localized: "나란히 보기"), tip: Self.sideBySideTip(isOn: false),
+                                 label: String(localized: "나란히 번역"), tip: Self.sideBySideTip(isOn: false),
                                  action: #selector(toggleSideBySideAction(_:)))
             control.setButtonType(.pushOnPushOff)
             control.state = sideBySide != nil ? .on : .off
             item.view = control
-            item.label = String(localized: "나란히 보기")
+            // '나란히 보기'로는 무엇을 나란히 보는지 알 수 없다 — 번역이 이 단추의 일이다.
+            item.label = String(localized: "나란히 번역")
             item.paletteLabel = String(localized: "원문·번역 나란히 보기")
             item.toolTip = Self.sideBySideTip(isOn: sideBySide != nil)
             sideBySideButton = control
             return item
 
         case ItemID.open:
-            return push(identifier, symbol: "folder", label: String(localized: "문서 열기"),
+            // 폴더 아이콘은 사이드바의 '폴더'가 쓴다 — 둘 다 폴더면 무엇이 무엇인지 모른다.
+            return push(identifier, symbol: "doc.text", label: String(localized: "열기"),
                         tip: String(localized: "문서 열기 (⌘O)"), action: #selector(openDocumentAction(_:)))
 
         default:

@@ -75,6 +75,7 @@ public final class MarkdownEditorView: NSView {
         styler.imageStore = imageStore
         styler.drawsTaskBoxes = true
         styler.drawsTables = true
+        styler.drawsAlertTitles = true
         // 원격 그림은 나중에 도착한다. 도착하면 자리를 잡아야 하므로 다시 칠한다.
         imageStore.onRemoteImageLoaded = { [weak self] in self?.restyleAll() }
         useDiagramRenderer(DiagramRenderer.shared)
@@ -588,6 +589,7 @@ public final class MarkdownEditorView: NSView {
         textView.taskBoxes = styler.taskBoxes
         textView.quoteBars = styler.quoteBars
         textView.quoteBarColor = { [theme] alert in theme.quoteBarColor(for: alert) }
+        textView.alertTitles = styler.alertTitles
     }
 
     /// 지금 격자로 그린 표의 수. 테스트가 쓴다.

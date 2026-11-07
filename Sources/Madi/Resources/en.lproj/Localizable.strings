@@ -69,7 +69,6 @@
 "모두 앞으로 가져오기" = "Bring All to Front";
 "최근 문서 열기" = "Open Recent";
 "메뉴 지우기" = "Clear Menu";
-"문서 열기" = "Open";
 
 "빠른 열기…" = "Open Quickly…";
 "명령 팔레트…" = "Command Palette…";
@@ -143,10 +142,11 @@
 "일치 없음" = "No matches";
 "문서 내 검색 (⌘F)" = "Find in Document (⌘F)";
 "일치" = "Matches";
-"목차 (⌘⇧O)" = "Outline (⌘⇧O)";
-"최근 문서 (⌘⇧R)" = "Recent Documents (⌘⇧R)";
-"파일 브라우저 (⌘⇧F)" = "File Browser (⌘⇧F)";
-"나란히 보기" = "Side by Side";
+"사이드바에 목차 (⌘⇧O) — 다시 누르면 닫습니다" = "Outline in the sidebar (⌘⇧O) — click again to close";
+"사이드바에 최근 문서 (⌘⇧R) — 다시 누르면 닫습니다" = "Recent documents in the sidebar (⌘⇧R) — click again to close";
+"사이드바에 이 문서의 폴더 (⌘⇧F) — 다시 누르면 닫습니다" = "This document’s folder in the sidebar (⌘⇧F) — click again to close";
+"열기" = "Open";
+"나란히 번역" = "Side by Side";
 "문서 열기 (⌘O)" = "Open (⌘O)";
 
 "글자 크기 %lldpt" = "Text size %lldpt";

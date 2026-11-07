@@ -205,6 +205,13 @@ final class MarkdownThemeContrastTests: XCTestCase {
                         check("고른 글", theme.text, over: Self.composite(selection, over: page),
                               atLeast: minimumTextContrast)
                     }
+                    // 찾은 곳 — 호박색 바탕 위의 짙은 글자. 테마와 상관없이 같은 색이지만 바탕이 섞이지 않는지까지
+                    // (불투명한지) 모든 테마에서 본다. 바탕 위의 호박색이 보이는지도(다크에서는 밝게, 라이트에서는 옅게).
+                    let match = Self.composite(theme.searchHighlight, over: page)
+                    let current = Self.composite(theme.currentSearchHighlight, over: page)
+                    check("찾은 곳 글자", theme.searchText, over: match, atLeast: minimumTextContrast)
+                    check("지금 찾은 곳 글자", theme.searchText, over: current, atLeast: minimumTextContrast)
+                    check("지금 찾은 곳 · 다른 찾은 곳", current, over: match, atLeast: 1.3)
                     let quote = Self.contrast(Self.composite(theme.quote, over: page), page)
                     let body = Self.contrast(Self.composite(theme.text, over: page), page)
                     XCTAssertLessThan(quote, body, "\(label) 인용 글이 본문보다 진하다")

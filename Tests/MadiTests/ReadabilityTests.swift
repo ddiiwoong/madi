@@ -326,6 +326,147 @@ final class QuoteBarTests: XCTestCase {
     }
 }
 
+/// 알림 상자의 머리 — `[!NOTE]` 자리에 GitHub처럼 아이콘과 `Note`를 그린다.
+@MainActor
+final class AlertTitleTests: XCTestCase {
+
+    private let markdown = "앞 문단\n\n> [!WARNING]\n> 조심할 것.\n\n끝\n"
+
+    private func editor(caretAt needle: String? = nil) -> MarkdownEditorView {
+        let editor = MarkdownEditorView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+        editor.markdown = markdown
+        let text = markdown as NSString
+        let location = needle.map { text.range(of: $0).location } ?? 0
+        editor.textView.setSelectedRange(NSRange(location: location, length: 0))
+        return editor
+    }
+
+    /// 캐럿이 없으면 표식 글자는 투명하고, 그 폭이 머리(아이콘 + 제목) 폭이며, 그릴 머리가 하나 있다.
+    func testMarkerBecomesADrawnTitle() throws {
+        let editor = editor()
+        let text = markdown as NSString
+        let marker = text.range(of: "[!WARNING]")
+        XCTAssertEqual(editor.textView.alertTitles, [.init(range: marker, alert: .warning)])
+        let storage = try XCTUnwrap(editor.textView.textStorage)
+        for index in marker.location ..< NSMaxRange(marker) {
+            XCTAssertEqual(storage.attribute(.foregroundColor, at: index, effectiveRange: nil) as? NSColor, .clear)
+        }
+        let font = try XCTUnwrap(storage.attribute(.font, at: marker.location, effectiveRange: nil) as? NSFont)
+        // 실제로 놓인 폭 — 표식 첫 글자에서 줄바꿈까지(`size()`는 마지막 글자 뒤의 간격을 세지 않는다).
+        let layout = try XCTUnwrap(editor.textView.layoutManager)
+        layout.ensureLayout(for: try XCTUnwrap(editor.textView.textContainer))
+        func x(_ index: Int) -> CGFloat { layout.location(forGlyphAt: layout.glyphIndexForCharacter(at: index)).x }
+        XCTAssertEqual(x(NSMaxRange(marker)) - x(marker.location), DecoratedTextView.alertTitleWidth(.warning, font: font),
+                       accuracy: 0.5, "표식이 머리만큼 자리를 차지한다")
+        XCTAssertEqual(GithubAlert.warning.title, "Warning", "GitHub와 같은 제목")
+        // 글은 그대로다.
+        XCTAssertEqual(editor.markdown, markdown)
+    }
+
+    /// 캐럿이 표식 줄에 오면 원문(`[!WARNING]`)을 종류 색으로 보이고 머리를 그리지 않는다.
+    func testCaretOnTheMarkerShowsTheSource() throws {
+        let editor = editor(caretAt: "[!WARNING]")
+        XCTAssertTrue(editor.textView.alertTitles.isEmpty)
+        let storage = try XCTUnwrap(editor.textView.textStorage)
+        let marker = (markdown as NSString).range(of: "[!WARNING]")
+        let color = storage.attribute(.foregroundColor, at: marker.location, effectiveRange: nil) as? NSColor
+        XCTAssertNotEqual(color, .clear)
+        for index in marker.location ..< NSMaxRange(marker) {
+            XCTAssertNil(storage.attribute(.kern, at: index, effectiveRange: nil), "자리 맞춤도 걷는다")
+        }
+    }
+
+    /// 다섯 종류마다 아이콘이 있고(SF Symbols), 그 종류의 색으로 그린다. 그린 머리에 그 색 점이 있다.
+    func testEveryKindHasAnIconAndIsDrawnInItsColor() throws {
+        for alert in GithubAlert.allCases {
+            XCTAssertNotNil(NSImage(systemSymbolName: DecoratedTextView.alertSymbol(alert), accessibilityDescription: nil),
+                            "\(alert)의 아이콘")
+        }
+        let font = NSFont.systemFont(ofSize: 15, weight: .semibold)
+        let width = Int(DecoratedTextView.alertTitleWidth(.note, font: font)) + 4
+        let rep = try XCTUnwrap(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: 30,
+                                                 bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                                 colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+        let red = NSColor(srgbRed: 1, green: 0, blue: 0, alpha: 1)
+        NSGraphicsContext.saveGraphicsState()
+        let context = NSGraphicsContext(bitmapImageRep: rep)
+        NSGraphicsContext.current = context
+        // 텍스트 뷰처럼 뒤집힌 좌표로 그린다.
+        context?.cgContext.translateBy(x: 0, y: 30)
+        context?.cgContext.scaleBy(x: 1, y: -1)
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context!.cgContext, flipped: true)
+        DecoratedTextView.drawAlertTitle(.note, at: NSPoint(x: 2, y: 22), font: font, color: red)
+        NSGraphicsContext.restoreGraphicsState()
+        var iconPixels = 0, titlePixels = 0
+        let iconEdge = Int((font.capHeight * 1.35).rounded()) + 2
+        for x in 0 ..< width {
+            for y in 0 ..< 30 {
+                guard let color = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB), color.alphaComponent > 0.5,
+                      color.redComponent > 0.6, color.greenComponent < 0.4 else { continue }
+                if x < iconEdge { iconPixels += 1 } else { titlePixels += 1 }
+            }
+        }
+        XCTAssertGreaterThan(iconPixels, 10, "아이콘이 그 색으로 그려졌다")
+        XCTAssertGreaterThan(titlePixels, 20, "제목이 그 색으로 그려졌다")
+    }
+
+    /// 찾기를 하고 다음 찾은 곳으로 옮겨도 머리는 그대로다(찾기는 캐럿을 옮기지 않는다). 앱에서 찾은 뒤
+    /// 마지막 알림의 표식이 원문으로 보였는데, 캐럿이 그 줄에 있었다 — 이 시험이 찾기 탓이 아님을 지킨다.
+    func testSearchingKeepsEveryTitle() {
+        let source = (GithubAlert.allCases.map { "> [!\($0.rawValue)]\n> 찾을 글\n" } + ["끝\n"]).joined(separator: "\n")
+        let editor = MarkdownEditorView(frame: NSRect(x: 0, y: 0, width: 600, height: 600))
+        editor.markdown = source
+        editor.textView.setSelectedRange(NSRange(location: (source as NSString).length, length: 0))
+        XCTAssertEqual(editor.textView.alertTitles.count, 5)
+        XCTAssertEqual(editor.applySearch(query: "찾을").count, 5)
+        for _ in 0 ..< 6 { editor.stepSearch(forward: true) }
+        XCTAssertEqual(editor.textView.alertTitles.map(\.alert), GithubAlert.allCases)
+        XCTAssertEqual(editor.textView.selectedRange().location, (source as NSString).length, "캐럿은 그대로다")
+        editor.clearSearch()
+        XCTAssertEqual(editor.textView.alertTitles.count, 5)
+    }
+
+    /// 표식이 아닌 인용 줄, 알림이 아닌 인용에는 머리가 없다.
+    func testPlainQuotesHaveNoTitle() {
+        let editor = MarkdownEditorView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+        editor.markdown = "> 그냥 인용\n> [!NOTE]\n\n끝\n"
+        editor.textView.setSelectedRange(NSRange(location: (editor.markdown as NSString).length, length: 0))
+        XCTAssertTrue(editor.textView.alertTitles.isEmpty, "덩이의 첫 줄이 표식일 때만 알림이다")
+    }
+}
+
+/// 찾은 곳의 글자 — 어느 테마에서나 호박색 위에서 읽힌다.
+@MainActor
+final class SearchHighlightTests: XCTestCase {
+
+    /// 다크 테마의 흰 글자를 호박색 위에 그대로 두면 1.4 : 1이었다. 찾은 곳은 짙은 글자로 칠한다.
+    /// 체크박스 상자의 투명한 `[ ]`는 칠하지 않는다.
+    func testMatchesUseDarkInkAndSkipTransparentGlyphs() throws {
+        let editor = MarkdownEditorView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+        editor.markdown = "- [ ] 찾을 글\n\n찾을 글 하나 더\n"
+        var preferences = EditorPreferences.standard
+        preferences.colorTheme = .github
+        editor.apply(preferences)
+        editor.textView.setSelectedRange(NSRange(location: (editor.markdown as NSString).length, length: 0))
+        XCTAssertEqual(editor.applySearch(query: "찾을").count, 2)
+        let storage = try XCTUnwrap(editor.textView.textStorage)
+        let text = storage.string as NSString
+        let theme = MarkdownTheme()
+        for match in [text.range(of: "찾을"), text.range(of: "찾을", options: .backwards)] {
+            XCTAssertTrue(storage.attribute(.foregroundColor, at: match.location, effectiveRange: nil) as? NSColor
+                          === theme.searchText || (storage.attribute(.foregroundColor, at: match.location,
+                                                                     effectiveRange: nil) as? NSColor) == theme.searchText)
+        }
+        XCTAssertEqual(editor.applySearch(query: "[ ]").count, 1)
+        let box = text.range(of: "[ ]")
+        XCTAssertEqual(storage.attribute(.foregroundColor, at: box.location, effectiveRange: nil) as? NSColor, .clear,
+                       "상자 자리의 글자는 투명하게 남는다")
+        editor.clearSearch()
+        XCTAssertNotEqual(storage.attribute(.foregroundColor, at: text.range(of: "찾을").location,
+                                            effectiveRange: nil) as? NSColor, theme.searchText, "찾기를 끝내면 돌아온다")
+    }
+}
+
 /// 문서 메타데이터 카드가 글과 함께 굴러가는지(`MarkdownEditorView.headerView`).
 @MainActor
 final class EditorHeaderTests: XCTestCase {
