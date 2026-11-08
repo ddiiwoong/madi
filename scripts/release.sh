@@ -254,6 +254,44 @@ awk -v v="$VERSION" '
 } >> "$OUT/release-notes.md"
 ok "release-notes.md (CHANGELOG.md의 $VERSION 절)"
 
+# Homebrew cask — 탭(ddiiwoong/homebrew-tap)의 Casks/madi.rb에 그대로 옮긴다. 판과 DMG의 체크섬이 이번 빌드에서 온다.
+# 지우기(zap)는 이 Mac에서 실제로 생기는 곳만 적었다(2026-11-09에 셈). 키체인의 AI 교정 키는 cask가 지울 수 없다.
+dmg_sha="$(shasum -a 256 "$DMG" | cut -d' ' -f1)"
+min_macos="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$plist")"
+case "${min_macos%%.*}" in
+    14) macos_symbol=sonoma ;;
+    15) macos_symbol=sequoia ;;
+    26) macos_symbol=tahoe ;;
+    *) fail "LSMinimumSystemVersion $min_macos에 맞는 Homebrew 이름을 모릅니다 — release.sh의 cask 절을 고치십시오" ;;
+esac
+cat > "$OUT/madi.rb" <<CASK
+cask "madi" do
+  version "$VERSION"
+  sha256 "$dmg_sha"
+
+  url "https://github.com/ddiiwoong/madi/releases/download/v#{version}/Madi-#{version}.dmg"
+  name "Madi"
+  name "마디"
+  desc "Markdown editor that edits the rendered document in place"
+  homepage "https://github.com/ddiiwoong/madi"
+
+  livecheck do
+    url :url
+    strategy :github_latest
+  end
+
+  depends_on macos: :$macos_symbol
+
+  app "Madi.app"
+
+  zap trash: [
+    "~/Library/Application Support/Madi",
+    "~/Library/Preferences/dev.jinwoong.md.plist",
+  ]
+end
+CASK
+ok "madi.rb (Homebrew cask, $VERSION · macOS $min_macos 이상)"
+
 step "끝 — $OUT"
 ls -lh "$OUT" | sed -n '2,$p' | awk '{printf "  %s  %s\n", $5, $9}'
 if [[ "$NOTARIZE" == 1 ]]; then

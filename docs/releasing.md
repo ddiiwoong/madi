@@ -8,7 +8,8 @@
 | `Madi-<판>.dmg` | 받는 사람이 여는 것. 열면 `Madi.app`과 `Applications` 바로 가기가 있고, 끌어 넣으면 설치됩니다 |
 | `Madi-<판>.zip` | 같은 앱의 ZIP. 나중에 자동 업데이트(Sparkle 같은 것)를 붙이면 이쪽을 씁니다 |
 | `SHA256SUMS` | 위 둘의 SHA-256 |
-| `release-notes.md` | `CHANGELOG.md`의 그 판 절 + 판 · 빌드 · 커밋 · 체크섬 |
+| `release-notes.md` | `CHANGELOG.md`의 그 판 절 + 판 · 빌드 · 커밋 · 체크섬 + 포함된 오픈 소스 |
+| `madi.rb` | Homebrew cask. 판과 DMG 체크섬이 이번 빌드에서 들어갑니다 — 탭에 그대로 옮깁니다(아래 7) |
 | `*.log`, `notary-*.plist` | 단계마다의 기록. 실패하면 여기를 봅니다 |
 
 ## 한 번만 할 일
@@ -65,6 +66,18 @@ security find-identity -v -p codesigning | grep "Developer ID Application"
      --title "마디 X.Y.Z" --notes-file .build/release/X.Y.Z/release-notes.md
    ```
 
+7. Homebrew 탭([ddiiwoong/homebrew-tap](https://github.com/ddiiwoong/homebrew-tap))을 갱신합니다. Release를
+   올린 **뒤에** 합니다 — cask가 가리키는 DMG 주소가 그때 생깁니다.
+
+   ```sh
+   cp .build/release/X.Y.Z/madi.rb <탭 복제본>/Casks/madi.rb
+   cd <탭 복제본> && git commit -am "madi X.Y.Z" && git push origin main
+   brew update && brew upgrade --cask ddiiwoong/tap/madi   # 받아지는지 확인
+   ```
+
+   손으로 고치지 말고 스크립트가 만든 파일을 그대로 옮깁니다. 체크섬을 손으로 옮기다 틀리면 `brew`가
+   설치를 거절합니다.
+
 태그가 이미 있는 판은 스크립트가 만들지 않습니다. 같은 판 번호로 다른 바이너리가 두 번 나가는
 일을 막기 위해서입니다.
 
@@ -79,7 +92,7 @@ security find-identity -v -p codesigning | grep "Developer ID Application"
 | 묶기 | DMG(`hdiutil`, 서명), ZIP(`ditto`) | |
 | 공증 | DMG를 올리고 기다린 뒤, 앱에 표를 붙이고(staple), 그 앱으로 DMG를 다시 만들어 다시 공증하고 DMG에도 붙입니다 | `Accepted`가 아님. 이유는 `notary-log.json` |
 | 확인 | ZIP을 풀고 DMG를 붙여 그 안의 앱 서명을 다시 확인, `spctl`이 둘 다 `Notarized Developer ID`로 보는지 | 다르면 멈춤 |
-| 노트 | `SHA256SUMS`, `release-notes.md` | |
+| 노트 | `SHA256SUMS`, `release-notes.md`, `madi.rb`(Homebrew cask) | 최소 macOS가 cask에 적을 이름을 모르는 판이면 멈춤 |
 
 공증을 두 번 하는 이유: DMG 안의 앱에도 표가 붙어 있어야, 받은 사람이 앱을 꺼내 오프라인에서 처음
 열어도 Gatekeeper가 통과시킵니다. 처음 DMG의 앱은 표를 붙이기 전의 앱입니다.

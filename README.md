@@ -30,10 +30,11 @@ AppKit · Swift 6 · **Swift 의존성 없음**. 패키지 매니저도, 두 번
 [목록과 라이선스](Sources/Madi/Resources/Diagrams/README.md)).
 빌드·테스트·기여 방법은 [빌드와 기여](docs/building.md)에 있습니다.
 
-> **상태: 0.1.0, 아직 배포하지 않았습니다.** `make release`가 서명 · 공증한 DMG를 만들 준비는
-> 됐습니다([릴리스하기](docs/releasing.md)). 판이 나오면 [Releases](https://github.com/ddiiwoong/madi/releases)에서
-> DMG를 받아 열고, 마디를 응용 프로그램 폴더로 끌어 넣으면 됩니다. 그전에는 직접 빌드합니다(`make build`의 ad-hoc
-> 서명은 빌드한 Mac에서만 돕니다). 바뀐 점은 [CHANGELOG.md](CHANGELOG.md).
+> **설치: 0.1.0**(2026-11-09). [Releases](https://github.com/ddiiwoong/madi/releases/latest)에서
+> DMG를 받아 열고 마디를 응용 프로그램 폴더로 끌어 넣습니다. 서명 · 공증이 돼 있어 바로 열립니다.
+> Homebrew로는 `brew install --cask ddiiwoong/tap/madi`입니다. 직접 빌드할 수도 있습니다(`make build`의
+> ad-hoc 서명은 빌드한 Mac에서만 돕니다). 바뀐 점은 [CHANGELOG.md](CHANGELOG.md), 내는 방법은
+> [릴리스하기](docs/releasing.md).
 
 ## 왜 하나 더 만들었나
 

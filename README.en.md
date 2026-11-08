@@ -30,10 +30,12 @@ web view that draws Mermaid and KaTeX (Mermaid 12.2.0, KaTeX 0.19.1 — both MIT
 [list and licenses](Sources/Madi/Resources/Diagrams/README.md), Korean).
 How to build, test and contribute: [docs/building.md](docs/building.md) (Korean).
 
-> **Status: 0.1.0, not distributed yet.** `make release` can build a signed, notarized DMG
-> ([releasing](docs/releasing.md), Korean). Once a version is out, download the DMG from
-> [Releases](https://github.com/ddiiwoong/madi/releases), open it and drag Madi into Applications. Until then, build it yourself (`make build` signs ad-hoc, so that copy runs
-> only on the Mac that built it). Changes are in [CHANGELOG.md](CHANGELOG.md) (Korean).
+> **Install: 0.1.0** (2026-11-09). Download the DMG from
+> [Releases](https://github.com/ddiiwoong/madi/releases/latest), open it and drag Madi into
+> Applications. It is signed and notarized, so it opens without a warning. With Homebrew:
+> `brew install --cask ddiiwoong/tap/madi`. You can also build it yourself (`make build` signs
+> ad-hoc, so that copy runs only on the Mac that built it). Changes are in
+> [CHANGELOG.md](CHANGELOG.md) and the release steps in [releasing](docs/releasing.md) (both Korean).
 
 > **The interface is in English and Korean.** Madi follows the system language; you can also
 > pick one in Settings ▸ General ▸ Language (it applies the next time you open Madi). The
