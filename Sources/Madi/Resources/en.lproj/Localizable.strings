@@ -190,6 +190,10 @@
 "문서 창을 찾지 못했습니다." = "Couldn’t find the document window.";
 "링크로 더하기" = "Add from Link";
 "링크로 받은 글을 끝에 더했습니다 — ⌘Z로 되돌립니다" = "Added the text from the link to the end — ⌘Z undoes it";
+"이미 있는 파일이라 덮어쓰지 않습니다: %@\n끝에 더하려면 madi://append를 씁니다." = "The file already exists and won’t be overwritten: %@\nUse madi://append to add to the end.";
+"폴더가 없습니다: %@" = "No such folder: %@";
+"파일을 만들지 못했습니다: %@" = "Couldn’t create the file: %@";
+"링크로 새 파일을 만들었습니다" = "Created a new file from a link";
 "메뉴 바와 같은 메뉴 · 설정" = "The menu bar’s menus · Settings";
 
 "글자 크기 %lldpt" = "Text size %lldpt";

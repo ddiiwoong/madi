@@ -382,6 +382,12 @@ final class DocumentWindowController: NSWindowController {
         editor.moveCaret(to: NSRange(location: location, length: 0))
     }
 
+    /// 캐럿을 글 끝으로 — 링크로 받은 글 뒤에서 이어 쓰게.
+    func moveCaretToEnd() {
+        window?.makeFirstResponder(editor.textView)
+        editor.moveCaret(to: NSRange(location: (editor.markdown as NSString).length, length: 0))
+    }
+
     /// 검색 칸에 `query`를 넣고 바로 찾는다 — 첫 일치로 간다(⌘F로 친 것과 같다, 기다림 없이).
     func startSearch(_ query: String) {
         searchField.stringValue = query

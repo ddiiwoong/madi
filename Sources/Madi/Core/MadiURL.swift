@@ -6,7 +6,7 @@ import Foundation
 /// | 주소 | 하는 일 |
 /// |---|---|
 /// | `madi://open?path=…[&line=N][&search=…]` | 파일을 열고, N번째 줄로 가거나 그 낱말을 찾는다 |
-/// | `madi://new?text=…[&title=…]` | 그 글로 새 문서를 연다(저장하지 않은 채) |
+/// | `madi://new?text=…[&title=…][&path=…]` | 그 글로 새 문서를 연다. `path`가 있으면 그 자리에 새 파일로 만들어 연다 |
 /// | `madi://append?path=…&text=…` | 파일 끝에 글을 더한다 — **묻고 나서** |
 ///
 /// 값은 퍼센트 부호로 적는다(공백은 `%20`). `+`는 공백이 아니라 `+` 그대로다 — 웹 폼의 약속이고 URL의 약속이 아니다.
@@ -22,8 +22,9 @@ public enum MadiURL {
     public enum Command: Equatable, Sendable {
         /// 파일을 연다. `line`은 파일의 줄 번호(1부터, front matter 포함), `search`는 찾을 낱말.
         case open(file: URL, line: Int?, search: String?)
-        /// 새 문서. `title`이 있으면 맨 위에 `# 제목`을 두고 저장할 때의 이름으로 제안한다.
-        case new(text: String, title: String?)
+        /// 새 문서. `title`이 있으면 맨 위에 `# 제목`을 둔다. `file`이 없으면 저장하지 않은 채 열고(제목은 저장할 때의
+        /// 이름으로 제안), 있으면 그 자리에 새 파일로 만들어 연다(사용자 — "새 글 쓰는 것도"). 있는 파일은 덮어쓰지 않는다.
+        case new(text: String, title: String?, file: URL? = nil)
         /// 파일 끝에 글을 더한다.
         case append(file: URL, text: String)
     }
@@ -118,7 +119,14 @@ public enum MadiURL {
         case "new":
             let text = values["text"] ?? ""
             let title = values["title"].flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
-            return .success(.new(text: text, title: title))
+            var file: URL?
+            if values["path"] != nil {
+                switch fileURL(values["path"], home: home) {
+                case .success(let resolved): file = resolved
+                case .failure(let failure): return .failure(failure)
+                }
+            }
+            return .success(.new(text: text, title: title, file: file))
 
         case "append":
             let file: URL
@@ -156,6 +164,16 @@ public enum MadiURL {
             return .failure(.unsupportedFile(standardized.path))
         }
         return .success(standardized)
+    }
+
+    // MARK: 새 문서의 글
+
+    /// `new`가 여는 글. `title`이 있으면 맨 위에 `# 제목`과 빈 줄. 파일로 만들 때(`asFile`)는 끝을 줄바꿈으로 맺는다
+    /// (빈 파일은 그대로 비운다) — 제목만 주면 `# 제목\n\n`이라 캐럿이 그 아래 빈 줄에서 바로 쓰기 시작한다.
+    public static func newDocumentText(_ text: String, title: String?, asFile: Bool) -> String {
+        var composed = title.map { "# \($0)\n\n\(text)" } ?? text
+        if asFile, !composed.isEmpty, !composed.hasSuffix("\n") { composed += "\n" }
+        return composed
     }
 
     // MARK: 끝에 더하기

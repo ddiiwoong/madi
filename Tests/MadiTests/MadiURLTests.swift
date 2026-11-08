@@ -57,6 +57,23 @@ final class MadiURLTests: XCTestCase {
                        "+는 공백이 아니다(웹 폼의 약속이고 URL의 약속이 아니다)")
     }
 
+    /// `path`를 주면 그 자리의 새 파일 — 경로 규칙은 open · append와 같다.
+    func testNewWithPathNamesTheFileToCreate() {
+        XCTAssertEqual(parse("madi://new?path=~/글/새 글.md&title=제목"),
+                       .success(.new(text: "", title: "제목", file: URL(fileURLWithPath: "/Users/someone/글/새 글.md"))))
+        XCTAssertEqual(parse("madi://new?path=~/.zshrc&text=x"), .failure(.unsupportedFile("/Users/someone/.zshrc")))
+        XCTAssertEqual(parse("madi://new?path=글/새.md"), .failure(.relativePath("글/새.md")))
+        XCTAssertEqual(parse("madi://new?path="), .failure(.missing("path")), "적었으면 비우지 않는다")
+    }
+
+    func testNewDocumentText() {
+        XCTAssertEqual(MadiURL.newDocumentText("본문", title: "제목", asFile: false), "# 제목\n\n본문")
+        XCTAssertEqual(MadiURL.newDocumentText("본문", title: "제목", asFile: true), "# 제목\n\n본문\n", "파일은 줄바꿈으로 맺는다")
+        XCTAssertEqual(MadiURL.newDocumentText("", title: "제목", asFile: true), "# 제목\n\n", "제목만 — 그 아래 빈 줄에서 쓴다")
+        XCTAssertEqual(MadiURL.newDocumentText("본문\n", title: nil, asFile: true), "본문\n")
+        XCTAssertEqual(MadiURL.newDocumentText("", title: nil, asFile: true), "", "빈 파일은 비운다")
+    }
+
     func testAppendNeedsAFileAndText() {
         XCTAssertEqual(parse("madi://append?path=~/할일.md&text=-%20%5B%20%5D%20%EC%9A%B0%EC%9C%A0"),
                        .success(.append(file: URL(fileURLWithPath: "/Users/someone/할일.md"), text: "- [ ] 우유")))

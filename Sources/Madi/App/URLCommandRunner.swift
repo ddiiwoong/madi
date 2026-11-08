@@ -65,15 +65,20 @@ final class URLCommandRunner {
 
     func run(_ command: MadiURL.Command) {
         switch command {
-        case let .new(text, title):
+        case let .new(text, title, file?):
+            createFile(file, contents: MadiURL.newDocumentText(text, title: title, asFile: true))
+
+        case let .new(text, title, nil):
             let document = MarkdownDocument()
             document.fileType = MarkdownDocument.writableTypes.first
-            document.markdown = title.map { "# \($0)\n\n\(text)" } ?? text
+            document.markdown = MadiURL.newDocumentText(text, title: title, asFile: false)
             if let title { document.displayName = title }
             NSDocumentController.shared.addDocument(document)
             // 글이 있으면 '편집됨' — 닫을 때 저장할지 묻는다. 빈 새 문서는 평소의 새 문서와 같다.
             if !document.markdown.isEmpty { document.updateChangeCount(.changeDone) }
             present(document)
+            // 받은 글 뒤에서 이어 쓴다.
+            document.windowControllers.compactMap { $0 as? DocumentWindowController }.first?.moveCaretToEnd()
 
         case let .open(file, line, search):
             guard fileExists(file) else { return fail(String(localized: "파일이 없습니다: \(file.path)")) }
@@ -97,6 +102,27 @@ final class URLCommandRunner {
                     }
                 }
             }
+        }
+    }
+
+    /// `new?path=…` — 그 자리에 새 파일을 만들고 연다. **있는 파일은 덮어쓰지 않는다**(먼저 보고, 쓸 때도
+    /// `withoutOverwriting` — 그 사이에 생긴 파일도 지키게). 폴더는 만들지 않는다 — 잘못 적은 경로가 폴더를 늘어놓지 않게.
+    /// 묻지 않는다: 있던 글을 바꾸지 않고, 만든 파일은 곧 창으로 보인다.
+    private func createFile(_ file: URL, contents: String) {
+        if fileExists(file) {
+            return fail(String(localized: "이미 있는 파일이라 덮어쓰지 않습니다: \(file.path)\n끝에 더하려면 madi://append를 씁니다."))
+        }
+        let folder = file.deletingLastPathComponent()
+        guard fileExists(folder) else { return fail(String(localized: "폴더가 없습니다: \(folder.path)")) }
+        do {
+            try Data(contents.utf8).write(to: file, options: .withoutOverwriting)
+        } catch {
+            return fail(String(localized: "파일을 만들지 못했습니다: \(error.localizedDescription)"))
+        }
+        AppLog.info(String(localized: "링크로 새 파일을 만들었습니다"), detail: file.path)
+        openDocument(file) { [weak self] document, error in
+            guard let self, let controller = self.controller(of: document, error: error) else { return }
+            controller.moveCaretToEnd()
         }
     }
 

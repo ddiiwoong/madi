@@ -96,7 +96,39 @@ final class URLCommandRunnerTests: XCTestCase {
         XCTAssertEqual(document.displayName, "회의 메모")
         XCTAssertNil(document.fileURL, "저장하지 않았다 — 자리는 사용자가 고른다")
         XCTAssertTrue(document.isDocumentEdited)
+        XCTAssertEqual(controller.editor.textView.selectedRange(),
+                       NSRange(location: ("# 회의 메모\n\n본문 한 줄" as NSString).length, length: 0), "받은 글 뒤에서 이어 쓴다")
         XCTAssertTrue(failures.isEmpty)
+    }
+
+    /// `madi://new?path=…` — 그 자리에 새 파일을 만들어 연다. 캐럿은 끝(제목 아래 빈 줄)에서 바로 쓰게.
+    func testNewWithPathCreatesTheFileAndOpensIt() throws {
+        let file = folder.appendingPathComponent("2026-11-08-새 글.md")
+        runner().handle(try link("madi://new?path=\(encoded(file.path))&title=\(encoded("새 글"))"))
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "# 새 글\n\n")
+        let controller = try XCTUnwrap(controllers.last)
+        XCTAssertEqual(controller.document?.fileURL?.standardizedFileURL, file.standardizedFileURL)
+        XCTAssertEqual(controller.editor.textView.selectedRange(),
+                       NSRange(location: ("# 새 글\n\n" as NSString).length, length: 0))
+        XCTAssertTrue(failures.isEmpty)
+    }
+
+    func testNewWithPathNeverOverwrites() throws {
+        let file = try write("원래 글\n", to: "있음.md")
+        runner().handle(try link("madi://new?path=\(encoded(file.path))&text=x"))
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "원래 글\n", "있던 글은 그대로")
+        XCTAssertTrue(controllers.isEmpty)
+        XCTAssertEqual(failures.count, 1)
+        XCTAssertTrue(failures[0].contains("있음.md"))
+    }
+
+    func testNewWithPathDoesNotMakeFolders() throws {
+        let file = folder.appendingPathComponent("없는 폴더/새.md")
+        runner().handle(try link("madi://new?path=\(encoded(file.path))&text=x"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.deletingLastPathComponent().path))
+        XCTAssertTrue(controllers.isEmpty)
+        XCTAssertEqual(failures.count, 1)
+        XCTAssertTrue(failures[0].contains("없는 폴더"))
     }
 
     // MARK: open
