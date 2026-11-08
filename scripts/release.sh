@@ -10,8 +10,8 @@
 # 환경 변수:
 #   SIGN_IDENTITY   서명할 인증서(이름이나 SHA-1). 없으면 키체인의 "Developer ID Application"을 하나 찾는다.
 #                   이름과 팀 ID를 이 저장소에 적지 않으려고 실행할 때 찾는다.
-#   NOTARY_PROFILE  공증 자격 증명의 키체인 프로필 이름(기본 madi-notary). 한 번 만들어 둔다:
-#                   xcrun notarytool store-credentials madi-notary --apple-id <Apple ID> --team-id <팀 ID>
+#   NOTARY_PROFILE  공증 자격 증명의 키체인 프로필 이름(기본 madi). 한 번 만들어 둔다:
+#                   xcrun notarytool store-credentials madi --apple-id <Apple ID> --team-id <팀 ID>
 #                   (앱 암호를 묻는다 — 값은 키체인에만 남고 이 스크립트는 읽지 않는다)
 #   NOTARIZE        1(기본) 또는 0.
 #   SKIP_CHECKS     1이면 시험 · 점검을 건너뛴다.
@@ -25,7 +25,7 @@ cd "$(git rev-parse --show-toplevel)"
 NOTARIZE="${NOTARIZE:-1}"
 SKIP_CHECKS="${SKIP_CHECKS:-0}"
 ALLOW_DIRTY="${ALLOW_DIRTY:-0}"
-NOTARY_PROFILE="${NOTARY_PROFILE:-madi-notary}"
+NOTARY_PROFILE="${NOTARY_PROFILE:-madi}"
 
 step() { printf '\n▶ %s\n' "$*"; }
 size() { ls -lh "$1" | awk '{print $5}'; }  # 끝의 목록(ls -lh)과 같은 숫자 — du는 할당 블록을 세어 다르게 나온다

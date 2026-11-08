@@ -31,13 +31,13 @@ security find-identity -v -p codesigning | grep "Developer ID Application"
 2. 키체인에 넣습니다. 앱 암호는 명령이 물을 때 붙여 넣습니다. 그러면 셸 기록에 남지 않습니다.
 
    ```sh
-   xcrun notarytool store-credentials madi-notary --apple-id <Apple ID> --team-id <팀 ID>
+   xcrun notarytool store-credentials madi --apple-id <Apple ID> --team-id <팀 ID>
    ```
 
 3. 확인합니다. 오류 없이 지난 제출 목록(처음이면 빈 목록)이 나오면 됩니다.
 
    ```sh
-   xcrun notarytool history --keychain-profile madi-notary
+   xcrun notarytool history --keychain-profile madi
    ```
 
 값은 키체인에만 있고 스크립트는 프로필 이름만 압니다. 이름을 바꿨다면 `NOTARY_PROFILE=<이름>`을 씁니다.
@@ -105,7 +105,7 @@ ALLOW_DIRTY=1 SKIP_CHECKS=1 NOTARIZE=0 bash scripts/release.sh   # 고치는 중
 | 환경 변수 | 기본 | |
 |---|---|---|
 | `NOTARIZE` | `1` | `0`이면 공증 · 스테이플을 건너뜁니다 |
-| `NOTARY_PROFILE` | `madi-notary` | 공증 자격 증명의 키체인 프로필 이름 |
+| `NOTARY_PROFILE` | `madi` | 공증 자격 증명의 키체인 프로필 이름 |
 | `SIGN_IDENTITY` | 키체인의 첫 Developer ID Application | 인증서 이름이나 SHA-1 |
 | `SKIP_CHECKS` | `0` | `1`이면 시험 · 점검을 건너뜁니다 |
 | `ALLOW_DIRTY` | `0` | `1`이면 커밋 안 된 변경이 있어도 만듭니다 |
