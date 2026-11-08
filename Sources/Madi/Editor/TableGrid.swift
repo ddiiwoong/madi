@@ -32,19 +32,36 @@ struct TableGrid {
     ///   - lineHeight: 빈 칸 하나의 높이(본문 한 줄).
     ///   - maxWidth: 표가 쓸 수 있는 폭(글 넓이).
     ///   - minimumColumnWidth: 열이 이보다 좁아지지 않는다 — 아주 좁으면 글자마다 줄이 바뀐다.
-    init(rows: [Row], columnCount: Int, lineHeight: CGFloat, maxWidth: CGFloat, minimumColumnWidth: CGFloat) {
+    ///   - readableWidth: 주면 열이 **읽을 만한 폭**보다 좁아지지 않는다 — 이 폭과 열의 가장 긴 낱말 중 넓은 쪽(제 폭보다
+    ///     넓지는 않다). 그래서 표가 `maxWidth`보다 넓어질 수 있고, 편집기는 넓은 표를 가로로 굴린다(사용자 — "표도
+    ///     마찬가지", 고른 것: 열이 너무 좁아지지 않게 두고 넘치는 표만 가로로). nil이면 전처럼 `maxWidth`에 맞춘다
+    ///     (내보내기 — 종이는 굴릴 수 없다).
+    init(rows: [Row], columnCount: Int, lineHeight: CGFloat, maxWidth: CGFloat, minimumColumnWidth: CGFloat,
+         readableWidth: CGFloat? = nil) {
         self.rows = rows
         let horizontal = Self.padding.left + Self.padding.right
         let vertical = Self.padding.top + Self.padding.bottom
 
         var natural = [CGFloat](repeating: horizontal, count: columnCount)
+        var longestWord = [CGFloat](repeating: 0, count: columnCount)
         for row in rows {
             for (column, cell) in row.cells.enumerated() where column < columnCount {
                 natural[column] = max(natural[column], ceil(cell.size().width) + horizontal)
+                if readableWidth != nil {
+                    longestWord[column] = max(longestWord[column], Self.longestWordWidth(in: cell))
+                }
             }
         }
-        let widths = Self.columnWidths(natural: natural, available: maxWidth,
+        let widths: [CGFloat]
+        if let readableWidth {
+            let minimums = natural.indices.map { column in
+                min(natural[column], max(readableWidth, min(longestWord[column], Self.longestWordCap)) + horizontal)
+            }
+            widths = Self.columnWidths(natural: natural, available: maxWidth, minimums: minimums)
+        } else {
+            widths = Self.columnWidths(natural: natural, available: maxWidth,
                                        minimum: min(minimumColumnWidth, maxWidth / CGFloat(max(1, columnCount))))
+        }
         columnWidths = widths
 
         rowHeights = rows.map { row in
@@ -84,6 +101,53 @@ struct TableGrid {
         }
         return widths
     }
+
+    /// 열마다 최소 폭이 있는 열 너비. 다 합쳐 `available` 안이면 제 폭 그대로, 최소들만으로도 넘치면 최소들(표가
+    /// 넓어진다 — 편집기가 가로로 굴린다). 그 사이면 위의 규칙(좁은 열부터 제 폭)으로 나눈 뒤 최소를 지키고, 그만큼
+    /// 넘친 몫을 최소보다 넓은 열에서 남는 폭에 비례해 뺀다 — 넓은 설명 열이 덜고 이름 열은 그대로다.
+    static func columnWidths(natural: [CGFloat], available: CGFloat, minimums: [CGFloat]) -> [CGFloat] {
+        guard natural.reduce(0, +) > available, !natural.isEmpty else { return natural }
+        let floors = zip(natural, minimums).map { min($0, $1) }
+        guard floors.reduce(0, +) < available else { return floors.map { $0.rounded(.up) } }
+        var widths = zip(columnWidths(natural: natural, available: available, minimum: 0), floors).map { max($0, $1) }
+        let excess = widths.reduce(0, +) - available
+        if excess > 0.5 {
+            let slack = widths.indices.map { widths[$0] - floors[$0] }
+            let total = slack.reduce(0, +)
+            if total > 0 {
+                for column in widths.indices {
+                    widths[column] = (widths[column] - excess * slack[column] / total).rounded(.down)
+                }
+            }
+        }
+        return widths
+    }
+
+    /// 칸의 가장 긴 낱말(공백으로 나눈 조각)의 폭. 주소처럼 아주 긴 것은 `longestWordCap`에서 자른다 — 그보다 긴 낱말은
+    /// 칸 안에서 글자 단위로 꺾인다.
+    static func longestWordWidth(in cell: NSAttributedString) -> CGFloat {
+        let text = cell.string as NSString
+        var widest: CGFloat = 0
+        var start: Int?
+        func measure(upTo end: Int) {
+            guard let begin = start, end > begin else { return }
+            widest = max(widest, ceil(cell.attributedSubstring(from: NSRange(location: begin, length: end - begin))
+                .size().width))
+        }
+        for index in 0 ..< text.length {
+            let unit = text.character(at: index)
+            if unit == 0x20 || unit == 0x09 || unit == 0x0A || unit == 0x3000 {
+                measure(upTo: index)
+                start = nil
+            } else if start == nil {
+                start = index
+            }
+        }
+        measure(upTo: text.length)
+        return widest
+    }
+
+    static let longestWordCap: CGFloat = 320
 
     /// 칸들의 사각형(그리는 좌표, 위가 0). 테스트와 그리기가 함께 쓴다.
     func cellFrames() -> [[NSRect]] {

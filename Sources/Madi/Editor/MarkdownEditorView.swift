@@ -101,6 +101,8 @@ public final class MarkdownEditorView: NSView {
         styler.drawsTaskBoxes = true
         styler.drawsTables = true
         styler.drawsAlertTitles = true
+        // 긴 줄의 코드 블록 · 넓은 표는 줄을 바꾸지 않고 가로로 굴린다(`WidePlacementView`).
+        styler.scrollsWideBlocks = true
         // 원격 그림은 나중에 도착한다. 도착하면 자리를 잡아야 하므로 다시 칠한다.
         imageStore.onRemoteImageLoaded = { [weak self] in self?.restyleAll() }
         useDiagramRenderer(DiagramRenderer.shared)
@@ -132,6 +134,10 @@ public final class MarkdownEditorView: NSView {
         textView.drawingClickHandler = { [weak self] point, modifiers in
             self?.handleDrawingClick(at: point, modifiers: modifiers) ?? false
         }
+        textView.wideClickHandler = { [weak self] placement, point, event in
+            self?.handleWideClick(placement, at: point, modifiers: event.modifierFlags) ?? false
+        }
+        textView.onColumnWidthChange = { [weak self] in self?.textColumnDidChange() }
         textView.contextMenuProvider = { [weak self] point in
             self?.contextMenu(at: point)
         }
@@ -615,6 +621,24 @@ public final class MarkdownEditorView: NSView {
 
     private var isLiveResizing = false
     private var restyleAfterLiveResize = false
+    private var columnRestyleScheduled = false
+
+    /// 글 칸의 폭이 바뀌었다(텍스트 뷰가 알린다). 여백이 그대로인 좁은 창에서는 위의 `setFrameSize`가 다시 칠하지 않는데,
+    /// 코드 줄이 넘치는지와 표 열은 글 칸 폭으로 잰다 — 칠한 폭과 다르면 다시 칠한다. 레이아웃 도중이라 다음 차례에.
+    private func textColumnDidChange() {
+        guard Double(textView.textColumnWidth) != styler.textColumnWidth, !columnRestyleScheduled else { return }
+        if isLiveResizing {
+            restyleAfterLiveResize = true
+            return
+        }
+        columnRestyleScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.columnRestyleScheduled = false
+            guard Double(self.textView.textColumnWidth) != self.styler.textColumnWidth else { return }
+            self.restyleAll()
+        }
+    }
 
     public override func viewWillStartLiveResize() {
         super.viewWillStartLiveResize()
@@ -624,6 +648,7 @@ public final class MarkdownEditorView: NSView {
     public override func viewDidEndLiveResize() {
         super.viewDidEndLiveResize()
         isLiveResizing = false
+        if Double(textView.textColumnWidth) != styler.textColumnWidth { restyleAfterLiveResize = true }
         if restyleAfterLiveResize {
             restyleAfterLiveResize = false
             restyleAll()
@@ -656,6 +681,8 @@ public final class MarkdownEditorView: NSView {
     }
 
     @objc private func clipBoundsDidChange(_ note: Notification) {
+        // 보이는 칸에 들어온 넓은 블록에 가로 보기를 놓는다.
+        textView.updateWideViews()
         // 굴리는 동안 마우스는 그대로다 — 창에서 지금 마우스 자리를 다시 읽는다.
         guard codeCopyPoint != nil, let window else { return }
         updateCodeCopyButton(at: textView.convert(window.mouseLocationOutsideOfEventStream, from: nil))
@@ -714,6 +741,11 @@ public final class MarkdownEditorView: NSView {
         let blocks = CodeBlockCopy.blocks(in: currentLines(), text: storage.string as NSString)
         codeCopyBlocksCache = (blockRevision, blocks)
         return blocks
+    }
+
+    /// 그림으로 놓은 넓은 코드 블록(그림이 놓인 줄로). 시험이 쓴다.
+    func codeRendering(at line: NSRange) -> CodeBlockRendering? {
+        styler.codeRenderings[line]
     }
 
     /// 블록의 코드를 대지에 — 펜스와 언어 이름은 빼고.
@@ -809,6 +841,7 @@ public final class MarkdownEditorView: NSView {
         lastCaretLine = caretLine()
         styler.isDarkAppearance = isDarkAppearance
         styler.contentWidth = max(120, Double(container.size.width) - 24)
+        styler.textColumnWidth = Double(textView.textColumnWidth)
         styler.style(storage, caretLine: lastCaretLine, search: searchState, lines: currentLines())
         syncCodeBlockBackgrounds()
         isStyling = false
@@ -920,6 +953,28 @@ extension MarkdownEditorView {
               let url = tableLink(at: point) else { return false }
         editorDelegate?.markdownEditor(self, didClickLink: url)
         return true
+    }
+
+    /// 가로로 굴리는 보기(넓은 코드 블록 · 넓은 표)를 눌렀다. 점은 그림 좌표(굴린 만큼이 이미 들어 있다).
+    /// - 코드: 누른 글자에 캐럿을 놓는다 — 블록이 원문(줄을 바꾼 글)이 되어 바로 고칠 수 있다.
+    /// - 표: ⌘클릭은 칸의 링크를 연다. 그냥 클릭은 텍스트 뷰에 맡긴다(격자를 누를 때처럼 원문이 펼쳐진다).
+    func handleWideClick(_ placement: MarkdownStyler.ImagePlacement, at point: NSPoint,
+                         modifiers: NSEvent.ModifierFlags) -> Bool {
+        if let rendering = styler.codeRenderings[placement.lineRange] {
+            let index = min(rendering.documentIndex(at: point), storage.length)
+            window?.makeFirstResponder(textView)
+            textView.setSelectedRange(NSRange(location: index, length: 0))
+            textView.scrollRangeToVisible(NSRange(location: index, length: 0))
+            return true
+        }
+        let flags = modifiers.intersection([.command, .shift, .option, .control])
+        if flags == .command,
+           let table = styler.drawnTables.first(where: { $0.headerLine == placement.lineRange }),
+           let url = table.grid.link(at: point) {
+            editorDelegate?.markdownEditor(self, didClickLink: url)
+            return true
+        }
+        return false
     }
 
     // MARK: 우클릭 메뉴

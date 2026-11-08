@@ -37,7 +37,20 @@ public class DecoratedTextView: NSTextView {
             guard imagePlacements != oldValue else { return }
             drawnDecorations = drawnDecorations.filter { $0.key.level != Decoration.image }
             needsDisplay = true
+            updateWideViews()
         }
+    }
+
+    /// 가로 보기(`WidePlacementView`)를 누른 것 — 그림과 그림 좌표의 점, 사건. true면 먹는다. 편집기가 단다.
+    var wideClickHandler: ((MarkdownStyler.ImagePlacement, NSPoint, NSEvent) -> Bool)?
+    /// 글 칸의 폭이 바뀌었다. 편집기가 단다 — 표 열과 코드 줄의 넘침이 이 폭을 따른다.
+    var onColumnWidthChange: (() -> Void)?
+
+    public override func setFrameSize(_ newSize: NSSize) {
+        let before = textColumnWidth
+        super.setFrameSize(newSize)
+        if textColumnWidth != before { onColumnWidthChange?() }
+        updateWideViews()
     }
 
     /// 상자로 그릴 체크박스. `MarkdownStyler`가 계산해 넘긴다(그 글자는 투명하게 칠해 두었다).
@@ -200,6 +213,8 @@ public class DecoratedTextView: NSTextView {
     /// 옛 자리를 다시 그려 주지 않는다 — 바탕이 엉뚱한 줄에 띠로 남는다(`MarkdownEditorView`의 레이아웃
     /// 알림에 실측). 그린 것만 다시 재므로 화면에 보이는 몇 개뿐이다.
     func revalidateDecorations() {
+        // 가로 보기도 레이아웃이 고친 자리로 옮긴다.
+        updateWideViews()
         guard !drawnDecorations.isEmpty else { return }
         let bars = Dictionary(quoteBars.map { (Decoration(range: $0.range, level: $0.level), $0) },
                               uniquingKeysWith: { first, _ in first })
@@ -412,7 +427,7 @@ public class DecoratedTextView: NSTextView {
         let available = containerWidth - padding * 2
         let x = placement.centered
             ? left + max(0, (available - placement.size.width) / 2)
-            : lineBox.minX + padding
+            : placement.alignsToColumn ? left : lineBox.minX + padding
         return NSRect(x: x, y: lineBox.minY, width: placement.size.width,
                       height: min(placement.size.height, lineBox.height))
     }
@@ -446,10 +461,75 @@ public class DecoratedTextView: NSTextView {
         for placement in imagePlacements
         where NSIntersectionRange(placement.lineRange, visible).length > 0
             || NSLocationInRange(placement.lineRange.location, visible) {
+            // 넓은 그림은 가로로 굴리는 보기가 그린다(`updateWideViews`).
+            guard !isWide(placement) else { continue }
             guard let frame = frame(of: placement), frame.intersects(rect) else { continue }
             drawnDecorations[Decoration(range: placement.lineRange, level: Decoration.image)] = frame
             placement.image.draw(in: frame, from: .zero, operation: .sourceOver, fraction: 1,
                                  respectFlipped: true, hints: [.interpolation: NSImageInterpolation.high])
         }
+    }
+}
+
+// MARK: 넓은 그림 — 가로로 굴리는 보기
+
+extension DecoratedTextView {
+
+    /// 글 칸의 폭 — 줄 조각 여백을 뺀 글 넓이.
+    var textColumnWidth: CGFloat {
+        guard let textContainer else { return 0 }
+        return textContainer.size.width - textContainer.lineFragmentPadding * 2
+    }
+
+    /// 글 칸보다 넓은 그림인가 — 긴 줄의 코드 블록, 넓은 표. 그 자리에 가로로 굴리는 보기를 띄운다.
+    func isWide(_ placement: MarkdownStyler.ImagePlacement) -> Bool {
+        placement.size.width > textColumnWidth + 0.5
+    }
+
+    /// 지금 띄운 가로 보기들(그림 자리 → 보기). 시험이 쓴다.
+    var wideViews: [WidePlacementView] {
+        subviews.compactMap { $0 as? WidePlacementView }
+    }
+
+    /// 보이는 칸 근처의 넓은 그림마다 가로 보기를 놓고, 나머지는 걷는다. 그림이 바뀌거나, 굴리거나, 레이아웃이 자리를
+    /// 고친 뒤에 부른다. 보이는 것만 놓는다 — 넓은 블록이 수백 개인 문서에서 모두 놓으면 문서 끝까지 레이아웃을 돌린다.
+    func updateWideViews() {
+        let existing = Dictionary(wideViews.map { ($0.placement.lineRange, $0) }, uniquingKeysWith: { first, _ in first })
+        let wide = imagePlacements.filter(isWide)
+        guard !wide.isEmpty, let textContainer else {
+            existing.values.forEach { $0.removeFromSuperview() }
+            return
+        }
+        let area = visibleRect.insetBy(dx: 0, dy: -240)
+        guard let visible = visibleCharacterRange(in: area) else { return }
+        let columnRight = textContainerOrigin.x + textContainer.lineFragmentPadding + textColumnWidth
+        var kept = Set<NSRange>()
+        for placement in wide
+        where NSIntersectionRange(placement.lineRange, visible).length > 0
+            || NSLocationInRange(placement.lineRange.location, visible) {
+            guard let frame = frame(of: placement) else { continue }
+            let column = NSRect(x: frame.minX, y: frame.minY, width: max(0, columnRight - frame.minX),
+                                height: frame.height).integral
+            let view = existing[placement.lineRange] ?? {
+                let made = WidePlacementView(placement: placement)
+                made.onMouseDown = { [weak self] placement, point, event in
+                    self?.wideMouseDown(placement, at: point, event: event)
+                }
+                // 맨 뒤에 — 서식 막대 · 복사 단추가 그 위에 뜬다.
+                addSubview(made, positioned: .below, relativeTo: nil)
+                return made
+            }()
+            view.show(placement)
+            if view.frame != column { view.frame = column }
+            kept.insert(placement.lineRange)
+        }
+        for (range, view) in existing where !kept.contains(range) { view.removeFromSuperview() }
+    }
+
+    /// 가로 보기를 눌렀다. 받는 쪽(`wideClickHandler`)이 먹지 않으면 텍스트 뷰가 그 자리를 누른 것으로 한다 — 표의 원문이
+    /// 펼쳐진다(격자를 누를 때와 같다).
+    private func wideMouseDown(_ placement: MarkdownStyler.ImagePlacement, at point: NSPoint, event: NSEvent) {
+        if wideClickHandler?(placement, point, event) == true { return }
+        mouseDown(with: event)
     }
 }

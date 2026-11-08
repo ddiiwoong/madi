@@ -50,12 +50,17 @@ public final class MarkdownStyler {
         /// 글 넓이의 가운데에 놓는가. 수식 블록이 그렇다(TeX·KaTeX의 표시 수식 관례). 그림과
         /// 다이어그램은 글처럼 왼쪽에 붙는다.
         public var centered = false
+        /// 글 칸의 왼쪽 끝에 놓는가 — 그림 안에 글자의 들여쓰기가 들어 있는 것(넓은 코드 블록). 줄 조각의 자리를 따르면
+        /// 줄 조각 여백만큼 더 들어가 다른 코드 블록의 글과 5pt 어긋났다(그림으로 봄).
+        public var alignsToColumn = false
 
-        public init(lineRange: NSRange, size: CGSize, image: NSImage, centered: Bool = false) {
+        public init(lineRange: NSRange, size: CGSize, image: NSImage, centered: Bool = false,
+                    alignsToColumn: Bool = false) {
             self.lineRange = lineRange
             self.size = size
             self.image = image
             self.centered = centered
+            self.alignsToColumn = alignsToColumn
         }
     }
 
@@ -157,6 +162,31 @@ public final class MarkdownStyler {
     /// 그림을 줄일 때 쓰는 글 넓이.
     public var contentWidth: Double = 700
 
+    /// 글 칸의 폭 — 줄 조각 여백을 뺀, 글이 실제로 줄을 바꾸는 폭(`DecoratedTextView.textColumnWidth`와 같다).
+    /// 코드 줄이 넘치는지를 이것으로 잰다.
+    public var textColumnWidth: Double = 700
+
+    /// 넓은 것을 **줄을 바꾸지 않고 가로로 굴리게** 둘지(사용자 — "코드랑 표 둘 다 추천안으로"). 켜면:
+    /// - 글 칸보다 긴 줄이 있는 코드 블록은 캐럿이 밖에 있을 때 줄을 바꾸지 않은 그림이 된다(`placeWideCode`).
+    /// - 격자로 그린 표의 열은 읽을 만한 폭보다 좁아지지 않는다 — 그래서 글 칸보다 넓어질 수 있다(`TableGrid`).
+    /// - 원문으로 보이는 표의 행이 글 칸보다 길면 막대를 맞추지 않는다(줄이 바뀌어 맞출 수 없다).
+    /// 넓은 그림은 텍스트 뷰가 가로로 굴리는 보기에 담는다(`WidePlacementView`). 기본 편집기만 켠다. 내보내기(PDF ·
+    /// 프린트)에서는 전처럼 줄을 바꾼다 — 종이는 굴릴 수 없다.
+    public var scrollsWideBlocks = false
+
+    /// 이번 패스에서 그림으로 놓은 넓은 코드 블록 — 그림이 놓인 줄(여는 펜스 줄) → 그림. 누른 자리의 글자를 찾는다.
+    private(set) var codeRenderings: [NSRange: CodeBlockRendering] = [:]
+    /// 코드 블록의 판정과 그림. 블록의 원문과 글 칸 폭 · 글꼴이 같으면 다시 재지 않는다(`tableGridCache`와 같은 이유).
+    private enum CachedCode {
+        case fits
+        case wide(CodeBlockRendering)
+    }
+    private var codeCache: [String: CachedCode] = [:]
+    /// 이번 패스의 펜스 블록들 — 여는 펜스 줄부터 닫는 펜스 줄까지, 그 줄들의 번호(`lines`의 자리).
+    private var fencedBlocks: [(range: NSRange, lines: Range<Int>)] = []
+    /// 넓게 굴리는 것들을 이번 패스에 쓰는가 — 켜져 있고, 원본 보기도 내보내기도 아닐 때.
+    private var widensBlocks: Bool { scrollsWideBlocks && !codeView && !theme.isForOutput }
+
     private let syntax = MarkdownSyntax()
 
     /// 이번 패스에서 쓸 링크 정의 표. **패스마다 한 번** 모은다 — 참조 링크의 주소는
@@ -203,6 +233,11 @@ public final class MarkdownStyler {
         if writeRange.length != full.length, !renderedBlocks.isEmpty {
             writeRange = Self.extended(writeRange, over: renderedBlocks.map(\.range), in: text, limit: full)
         }
+        // 코드 블록도 통째로 — 캐럿이 블록에 들고 나면 블록 전체가 그림 ↔ 원문으로 바뀐다(다이어그램과 같다).
+        fencedBlocks = widensBlocks ? Self.fencedCodeBlocks(in: lines) : []
+        if writeRange.length != full.length, !fencedBlocks.isEmpty {
+            writeRange = Self.extended(writeRange, over: fencedBlocks.map(\.range), in: text, limit: full)
+        }
 
         storage.beginEditing()
         defer { storage.endEditing() }
@@ -210,6 +245,7 @@ public final class MarkdownStyler {
         if codeView {
             // 코드 보기에서는 문서 전체가 날 글자다 — 블록도 그림도 그릴 근거가 없다.
             codeBlockRanges = []
+            codeRenderings = [:]
             imagePlacements = []
             taskBoxes = []
             quoteBars = []
@@ -283,6 +319,12 @@ public final class MarkdownStyler {
         } else {
             drawnTables = []
             foldedTableRanges = []
+        }
+        // 긴 줄의 코드 블록 — 구문 강조가 끝난 뒤(그림은 따로 칠하지만 원문 쪽 색이 먼저 정해져 있어야 같은 패스가 맞다).
+        if widensBlocks {
+            placeWideCode(lines, in: storage, text: text, caretLine: caretLine, search: search, writeRange: writeRange)
+        } else {
+            codeRenderings = [:]
         }
         // 마지막이다 — 블록의 줄에 앞의 패스가 준 속성을 통째로 덮어쓴다.
         if !renderedBlocks.isEmpty {
@@ -623,6 +665,188 @@ public final class MarkdownStyler {
         return blocks
     }
 
+    // MARK: 긴 줄의 코드 블록 — 줄을 바꾸지 않고 가로로
+
+    /// 펜스 블록들 — 여는 펜스 줄부터 닫는 펜스 줄까지(닫히지 않으면 문서 끝까지). `codeBlocks`(바탕)는 이어진 코드
+    /// 줄을 하나로 묶지만 이것은 펜스 한 쌍마다다 — 붙은 두 블록은 따로 그림이 된다.
+    static func fencedCodeBlocks(in lines: [LineToken]) -> [(range: NSRange, lines: Range<Int>)] {
+        var blocks: [(range: NSRange, lines: Range<Int>)] = []
+        var open: Int?
+        func close(at end: Int) {
+            guard let start = open else { return }
+            let first = lines[start].range.location
+            blocks.append((NSRange(location: first, length: NSMaxRange(lines[end].range) - first), start ..< end + 1))
+            open = nil
+        }
+        for (index, line) in lines.enumerated() {
+            switch line.kind {
+            case .codeFence:
+                if open == nil { open = index } else { close(at: index) }
+            case .codeBody:
+                continue
+            default:
+                if let start = open { close(at: max(start, index - 1)) }
+            }
+        }
+        if open != nil { close(at: lines.count - 1) }
+        return blocks
+    }
+
+    /// 글 칸보다 긴 줄이 있는 코드 블록을 **줄을 바꾸지 않은 그림**으로 바꾼다 — 문서를 고치지 않고(표 격자와 같은 길).
+    ///
+    /// 여는 펜스 줄이 그림의 높이를 갖고 나머지 줄은 높이 0으로 접힌다. 글자는 모두 숨는다. 그림은 글 칸보다 넓으므로
+    /// 텍스트 뷰가 가로로 굴리는 보기에 담는다. 캐럿이 블록에 있거나 지금 찾은 곳이 블록에 있으면 원문(줄을 바꾼 글)으로
+    /// 둔다 — 고치려면, 찾은 글자를 보려면 원문이 보여야 한다. 긴 줄이 없는 블록은 손대지 않는다(늘 글이다). 그림이 된
+    /// 다이어그램 · 수식 블록도 손대지 않는다.
+    ///
+    /// 자리 목록은 문서 전체로 만들고 속성 쓰기만 `writeRange`로 좁힌다. 그림은 저장소의 속성이 아니라 블록의 글에서 새로
+    /// 칠해 만든다 — 접어 둔 블록의 저장소 속성은 숨긴 글자뿐이다.
+    private func placeWideCode(_ lines: [LineToken], in storage: NSTextStorage, text: NSString,
+                               caretLine: Int?, search: SearchState, writeRange: NSRange) {
+        let currentMatch = search.currentIndex.flatMap { search.ranges.indices.contains($0) ? search.ranges[$0] : nil }
+        let diagrams = renderedBlocks.map(\.range)
+        var placements = imagePlacements
+        var renderings: [NSRange: CodeBlockRendering] = [:]
+        var used: Set<String> = []
+        let mono = theme.monoFont
+        let advance = max(1, ("M" as NSString).size(withAttributes: [.font: mono]).width)
+        let available = textColumnWidth - Double(Self.codeIndent)
+
+        for block in fencedBlocks {
+            guard !diagrams.contains(where: { NSIntersectionRange($0, block.range).length > 0 }) else { continue }
+            let blockLines = lines[block.lines]
+            let isOpen = caretLine.map { line in blockLines.contains { $0.lineNumber == line } } == true
+                || currentMatch.map { NSIntersectionRange($0, block.range).length > 0
+                    || NSLocationInRange($0.location, block.range) } == true
+            guard !isOpen, let first = blockLines.first else { continue }
+
+            let key = codeCacheKey(text.substring(with: block.range))
+            used.insert(key)
+            let rendering: CodeBlockRendering
+            switch codeCache[key] {
+            case .fits?:
+                continue
+            case let .wide(cached)?:
+                rendering = cached
+            case nil:
+                guard Self.hasLongLine(blockLines, in: text, font: mono, advance: Double(advance), available: available)
+                else {
+                    codeCache[key] = .fits
+                    continue
+                }
+                let built = codeText(for: blockLines, in: text)
+                rendering = CodeBlockRendering(text: built.text, documentIndices: built.indices,
+                                               documentEnd: NSMaxRange(block.range))
+                codeCache[key] = .wide(rendering)
+            }
+            placements.append(ImagePlacement(lineRange: first.range, size: rendering.size, image: rendering.image,
+                                             alignsToColumn: true))
+            renderings[first.range] = rendering
+
+            guard NSIntersectionRange(block.range, writeRange).length > 0
+                    || NSLocationInRange(block.range.location, writeRange) else { continue }
+            for line in blockLines {
+                if line.range.length > 0 {
+                    hide(line.range, in: storage)
+                    for key in [NSAttributedString.Key.kern, .underlineStyle, .strikethroughStyle, .backgroundColor] {
+                        storage.removeAttribute(key, range: line.range)
+                    }
+                }
+                let paragraph = text.lineRange(for: NSRange(location: line.range.location, length: 0))
+                let style = NSMutableParagraphStyle()
+                if line.lineNumber == first.lineNumber {
+                    // 그림의 높이 그대로 — 그림 안에 줄 간격이 다 들어 있다.
+                    style.minimumLineHeight = rendering.size.height
+                    style.maximumLineHeight = rendering.size.height
+                } else {
+                    style.minimumLineHeight = 0
+                    style.maximumLineHeight = 0.001
+                }
+                storage.addAttribute(.paragraphStyle, value: style, range: paragraph)
+            }
+        }
+        // 지금 문서에 없는 블록의 판정은 버린다 — 고칠 때마다 옛 꼴이 쌓인다.
+        codeCache = codeCache.filter { used.contains($0.key) }
+        codeRenderings = renderings
+        imagePlacements = placements.sorted { $0.lineRange.location < $1.lineRange.location }
+    }
+
+    /// 코드 줄의 들여쓰기(`paragraphStyle(for: .codeBody)`의 머리 들여쓰기).
+    static let codeIndent: CGFloat = 10
+
+    /// 블록에 글 칸보다 긴 줄이 있는가. 줄의 글자 수로 먼저 거른다 — 한 글자는 고정폭 한 칸의 두 배(한글)를 넘지 않고
+    /// 탭은 여덟 칸이라, 그 어림으로도 칸 안이면 재지 않는다. 줄 끝의 공백은 재지 않는다(줄을 바꾸지 않고 매달린다).
+    static func hasLongLine(_ lines: ArraySlice<LineToken>, in text: NSString, font: NSFont,
+                            advance: Double, available: Double) -> Bool {
+        for line in lines where line.kind == .codeBody && line.range.length > 0 {
+            let tabs = Double(text.substring(with: line.range).filter { $0 == "\t" }.count)
+            let bound = (Double(line.range.length) * 2 + tabs * 8) * advance
+            guard bound > available else { continue }
+            let content = text.substring(with: line.range)
+            let trimmed = content.replacingOccurrences(of: "\\s+$", with: "", options: .regularExpression)
+            let width = (trimmed as NSString).size(withAttributes: [.font: font]).width
+            if Double(width) > available + 0.5 { return true }
+        }
+        return false
+    }
+
+    /// 그림으로 그릴 블록의 글 — 편집기가 코드 줄을 칠하는 것과 같게(`apply`의 `.codeFence` · `.codeBody`, 구문 강조).
+    /// 숨기는 표시(펜스의 백틱)는 뺀다. 글의 자리마다 문서의 자리를 함께 돌려준다.
+    private func codeText(for lines: ArraySlice<LineToken>, in text: NSString) -> (text: NSAttributedString, indices: [Int]) {
+        let result = NSMutableAttributedString()
+        var indices: [Int] = []
+        let fenceAttributes: [NSAttributedString.Key: Any] = [
+            .font: theme.monoFont, .foregroundColor: theme.dim, .paragraphStyle: paragraphStyle(for: .codeFence),
+        ]
+        let bodyAttributes: [NSAttributedString.Key: Any] = [
+            .font: theme.monoFont, .foregroundColor: theme.codeText, .paragraphStyle: paragraphStyle(for: .codeBody),
+        ]
+        // 구문 강조 — 본문 줄들을 한 덩이로(줄을 넘나드는 구문 때문에).
+        var colors: [(range: NSRange, color: NSColor)] = []
+        let body = lines.filter { $0.kind == .codeBody }
+        if highlightsCode, let start = body.first, let end = body.last,
+           let language = CodeLanguage.named(start.language) {
+            let range = NSRange(location: start.range.location, length: NSMaxRange(end.range) - start.range.location)
+            for span in CodeHighlighter.spans(in: text.substring(with: range), language: language) {
+                colors.append((NSRange(location: range.location + span.range.location, length: span.range.length),
+                               theme.codeColor(for: span.role)))
+            }
+        }
+        var previous: (end: Int, attributes: [NSAttributedString.Key: Any])?
+        for line in lines {
+            if let previous {
+                result.append(NSAttributedString(string: "\n", attributes: previous.attributes))
+                indices.append(previous.end)
+            }
+            var visible = line.range
+            if line.kind == .codeFence, let marker = line.markerRanges.first, marker.length > 0 {
+                let start = min(NSMaxRange(marker), NSMaxRange(line.range))
+                visible = NSRange(location: start, length: NSMaxRange(line.range) - start)
+            }
+            let attributes = line.kind == .codeFence ? fenceAttributes : bodyAttributes
+            let start = result.length
+            result.append(NSAttributedString(string: text.substring(with: visible), attributes: attributes))
+            indices.append(contentsOf: visible.location ..< NSMaxRange(visible))
+            if line.kind == .codeBody {
+                for (range, color) in colors {
+                    let overlap = NSIntersectionRange(range, visible)
+                    guard overlap.length > 0 else { continue }
+                    result.addAttribute(.foregroundColor, value: color,
+                                        range: NSRange(location: start + overlap.location - visible.location,
+                                                       length: overlap.length))
+                }
+            }
+            previous = (NSMaxRange(line.range), attributes)
+        }
+        return (result, indices)
+    }
+
+    /// 코드 그림을 다시 쓸 수 있는지 가리는 열쇠 — 원문, 글 칸 폭, 글꼴, 줄 간격, 색 테마, 외관.
+    private func codeCacheKey(_ source: String) -> String {
+        "\(textColumnWidth)|\(theme.bodyPointSize)|\(theme.lineSpacingScale)|\(theme.codeFontFamily ?? "")|"
+            + "\(theme.colorTheme.rawValue)|\(isDarkAppearance)|\(highlightsCode)\n" + source
+    }
+
     // MARK: 표 열 맞추기
 
     /// 표의 칸을 **글자 간격으로** 늘려 막대가 같은 자리에 오게 한다.
@@ -649,6 +873,13 @@ public final class MarkdownStyler {
             //    공백은 행마다 다르다 — 구분 행은 흔히 `|:---|`로 공백 없이 쓰고 본문 행은
             //    `| 기능 |`로 쓴다. 글만 재서 맞추면 공백만큼(고정폭 두 칸, 약 17pt) 막대가
             //    어긋났다(실측: 구분 행의 막대가 70.7 / 122.7 / 165.9, 다른 행은 88.1 / 157.3 / 217.9).
+            // 행이 글 칸보다 길면 맞추지 않는다 — 그 행은 줄이 바뀌어 막대가 다음 줄로 떨어지므로 맞출 수 없고, 맞추려고
+            // 넣은 간격이 줄을 더 바꿔 원문이 더 어지러워졌다(받은 Notion 문서의 표에서 봄).
+            if widensBlocks, table.rows.contains(where: {
+                Double(visibleWidth(of: $0.range, in: storage)) > textColumnWidth
+            }) {
+                continue
+            }
             var measured: [Int: [Int: CGFloat]] = [:]   // [줄번호: [열: 너비]]
             var widths = [CGFloat](repeating: 0, count: table.columnCount)
             for row in table.rows {
@@ -816,7 +1047,7 @@ public final class MarkdownStyler {
     private func tableCacheKey(_ source: String) -> String {
         "\(contentWidth)|\(theme.bodyPointSize)|\(theme.lineSpacingScale)|\(theme.bodyFontFamily ?? "")|"
             + "\(theme.codeFontFamily ?? "")|\(appliesSyntheticSlant)|\(theme.colorTheme.rawValue)|"
-            + "\(theme.isForOutput)\n" + source
+            + "\(theme.isForOutput)|\(widensBlocks)\n" + source
     }
 
     /// 표 하나의 격자. 구분 행은 빼고, 칸의 인라인 마크업은 본문처럼 그린다(마커는 뺀다).
@@ -833,8 +1064,10 @@ public final class MarkdownStyler {
         }
         let font = theme.bodyFont
         let lineHeight = ceil(font.ascender - font.descender + font.leading)
+        // 넓게 굴릴 때는 열이 본문 여섯 글자 폭(+ 가장 긴 낱말)보다 좁아지지 않는다 — 넘치는 표는 가로로 굴린다.
         return TableGrid(rows: rows, columnCount: table.columnCount, lineHeight: lineHeight,
-                         maxWidth: CGFloat(contentWidth), minimumColumnWidth: theme.bodyPointSize * 4)
+                         maxWidth: CGFloat(contentWidth), minimumColumnWidth: theme.bodyPointSize * 4,
+                         readableWidth: widensBlocks ? theme.bodyPointSize * 6 : nil)
     }
 
     /// 칸 하나의 글. 칸 밖과 같은 인라인 칠하기(`styleInline`)를 거친 뒤 숨긴 마커를 뺀다.
