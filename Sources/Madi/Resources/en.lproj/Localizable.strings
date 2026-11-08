@@ -172,6 +172,9 @@
 "제목 단계 (⌘1~⌘6, 본문 ⌥⌘0)" = "Heading level (⌘1–⌘6, body ⌥⌘0)";
 "목록 · 인용 · 코드 블록 · 표 · 구분선" = "Lists · Quote · Code block · Table · Rule";
 "서식 막대" = "Format bar";
+"복사됨" = "Copied";
+"코드 복사" = "Copy code";
+"코드를 복사했습니다" = "Code copied";
 
 "madi:// 주소가 아닙니다." = "Not a madi:// address.";
 "모르는 명령입니다: %@ — open · new · append 중 하나를 씁니다." = "Unknown command: %@ — use open, new, or append.";

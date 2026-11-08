@@ -30,6 +30,16 @@ public final class MarkdownEditorView: NSView {
     /// 막대를 띄우기까지 기다리는 시간. 테스트가 0으로 둔다.
     var formatBarDelay: TimeInterval = 0.18
 
+    /// 마우스가 코드 블록 위에 있으면 그 블록의 오른쪽 위에 뜨는 `복사` 단추(`CodeCopyButtonView`). 처음 쓸 때 만든다.
+    private(set) var codeCopyButton: CodeCopyButtonView?
+    /// 복사 단추가 쓰는 대지. 테스트가 바꾼다 — 사용자의 대지를 덮지 않게.
+    var codePasteboard: NSPasteboard = .general
+    /// 펜스 블록들 — 글이 바뀔 때만 다시 센다(`blockRevision`).
+    private var codeCopyBlocksCache: (revision: Int, blocks: [CodeBlockCopy.Block])?
+    /// 마지막으로 본 마우스 자리(텍스트 뷰 좌표). 굴리거나 다시 칠하면 그 자리로 다시 잰다 — 마우스가 그대로 있어도
+    /// 그 아래의 블록이 바뀐다.
+    private var codeCopyPoint: NSPoint?
+
     /// 이 편집기만의 실행 취소 관리자. nil이면 창의 것을 쓴다. 한 창에 문서가 둘일 때(나란히
     /// 보기의 번역본) 쓴다 — 창의 것을 함께 쓰면 번역본을 고칠 때 원문이 '편집됨'이 된다.
     public var undoManagerOverride: UndoManager?
@@ -143,6 +153,15 @@ public final class MarkdownEditorView: NSView {
             scrollView.topAnchor.constraint(equalTo: topAnchor),
             scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
+
+        // 코드 블록의 복사 단추 — 마우스가 어디 있는지 따라간다. 굴리면 마우스 아래의 블록이 바뀐다. 앞에 있는 앱에서만
+        // 따라간다(서식 막대처럼 편집하는 동안의 도구다). 뒤에 있는 창을 누르면 첫 클릭은 창을 앞으로 가져온다.
+        textView.addTrackingArea(NSTrackingArea(
+            rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+            owner: self, userInfo: nil))
+        clipView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(self, selector: #selector(clipBoundsDidChange(_:)),
+                                               name: NSView.boundsDidChangeNotification, object: clipView)
     }
 
     // MARK: Content
@@ -263,8 +282,11 @@ public final class MarkdownEditorView: NSView {
             theme.isForOutput = isRenderingForOutput
             textView.appearance = isRenderingForOutput ? NSAppearance(named: .aqua) : nil
             applyColors()
-            // 서식 막대도 텍스트 뷰 안에 있다 — 내보내는 동안 거둔다.
-            if isRenderingForOutput { hideFormatBar() }
+            // 서식 막대와 복사 단추도 텍스트 뷰 안에 있다 — 내보내는 동안 거둔다.
+            if isRenderingForOutput {
+                hideFormatBar()
+                hideCodeCopyButton()
+            }
             // 머리(메타데이터 카드)는 내보내지 않는다 — 텍스트 뷰 안에 있어 숨기지 않으면 함께 찍힌다.
             if let headerView {
                 if isRenderingForOutput {
@@ -618,6 +640,87 @@ public final class MarkdownEditorView: NSView {
         textView.quoteBars = styler.quoteBars
         textView.quoteBarColor = { [theme] alert in theme.quoteBarColor(for: alert) }
         textView.alertTitles = styler.alertTitles
+        // 상자가 옮겨졌을 수 있다 — 복사 단추를 마우스 자리로 다시 놓는다.
+        if codeCopyButton?.isHidden == false, let point = codeCopyPoint { updateCodeCopyButton(at: point) }
+    }
+
+    // MARK: 코드 복사 단추
+
+    public override func mouseMoved(with event: NSEvent) {
+        updateCodeCopyButton(at: textView.convert(event.locationInWindow, from: nil))
+    }
+
+    public override func mouseExited(with event: NSEvent) {
+        codeCopyPoint = nil
+        hideCodeCopyButton()
+    }
+
+    @objc private func clipBoundsDidChange(_ note: Notification) {
+        // 굴리는 동안 마우스는 그대로다 — 창에서 지금 마우스 자리를 다시 읽는다.
+        guard codeCopyPoint != nil, let window else { return }
+        updateCodeCopyButton(at: textView.convert(window.mouseLocationOutsideOfEventStream, from: nil))
+    }
+
+    func hideCodeCopyButton() {
+        codeCopyButton?.isHidden = true
+    }
+
+    /// 점(텍스트 뷰 좌표)이 코드 블록 위면 그 블록의 오른쪽 위에 복사 단추를 놓고, 아니면 거둔다. 블록의 위가 굴려져
+    /// 가려졌으면 보이는 칸의 맨 위에 놓는다 — 긴 블록을 읽다가도 바로 누를 수 있게(블록 안에서만).
+    func updateCodeCopyButton(at point: NSPoint) {
+        codeCopyPoint = point
+        guard !isRenderingForOutput, !styler.codeView, textView.visibleRect.contains(point),
+              let block = codeCopyBlock(at: point), let frame = textView.codeBlockFrame(block.range) else {
+            return hideCodeCopyButton()
+        }
+        let button = codeCopyButton ?? {
+            let made = CodeCopyButtonView(frame: .zero)
+            made.onPress = { [weak self] block in self?.copyCode(of: block) }
+            textView.addSubview(made)
+            codeCopyButton = made
+            return made
+        }()
+        if button.block != block {
+            button.block = block
+            if button.showsCopied { button.showCopied(false) }
+        }
+        let size = button.fittingSize
+        let inset: CGFloat = 6
+        let visible = textView.visibleRect
+        var top = max(frame.minY + inset, visible.minY + inset)
+        top = min(top, frame.maxY - size.height - inset)
+        button.frame = NSRect(x: (frame.maxX - size.width - inset).rounded(), y: top.rounded(),
+                              width: size.width, height: size.height)
+        button.isHidden = false
+    }
+
+    /// 점 아래의 펜스 블록 — 회색 상자로 그린 것만(그림이 된 다이어그램 · 수식은 뺀다). 보이는 블록만 잰다.
+    private func codeCopyBlock(at point: NSPoint) -> CodeBlockCopy.Block? {
+        let drawn = textView.codeBlockRanges
+        guard !drawn.isEmpty, let visible = textView.visibleCharacterRange(in: textView.visibleRect) else { return nil }
+        let blocks = codeCopyBlocks()
+        let ranges = blocks.map(\.range)
+        for index in DecoratedTextView.ranges(ranges, touching: visible).indices {
+            let block = blocks[index]
+            guard !DecoratedTextView.ranges(drawn, touching: block.range).isEmpty,
+                  let frame = textView.codeBlockFrame(block.range), frame.contains(point) else { continue }
+            return block
+        }
+        return nil
+    }
+
+    func codeCopyBlocks() -> [CodeBlockCopy.Block] {
+        if let cache = codeCopyBlocksCache, cache.revision == blockRevision { return cache.blocks }
+        let blocks = CodeBlockCopy.blocks(in: currentLines(), text: storage.string as NSString)
+        codeCopyBlocksCache = (blockRevision, blocks)
+        return blocks
+    }
+
+    /// 블록의 코드를 대지에 — 펜스와 언어 이름은 빼고.
+    func copyCode(of block: CodeBlockCopy.Block) {
+        let code = CodeBlockCopy.text(of: block, in: storage.string as NSString)
+        codePasteboard.clearContents()
+        codePasteboard.setString(code, forType: .string)
     }
 
     /// 지금 격자로 그린 표의 수. 테스트가 쓴다.

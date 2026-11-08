@@ -123,7 +123,7 @@ public class DecoratedTextView: NSTextView {
     ///
     /// 위아래로 블록 여백만큼 넓혀 묻는다 — 배경은 글자보다 여백만큼 크므로, 글자가
     /// 사각형 밖에 있어도 배경의 가장자리는 안에 들어올 수 있다.
-    private func visibleCharacterRange(in rect: NSRect) -> NSRange? {
+    func visibleCharacterRange(in rect: NSRect) -> NSRange? {
         guard let layoutManager, let textContainer else { return nil }
         let origin = textContainerOrigin
         let margin = max(codeBlockPadding.top, codeBlockPadding.bottom) + 1
@@ -162,8 +162,8 @@ public class DecoratedTextView: NSTextView {
         }
     }
 
-    /// 코드 블록 하나의 바탕 자리(뷰 좌표).
-    private func codeBlockFrame(_ range: NSRange) -> NSRect? {
+    /// 코드 블록 하나의 바탕 자리(뷰 좌표). 복사 단추(`CodeCopyButtonView`)도 이 자리에 맞춰 놓는다.
+    func codeBlockFrame(_ range: NSRange) -> NSRect? {
         guard range.length > 0, NSMaxRange(range) <= (textStorage?.length ?? 0),
               let layoutManager, let textContainer else { return nil }
         let origin = textContainerOrigin
