@@ -118,8 +118,9 @@ ALLOW_DIRTY=1 SKIP_CHECKS=1 NOTARIZE=0 bash scripts/release.sh   # 고치는 중
   올립니다. 공개 뒤에도 `make public-check`(이력 포함)가 통과해야 합니다. 걸리면 그 커밋을 올리기 전에 고칩니다.
   한 번 올린 이력은 되돌릴 수 없습니다.
 - **앱 아이콘.** 아직 없어서 Finder와 Dock에 기본 아이콘이 나옵니다. 스크립트가 경고만 합니다.
-- **라이선스.** Mermaid 번들에 elkjs(EPL-2.0)가 들어 있습니다(`Sources/Madi/Resources/Diagrams/README.md`).
-  배포물에 함께 넣어야 할 고지가 있는지 사람이 읽고 정합니다.
+- **라이선스.** Mermaid 번들에 elkjs(EPL-2.0)가 들어 있습니다. EPL-2.0은 받는 사람에게 원본을 얻는 길을
+  알리라고 해서, 스크립트가 릴리스 노트 끝에 '포함된 오픈 소스' 절을 붙입니다(글꼴 · 다이어그램 라이선스
+  목록과 elkjs 원본 저장소로 가는 링크). 자세한 것은 `Sources/Madi/Resources/Diagrams/README.md`.
 - **AI 교정 키.** 개발 빌드(ad-hoc 서명)에서 키체인에 넣은 키는 서명이 다른 Release 앱이 처음
   꺼낼 때 "키체인의 정보를 쓰려고 합니다" 창이 한 번 뜹니다. 받은 사람에게는 해당이 없습니다.
 - **자동 업데이트**가 없습니다. 새 판은 받은 사람이 직접 받아 바꿔 넣습니다.

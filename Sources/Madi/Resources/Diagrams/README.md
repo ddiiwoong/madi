@@ -38,7 +38,8 @@ KaTeX의 CSS는 글꼴마다 `woff2`·`woff`·`ttf`를 차례로 적는다. 앞�
 | khroma | npm 메타데이터에 적혀 있지 않다 — 확인이 필요하다 |
 | @braintree/sanitize-url · @iconify/utils · @upsetjs/venn.js · cytoscape · cytoscape-cose-bilkent · cytoscape-fcose · dagre-d3-es · dayjs · es-toolkit · katex · marked · roughjs · stylis · ts-dedent · uuid · @mermaid-js/parser | MIT |
 
-**배포 전에 사람이 정할 것**: elkjs는 EPL-2.0이다. EPL-2.0은 목적 코드로 나눠 줄 때 받는 사람에게
-**원본을 얻는 길을 알리라**고 한다(3.2절). 위 표와 원본 저장소 주소를 앱의 정보 화면이나 배포
-안내에 함께 적는 것이 보통이다. 직접 의존 꾸러미가 끌어온 꾸러미(d3의 하위 모듈 등)는 이 표에
-없다 — 배포할 때 번들을 도구로 훑어 목록을 다시 만드는 편이 정확하다.
+**elkjs의 고지**: elkjs는 EPL-2.0이다(번들 안에 `org.eclipse.elk`가 342번 나온다 — 2026-11-09에 셈).
+EPL-2.0은 목적 코드로 나눠 줄 때 받는 사람에게 **원본을 얻는 길을 알리라**고 한다(3.2절). 릴리스 노트에
+적는다 — `scripts/release.sh`가 '포함된 오픈 소스' 절을 붙이고, 그 절이 이 파일과 elkjs 원본 저장소로
+잇는다(0.1.0부터). 남은 것: 직접 의존 꾸러미가 끌어온 꾸러미(d3의 하위 모듈 등)는 이 표에 없고, khroma의
+라이선스는 아직 확인하지 못했다 — 번들을 도구로 훑어 목록을 다시 만드는 편이 정확하다.

@@ -243,6 +243,14 @@ awk -v v="$VERSION" '
     printf -- '- 판 %s (빌드 %s, 커밋 %s)\n' "$VERSION" "$BUILD_NUMBER" "$COMMIT"
     printf -- '- macOS %s 이상, Apple 실리콘 · Intel\n' "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$plist")"
     printf -- '- SHA-256\n\n```\n%s\n```\n' "$(cat "$OUT/SHA256SUMS")"
+    # 앱에 든 남의 것. elkjs(Mermaid 번들 안)는 EPL-2.0이라 목적 코드를 나눠 줄 때 원본을 얻는 길을
+    # 알려야 한다(3.2절) — 릴리스 노트가 받는 사람이 반드시 보는 곳이다. 목록은 태그 시점의 README로 잇는다.
+    repo="$(git remote get-url origin 2>/dev/null | sed -e 's#^git@github.com:#https://github.com/#' -e 's#\.git$##')"
+    repo="${repo:-https://github.com/ddiiwoong/madi}"
+    printf '\n### 포함된 오픈 소스\n\n'
+    printf -- '- 글꼴: Pretendard · IBM Plex Mono — SIL OFL 1.1 ([목록과 라이선스](%s/blob/%s/Sources/Madi/Resources/Fonts/README.md))\n' "$repo" "$TAG"
+    printf -- '- 다이어그램 · 수식: Mermaid · KaTeX — MIT ([목록과 라이선스](%s/blob/%s/Sources/Madi/Resources/Diagrams/README.md))\n' "$repo" "$TAG"
+    printf -- '- Mermaid 번들에 든 elkjs는 [Eclipse Public License 2.0](https://www.eclipse.org/legal/epl-2.0/)을 따르며, 원본 코드는 그 라이선스로 [kieler/elkjs](https://github.com/kieler/elkjs)에서 받을 수 있습니다.\n'
 } >> "$OUT/release-notes.md"
 ok "release-notes.md (CHANGELOG.md의 $VERSION 절)"
 
