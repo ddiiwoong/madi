@@ -289,6 +289,20 @@ final class ImageInsertTests: XCTestCase {
         XCTAssertNotNil(view.textView.textStorage?.attribute(.mdHiddenMarker, at: slash, effectiveRange: nil))
     }
 
+    /// 클립보드에 그림만 있어도 `붙여넣기`가 켜진다 — 꺼져 있으면 메뉴도 `⌘V`도 `paste(_:)`에 닿지 않는다(앱에서 봄).
+    /// 글도 그림도 없으면 전처럼 꺼진다. 읽기 전용이면 꺼진다.
+    func testPasteIsEnabledWhenTheClipboardHoldsOnlyAnImage() throws {
+        let view = editor("", document: folder.appendingPathComponent("노트.md"))
+        let item = NSMenuItem(title: "붙여넣기", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        let data = try png()
+        view.textView.pastePasteboard = pasteboard { $0.setData(data, forType: .png) }
+        XCTAssertTrue(view.textView.validateMenuItem(item), "그림만 있는 클립보드")
+        XCTAssertTrue(view.textView.validateUserInterfaceItem(item))
+
+        view.textView.isEditable = false
+        XCTAssertFalse(view.textView.validateMenuItem(item), "읽기 전용이면 꺼진다")
+    }
+
     /// `⌘V`가 부르는 길 그대로(`paste(_:)`) — 저장하지 않은 문서에 화면 캡처를 붙여 넣으면 그림 줄이 들어간다.
     /// 앱에서는 확인용 사본에 보낸 `⌘V`가 닿지 않아(다른 단축키도 같았다) 이 길을 시험으로 본다.
     func testCommandVPathPastesAScreenshotIntoAnUnsavedDocument() throws {

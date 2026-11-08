@@ -27,6 +27,24 @@ public final class MarkdownTextView: DecoratedTextView {
         super.paste(sender)
     }
 
+    /// 대지에 **그림만** 있어도(화면 캡처, 다른 앱의 '이미지 복사') 붙여넣기를 켠다. 글만 받는 텍스트 뷰는 대지에 글이
+    /// 없으면 붙여넣기를 끈다 — 메뉴의 `붙여넣기`가 흐려지고 `⌘V`도 메뉴를 거치므로 `paste(_:)`가 아예 불리지 않았다
+    /// (앱에서 봄: 그림만 있는 클립보드에서 우클릭 메뉴의 붙여넣기가 꺼져 있었다).
+    public override func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
+        if item.action == #selector(paste(_:)), canPasteImage { return true }
+        return super.validateUserInterfaceItem(item)
+    }
+
+    public override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(paste(_:)), canPasteImage { return true }
+        return super.validateMenuItem(menuItem)
+    }
+
+    /// 붙여넣기가 그림을 넣을 수 있는가 — 고칠 수 있고, 받는 쪽이 있고, 대지에 넣을 그림이 있다.
+    private var canPasteImage: Bool {
+        isEditable && imageInsertHandler != nil && ImagePasteboard.holdsImages(pastePasteboard)
+    }
+
     /// 파일과 그림 데이터도 끌어놓을 수 있게 한다. 글만 받는 텍스트 뷰는 이것들을 받지 않는다.
     public override var acceptableDragTypes: [NSPasteboard.PasteboardType] {
         var types = super.acceptableDragTypes
