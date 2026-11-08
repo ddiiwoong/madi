@@ -152,10 +152,18 @@ public final class MarkdownEditorView: NSView {
         set {
             guard newValue != storage.string else { return }
             let selected = textView.selectedRange()
+            let origin = clipView.bounds.origin
             storage.replaceCharacters(in: NSRange(location: 0, length: storage.length), with: newValue)
-            restyleAll()
             let clamped = min(selected.location, storage.length)
             textView.setSelectedRange(NSRange(location: clamped, length: 0))
+            // 굴린 자리를 돌린다. 글을 통째로 바꾸는 동안 AppKit이 캐럿을 새 글의 끝으로 옮기고 그 끝을 보이게 하려고
+            // 굴린다 — 긴 문서를 열면 처음부터 104 · 176 · 262pt 밀려 문서 메타데이터 카드가 화면 위로 사라졌다(앱에서
+            // 처음 봄, Notion 내보내기 100만 자). 캐럿과 함께 자리도 바꾸기 전으로 — 디스크에서 다시 읽은 글도 읽던
+            // 자리에 남는다.
+            // 새 글이 더 짧으면 끝에 맞춘다.
+            clipView.scroll(to: clipView.constrainBoundsRect(NSRect(origin: origin, size: clipView.bounds.size)).origin)
+            scrollView.reflectScrolledClipView(clipView)
+            restyleAll()
         }
     }
 

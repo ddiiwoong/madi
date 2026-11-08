@@ -257,6 +257,8 @@
 
 /* FrontMatterCardView.swift */
 "문서 메타데이터 · %lld개 항목" = "Document metadata · Fields: %lld";
+"외 %lld개" = "%lld more";
+"접기" = "Show less";
 
 /* MarkdownEditorView.swift */
 "할 일 표시" = "Toggle Task";

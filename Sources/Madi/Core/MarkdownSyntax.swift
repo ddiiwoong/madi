@@ -660,24 +660,42 @@ public struct MarkdownSyntax: Sendable {
             }
         }
 
-        for m in Self.strong.matches(in: line, range: whole) {
-            add(.strong, m, content: 2, markers: markerPair(m, contentIndex: 2))
+        // 굵게 · 기울임 · 취소선 — CommonMark의 짝 찾기(`EmphasisDelimiters`). 정규식으로 따로 맞추면 겹친 꼴을
+        // 못 읽는다: `***굵고 기울임***`, `*바깥 **안** 바깥*`(Notion 내보내기에서 처음 봄). 강조는 서로 **안에 들어갈
+        // 수 있다**(겹치지는 않는다). 차지된 자리(코드 · 그림 · 링크의 표시와 주소) 안의 구분자는 글자이고, 링크의 글은
+        // 따로 짝을 찾는다 — 링크 안과 밖의 구분자는 짝이 되지 않는다. 한국어 조사 앞의 `*기울임*은`은 그대로 된다.
+        var opaque = claimed
+        var groups: [NSRange] = []
+        for token in tokens {
+            switch token.kind {
+            case .link:
+                let inner = shift(token.contentRange, by: -range.location)
+                opaque.remove(integersIn: inner.location ..< NSMaxRange(inner))
+                opaque.formUnion(codeClaimed.intersection(IndexSet(integersIn: inner.location ..< NSMaxRange(inner))))
+                groups.append(inner)
+            default:
+                break
+            }
         }
-        for m in Self.strikethrough.matches(in: line, range: whole) {
-            add(.strikethrough, m, content: 1, markers: markerPair(m, contentIndex: 1))
-        }
-        // 기울임은 구분자에 따라 규칙이 다르다. CommonMark에서 `*`는 낱말 안 강조를
-        // 허용하고 `_`는 금지한다. 둘을 한 정규식으로 묶어 낱말 경계를 요구하면
-        // **한국어에서 거의 쓸 수 없게 된다** — 조사가 바로 붙기 때문이다
-        // (`*기울임*은`에서 `은`이 낱말 글자라 강조가 깨졌다. 실측).
-        for m in Self.emphasisStar.matches(in: line, range: whole) {
-            add(.emphasis, m, content: 1, markers: markerPair(m, contentIndex: 1))
-        }
-        for m in Self.emphasisUnderscore.matches(in: line, range: whole) {
-            add(.emphasis, m, content: 1, markers: markerPair(m, contentIndex: 1))
+        for span in EmphasisDelimiters.spans(in: line as NSString, opaque: opaque, groups: groups) {
+            let kind: InlineKind
+            switch span.kind {
+            case .strong: kind = .strong
+            case .emphasis: kind = .emphasis
+            case .strikethrough: kind = .strikethrough
+            }
+            guard span.content.length > 0 else { continue }
+            tokens.append(InlineToken(kind: kind,
+                                      range: shift(span.range, by: range.location),
+                                      contentRange: shift(span.content, by: range.location),
+                                      markerRanges: [span.opener, span.closer].map { shift($0, by: range.location) }))
         }
 
-        return tokens.sorted { $0.range.location < $1.range.location }
+        return tokens.sorted {
+            // 같은 자리에서 시작하면 바깥(긴 것)이 먼저 — 칠하는 쪽이 바깥의 글꼴 위에 안쪽을 더한다.
+            $0.range.location != $1.range.location ? $0.range.location < $1.range.location
+                : $0.range.length > $1.range.length
+        }
     }
 
     private func markerPair(_ m: NSTextCheckingResult, contentIndex: Int) -> [NSRange] {
@@ -725,16 +743,6 @@ public struct MarkdownSyntax: Sendable {
     /// 그 둘은 이미 앞에서 잡혔지만, 여기서도 막아 **반쪽만** 집어가지 않게 한다.
     private static let referenceImageShortcut = regex(#"!\[([^\]\n]+)\](?![\[(])"#)
     private static let referenceLinkShortcut = regex(#"(?<!!)\[([^\]\n]+)\](?![\[(:])"#)
-    private static let strong = regex(#"(\*\*|__)(?=\S)(.+?)(?<=\S)\1"#)
-    /// `*`로 감싼 기울임. **낱말 경계를 요구하지 않는다** — CommonMark가 `*`의 낱말 안
-    /// 강조를 허용하고, 한국어는 조사가 바로 붙어(`*기울임*은`) 경계를 요구하면 못 쓴다.
-    /// 내용에 `_`는 허용한다(`*a_b*`).
-    private static let emphasisStar = regex(#"(?<!\*)\*(?=\S)([^*\n]+?)(?<=\S)\*(?!\*)"#)
-    /// `_`로 감싼 기울임. CommonMark대로 낱말 안 강조를 **금지한다**(`snake_case_name`이
-    /// 기울어지면 안 된다). 내용에 `*`는 허용한다.
-    private static let emphasisUnderscore = regex(#"(?<![\w_])_(?=\S)([^_\n]+?)(?<=\S)_(?![\w_])"#)
-    private static let strikethrough = regex(#"~~(?=\S)(.+?)(?<=\S)~~"#)
-
     private static func regex(_ pattern: String) -> NSRegularExpression {
         // These patterns are compile-time constants; a failure is a programming
         // error, not a runtime condition.

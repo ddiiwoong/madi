@@ -714,8 +714,58 @@ final class DocumentWindowControllerTests: XCTestCase {
         XCTAssertEqual(editor.textView.topAccessoryHeight, 0)
     }
 
+    /// 목록 값이 길고 많아도(Notion 내보내기의 `links:` — 링크 180개, 600자 넘는 주소) 카드는 글 칸 안에 들어간다.
+    /// 앱에서 처음 본 것 둘: (1) 칩을 한 줄로 늘어놓아 카드가 수만 pt를 요구했고, 카드의 양옆이 글 칸의 여백을 따라
+    /// 텍스트 뷰 폭에서 정해지므로 창이 넓어질수록 더 넓어져 **창이 끝없이 넓어졌다**(960 → 324,914pt). (2) 글이 긴
+    /// 문서는 열자마자 카드가 화면 위로 밀려났다(이 시험에서 104 · 176pt) — 글을 넣은 직후 캐럿이 글 끝에 있는 채로
+    /// 칠했고, 칠하며 놓는 동안 AppKit이 그 끝을 보이게 하려고 굴렸다.
+    func testLongFrontMatterListsStayInsideTheWindow() throws {
+        let links = (1 ... 180).map { "  - \"https://example.com/\(String(repeating: "segment-", count: $0 % 7 == 0 ? 80 : 6))\($0)\"" }
+        let source = "---\ntitle: \"CH6 & CH7\"\nid: \"\(String(repeating: "x", count: 300))\"\nlinks:\n"
+            + links.joined(separator: "\n") + "\n---\n# 본문\n\n"
+            + String(repeating: "- 긴 문서의 한 줄입니다. **굵게**와 `코드`가 섞여 있습니다.\n", count: 4000)
+        let (_, controller) = open(source)
+        let window = try XCTUnwrap(controller.window)
+        let before = window.frame.width
+        for _ in 0 ..< 5 {
+            window.layoutIfNeeded()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        }
+        let card = try card(in: controller)
+        XCTAssertEqual(window.frame.width, before, accuracy: 1, "창이 넓어지지 않는다")
+        XCTAssertLessThanOrEqual(card.frame.maxX, controller.editor.textView.bounds.width + 0.5, "카드가 글 칸 안에 있다")
+        XCTAssertLessThan(card.frame.height, 420, "많은 목록은 몇 개만 보이고 나머지는 접힌다")
+        XCTAssertTrue(card.visibleText.contains("외 172개"), "접힌 수를 알린다")
+        XCTAssertFalse(card.visibleText.contains("segment-9"), "아홉째부터는 접혀 있다")
+
+        // `외 172개`를 누르면 모두 펴지고 `접기`가 된다. 펴도 창은 넓어지지 않는다.
+        let more = try XCTUnwrap(buttons(in: card).first { $0.title == "외 172개" })
+        more.performClick(nil)
+        window.layoutIfNeeded()
+        XCTAssertEqual(more.title, "접기")
+        XCTAssertTrue(card.visibleText.contains("segment-180") || card.visibleText.contains("180\""),
+                      "마지막 항목까지 보인다")
+        XCTAssertEqual(window.frame.width, before, accuracy: 1)
+        more.performClick(nil)
+        XCTAssertEqual(more.title, "외 172개")
+        XCTAssertEqual(controller.editor.clipView.bounds.origin.y, 0, accuracy: 0.5, "연 문서는 맨 위(카드)부터 보인다")
+
+        // 앱에서는 창이 탭 묶음에 들어가며 크기가 바뀌고, 글이 첫 응답자가 된다.
+        window.setFrame(NSRect(x: -20000, y: 0, width: 960, height: 784), display: true)
+        window.makeFirstResponder(controller.editor.textView)
+        for _ in 0 ..< 5 {
+            window.layoutIfNeeded()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        }
+        XCTAssertEqual(controller.editor.clipView.bounds.origin.y, 0, accuracy: 0.5, "크기가 바뀌어도 맨 위에 있다")
+    }
+
     private func card(in controller: DocumentWindowController) throws -> FrontMatterCardView {
         try XCTUnwrap(controller.editor.textView.subviews.compactMap { $0 as? FrontMatterCardView }.first)
+    }
+
+    private func buttons(in view: NSView) -> [NSButton] {
+        view.subviews.compactMap { $0 as? NSButton } + view.subviews.flatMap { buttons(in: $0) }
     }
 
     private func disclosure(of card: FrontMatterCardView) throws -> NSButton {

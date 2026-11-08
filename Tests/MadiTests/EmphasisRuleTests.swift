@@ -96,6 +96,91 @@ final class EmphasisRuleTests: XCTestCase {
         XCTAssertEqual(kinds("`a **b` c**"), [.code], "표시가 코드 안에 있으면 강조가 아니다")
     }
 
+    // MARK: 겹친 강조 — CommonMark의 짝 찾기 (Notion 내보내기에서 처음 봄)
+
+    /// 보이는 글(표시를 뺀 것)과, 그 글자마다 굵게 · 기울임인지.
+    private func rendered(_ line: String) -> (text: String, strong: String, emphasis: String) {
+        let ns = line as NSString
+        let tokens = MarkdownSyntax().scanInline(in: ns, range: NSRange(location: 0, length: ns.length))
+        var hidden = IndexSet()
+        var strong = IndexSet()
+        var emphasis = IndexSet()
+        for token in tokens {
+            token.markerRanges.forEach { hidden.insert(integersIn: $0.location ..< NSMaxRange($0)) }
+            let content = token.contentRange.location ..< NSMaxRange(token.contentRange)
+            if token.kind == .strong { strong.insert(integersIn: content) }
+            if token.kind == .emphasis { emphasis.insert(integersIn: content) }
+        }
+        func pick(_ keep: (Int) -> Bool) -> String {
+            (0 ..< ns.length).filter { !hidden.contains($0) && keep($0) }
+                .map { ns.substring(with: NSRange(location: $0, length: 1)) }.joined()
+        }
+        return (pick { _ in true }, pick { strong.contains($0) }, pick { emphasis.contains($0) })
+    }
+
+    func testBoldItalicTogether() {
+        let result = rendered("앞 ***굵고 기울임*** 뒤")
+        XCTAssertEqual(result.text, "앞 굵고 기울임 뒤", "전에는 `*굵고 기울임*`이 남았다")
+        XCTAssertEqual(result.strong, "굵고 기울임")
+        XCTAssertEqual(result.emphasis, "굵고 기울임")
+    }
+
+    func testEmphasisNestsBothWays() {
+        let outer = rendered("*바깥 **안** 바깥*")
+        XCTAssertEqual(outer.text, "바깥 안 바깥")
+        XCTAssertEqual(outer.emphasis, "바깥 안 바깥", "전에는 기울임이 아예 없었다")
+        XCTAssertEqual(outer.strong, "안")
+        let inner = rendered("**바깥 *안* 바깥**")
+        XCTAssertEqual(inner.strong, "바깥 안 바깥")
+        XCTAssertEqual(inner.emphasis, "안")
+        XCTAssertEqual(rendered("*foo**bar**baz*").strong, "bar", "셋의 규칙")
+    }
+
+    /// 닫는 `**` 앞이 문장 부호이고 뒤에 조사가 붙어도 닫는다 — CommonMark 그대로면 `**"값"**은`이 굵어지지 않는다.
+    func testClosingAfterPunctuationBeforeAKoreanParticle() {
+        XCTAssertEqual(rendered("**metric_id=\"DatasetDriftMetric\"**은 정한다").strong, "metric_id=\"DatasetDriftMetric\"")
+        XCTAssertEqual(rendered("**MLOps 관련 내용(혹은 도전과제)**을 정리").strong, "MLOps 관련 내용(혹은 도전과제)")
+        XCTAssertEqual(rendered("a**\"b\"**c").text, "a**\"b\"**c", "라틴 글자 사이는 CommonMark 그대로")
+    }
+
+    /// Notion은 굵은 조각 둘을 잇대어 `****`로 내보낸다. 셋의 규칙 때문에 짝이 안 되던 별표 넷을 닫고 다시 연다.
+    func testNotionJoinedStrongRuns() {
+        let joined = rendered("**프로필 네임스페이스 (****`kubeflow-user-example-com`**)")
+        XCTAssertEqual(joined.text, "프로필 네임스페이스 (kubeflow-user-example-com)", "전에도 지금도 CommonMark는 `****`가 남는다")
+        XCTAssertEqual(joined.strong, "프로필 네임스페이스 (kubeflow-user-example-com")
+        let tail = rendered("***왜 마이크로배치인가****: 비교합니다.*")
+        XCTAssertEqual(tail.text, "왜 마이크로배치인가: 비교합니다.")
+        XCTAssertEqual(tail.strong, "왜 마이크로배치인가")
+        XCTAssertEqual(tail.emphasis, "왜 마이크로배치인가: 비교합니다.")
+        XCTAssertEqual(rendered("**a****b**").text, "ab")
+    }
+
+    func testEmphasisInsideLinkTextButNotAcrossIt() {
+        let ns = "[*Link*](https://x.y)" as NSString
+        let kinds = MarkdownSyntax().scanInline(in: ns, range: NSRange(location: 0, length: ns.length)).map(\.kind)
+        XCTAssertEqual(kinds, [.link(url: "https://x.y"), .emphasis], "전에는 `*Link*`가 그대로 보였다")
+        XCTAssertEqual(rendered("*[a*](https://x.y)").emphasis, "", "링크 안팎의 구분자는 짝이 아니다")
+        XCTAssertEqual(rendered("**[굵은 링크](https://x.y)**").strong, "굵은 링크", "링크를 감싼 굵게")
+    }
+
+    func testEscapedAndUnmatchedDelimitersStayText() {
+        XCTAssertEqual(rendered("\\*글자\\*").emphasis, "")
+        XCTAssertEqual(rendered("**6.1.1 벤토 빌드하기*** Building").text, "6.1.1 벤토 빌드하기* Building",
+                       "남는 별표 하나는 글자(CommonMark와 같다)")
+        XCTAssertEqual(rendered("~~취소~~와 ~하나~").text, "취소와 ~하나~")
+    }
+
+    @MainActor
+    func testBoldItalicIsDrawnBothWays() throws {
+        let storage = NSTextStorage(string: "***굵고 기울임***\n")
+        MarkdownStyler().style(storage, caretLine: nil, search: MarkdownStyler.SearchState())
+        let font = try XCTUnwrap(storage.attribute(.font, at: 4, effectiveRange: nil) as? NSFont)
+        XCTAssertTrue(NSFontManager.shared.traits(of: font).contains(.boldFontMask))
+        XCTAssertNotNil(storage.attribute(.obliqueness, at: 4, effectiveRange: nil), "한글은 강제로 기울인다")
+        XCTAssertNotNil(storage.attribute(.mdHiddenMarker, at: 0, effectiveRange: nil))
+        XCTAssertNotNil(storage.attribute(.mdHiddenMarker, at: 2, effectiveRange: nil))
+    }
+
     @MainActor
     func testStrongAroundCodeIsDrawnBold() throws {
         let storage = NSTextStorage(string: "**문서 `x` 하나**\n")
