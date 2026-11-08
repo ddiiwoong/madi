@@ -16,10 +16,11 @@
 
 ```sh
 make build       # 빌드. 로그는 .build/build.log
-make test        # 테스트 598개. 로그는 .build/test.log
+make test        # 테스트. 로그는 .build/test.log
 make run         # 빌드 후 실행
 make core-only   # Core가 Foundation만으로 서는지 (아래 참고)
 make universal   # Release, arm64 + x86_64, lipo로 검사까지
+make release     # 배포용 DMG · ZIP — 서명 · 공증까지 (docs/releasing.md)
 make public-check  # 공개 전 점검 — 추적 파일과 모든 커밋 이력 (아래 참고)
 make l10n-check    # 영어 표가 소스의 화면 글자와 맞는지 (아래 참고)
 make screenshots   # README 그림을 실제 편집기로 다시 그림 (docs/images/)
@@ -70,9 +71,10 @@ make open-log    # 마지막 빌드 로그 꼬리
 
 ## 서명
 
-기본값은 ad-hoc(`CODE_SIGN_IDENTITY=-`)입니다. 직접 빌드한 Mac에서는 그대로 돌지만 다른
-Mac에 건네면 Gatekeeper가 막습니다. 배포하려면 Developer ID 서명과 공증이 따로 필요하고,
-아직 그 길을 만들지 않았습니다.
+`make build` · `make test`는 ad-hoc(`CODE_SIGN_IDENTITY=-`)으로 서명합니다. 직접 빌드한 Mac에서는
+그대로 돌지만 다른 Mac에 건네면 Gatekeeper가 막습니다. 남에게 줄 것은 `make release`로 만듭니다.
+Developer ID 서명, 강화된 런타임, 공증, 스테이플까지 하고 DMG와 ZIP을 내놓습니다.
+한 번만 할 일(공증 자격 증명)과 순서는 [릴리스하기](releasing.md)에 있습니다.
 
 ## 빌드가 멈추면
 

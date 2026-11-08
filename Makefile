@@ -153,6 +153,14 @@ screenshots:
 		scripts/screenshots/main.swift
 	@$(BUILD)/screenshots/render docs/images/sample.md docs/images
 
+# 릴리스 — 검사 → 유니버설 Release 빌드 → Developer ID 서명 → DMG · ZIP → 공증 → 스테이플 → Gatekeeper 확인.
+# 판은 project.yml의 MARKETING_VERSION, 바뀐 점은 CHANGELOG.md의 그 판 절. 태그 · 올리기는 하지 않는다.
+# 순서와 한 번만 할 일(공증 자격 증명)은 docs/releasing.md. 공증 없이 시험하려면 NOTARIZE=0.
+NOTARIZE ?= 1
+.PHONY: release
+release:
+	@NOTARIZE=$(NOTARIZE) bash scripts/release.sh
+
 clean:
 	rm -rf $(BUILD) $(PROJECT)
 
