@@ -19,6 +19,16 @@ final class MarkdownDocument: NSDocument {
 
     override class var autosavesInPlace: Bool { true }
 
+    /// 파일 자리가 바뀌었다(처음 저장, 다른 이름으로 저장, Finder에서 옮김). 창이 편집기에 알리고, 처음 저장이면 저장하지
+    /// 않았을 때 넣은 그림을 문서 옆으로 옮긴다.
+    override var fileURL: URL? {
+        didSet {
+            guard fileURL != oldValue else { return }
+            let old = oldValue
+            MainActor.assumeIsolated { windowController?.documentFileURLDidChange(from: old) }
+        }
+    }
+
     static let supportedReadableTypes = [
         "net.daringfireball.markdown", "public.plain-text", "public.text",
     ]

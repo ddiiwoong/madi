@@ -16,8 +16,12 @@ public final class MarkdownTextView: DecoratedTextView {
     /// true를 돌려주면 처리한 것이다 — 평소의 붙여넣기(파일 이름이나 경로를 글로)를 하지 않는다.
     var imageInsertHandler: ((_ pasteboard: NSPasteboard, _ range: NSRange?) -> Bool)?
 
+    /// 붙여넣기가 그림을 찾는 대지. 시험이 바꾼다 — 사용자의 대지를 덮지 않고 `⌘V`와 같은 길(`paste(_:)`)을 지나게.
+    var pastePasteboard: NSPasteboard = .general
+
     public override func paste(_ sender: Any?) {
-        if let imageInsertHandler, ImagePasteboard.holdsImages(.general), imageInsertHandler(.general, nil) {
+        if let imageInsertHandler, ImagePasteboard.holdsImages(pastePasteboard),
+           imageInsertHandler(pastePasteboard, nil) {
             return
         }
         super.paste(sender)

@@ -186,6 +186,8 @@ final class DocumentWindowController: NSWindowController {
         // 접어 둔 사람은 다음 문서도 접힌 채 본다(`collapsesFrontMatter`).
         frontMatterCard.setCollapsed(preferences.collapsesFrontMatter)
         editor.headerView = frontMatterCard
+        // 저장하지 않은 문서에 붙여 넣은 그림을 잠시 둘 곳 — 처음 저장할 때 문서 옆으로 옮긴다.
+        editor.imageStagingFolder = ImageImporter.defaultStagingFolder
         frontMatterCard.onToggle = { [weak self] collapsed in
             self?.preferences.collapsesFrontMatter = collapsed
             self?.editor.headerDidChange()
@@ -351,6 +353,18 @@ final class DocumentWindowController: NSWindowController {
         sideBySide?.sourceTextDidChange()
         AppLog.info(String(localized: "문서를 열었습니다: \(markdownDocument?.displayName ?? String(localized: "제목 없음"))"),
                     detail: String(localized: "\(markdown.count)자"))
+    }
+
+    /// 문서의 파일 자리가 바뀌었다. 편집기가 그림의 상대 경로를 새 자리로 풀게 하고, **처음 저장**이면 저장하지 않았을 때
+    /// 붙여 넣은 그림을 문서 옆(`문서 이름.assets`)으로 옮기고 링크를 고친다. 저장하는 도중이라 다음 차례에 한다 — 고친
+    /// 글은 자동 저장이 곧 다시 쓴다.
+    func documentFileURLDidChange(from old: URL?) {
+        let new = markdownDocument?.fileURL
+        editor.documentURL = new
+        guard old == nil, new != nil else { return }
+        DispatchQueue.main.async { [weak self] in
+            self?.editor.adoptStagedImages()
+        }
     }
 
     func documentContentDidChange() {

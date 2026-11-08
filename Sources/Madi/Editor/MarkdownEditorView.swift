@@ -34,6 +34,39 @@ public final class MarkdownEditorView: NSView {
     private(set) var codeCopyButton: CodeCopyButtonView?
     /// 복사 단추가 쓰는 대지. 테스트가 바꾼다 — 사용자의 대지를 덮지 않게.
     var codePasteboard: NSPasteboard = .general
+
+    /// 저장하지 않은 문서에 붙여 넣은 그림을 잠시 두는 폴더. 문서 창이 정한다 — nil이면(나란히 보기의 번역본 등) 저장하지
+    /// 않은 문서에는 그림을 넣지 않고 먼저 저장하라고 알린다.
+    var imageStagingFolder: URL?
+
+    /// 저장하지 않은 문서에 넣어 둔 그림을 막 저장한 문서 옆으로 옮기고 링크를 고친다 — 실행 취소 한 번(`그림 옮기기`).
+    /// 옮긴 것이 있으면 true.
+    @discardableResult
+    func adoptStagedImages() -> Bool {
+        guard let documentURL, let imageStagingFolder else { return false }
+        do {
+            guard let edit = try ImageImporter.adoptionEdit(in: storage.string as NSString, lines: currentLines(),
+                                                            stagingRoot: imageStagingFolder, document: documentURL)
+            else { return false }
+            let selection = textView.selectedRange()
+            let origin = clipView.bounds.origin
+            guard perform(edit, actionName: String(localized: "그림 옮기기")) else { return false }
+            // 읽던 자리도 그대로 — `perform`은 고친 곳을 보이게 굴린다.
+            clipView.scroll(to: origin)
+            scrollView.reflectScrolledClipView(clipView)
+            // 캐럿은 그대로 — 저장했을 뿐인데 캐럿이 뛰면 안 된다. 글이 짧아진 만큼 뒤쪽이면 당긴다.
+            let shift = (edit.replacement as NSString).length - edit.range.length
+            let location = selection.location >= NSMaxRange(edit.range) ? selection.location + shift
+                : min(selection.location, edit.range.location)
+            textView.setSelectedRange(NSRange(location: max(0, min(location, storage.length)), length: 0))
+            AppLog.info(String(localized: "저장하지 않았을 때 넣은 그림을 문서 옆으로 옮겼습니다"),
+                        detail: ImageAttachment.assetsFolder(for: documentURL).path)
+            return true
+        } catch {
+            AppLog.error(String(localized: "그림을 문서 옆으로 옮기지 못했습니다"), detail: error.localizedDescription)
+            return false
+        }
+    }
     /// 펜스 블록들 — 글이 바뀔 때만 다시 센다(`blockRevision`).
     private var codeCopyBlocksCache: (revision: Int, blocks: [CodeBlockCopy.Block])?
     /// 마지막으로 본 마우스 자리(텍스트 뷰 좌표). 굴리거나 다시 칠하면 그 자리로 다시 잰다 — 마우스가 그대로 있어도
@@ -1124,12 +1157,14 @@ extension MarkdownEditorView {
         let files = ImagePasteboard.imageFiles(in: pasteboard)
         let data = files.isEmpty ? ImagePasteboard.pngData(in: pasteboard) : nil
         guard !files.isEmpty || data != nil else { return false }
-        guard let documentURL else {
+        // 저장하지 않은 문서는 그림을 잠시 두는 폴더에 넣고 절대 경로로 적는다 — 처음 저장할 때 창이 문서 옆으로 옮긴다
+        // (사용자 — "이미지를 복붙하면 자동으로 링크 및 첨부되도록"). 전에는 먼저 저장하라고 알리고 넣지 않았다.
+        guard documentURL != nil || imageStagingFolder != nil else {
             presentImageAlert(String(localized: "그림을 넣으려면 먼저 문서를 저장하세요"),
                               detail: String(localized: "그림은 문서 옆의 ‘문서 이름.assets’ 폴더에 복사됩니다."))
             return true
         }
-        let importer = ImageImporter(documentURL: documentURL)
+        let importer = ImageImporter(documentURL: documentURL, stagingFolder: imageStagingFolder)
         var lines: [String] = []
         do {
             for file in files { lines.append(try importer.importFile(file)) }

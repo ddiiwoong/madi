@@ -199,6 +199,117 @@ final class ImageInsertTests: XCTestCase {
         XCTAssertNotNil(view.window?.attachedSheet, "저장하라고 알린다")
     }
 
+    // MARK: 브라우저의 '이미지 복사' — 그림 앞의 글이 그림 자신뿐이면 그림
+
+    func testBrowserImageCopyWithHTMLOrAddressAheadIsAnImage() throws {
+        let data = try png()
+        let document = folder.appendingPathComponent("노트.md")
+        let date = Date(timeIntervalSince1970: 1_793_000_000)
+        for (type, value) in [(NSPasteboard.PasteboardType.html,
+                               "<meta charset='utf-8'><img src=\"https://example.com/a.png\" alt=\"\"/>"),
+                              (.string, "https://example.com/images/a.png")] {
+            let view = editor("", document: document)
+            let board = pasteboard { board in
+                board.declareTypes([type, .png], owner: nil)
+                board.setString(value, forType: type)
+                board.setData(data, forType: .png)
+            }
+            XCTAssertTrue(view.insertImages(from: board, replacing: nil, date: date), "\(type.rawValue) 앞")
+            XCTAssertTrue(view.markdown.hasPrefix("![image-"), view.markdown)
+            XCTAssertTrue(view.markdown.contains("](노트.assets/image-"), view.markdown)
+        }
+    }
+
+    func testRealTextAheadOfTheImageStaysText() throws {
+        let data = try png()
+        let view = editor("", document: folder.appendingPathComponent("노트.md"))
+        for (type, value) in [(NSPasteboard.PasteboardType.html, "<p>설명 <img src=\"a.png\"></p>"),
+                              (.string, "그림 설명 https://example.com/a.png"),
+                              (.rtf, "{\\rtf1 x}")] {
+            let board = pasteboard { board in
+                board.declareTypes([type, .png], owner: nil)
+                board.setString(value, forType: type)
+                board.setData(data, forType: .png)
+            }
+            XCTAssertFalse(view.insertImages(from: board, replacing: nil), "\(type.rawValue): 글이 있으면 글")
+        }
+        XCTAssertFalse(ImagePasteboard.htmlHasText("<meta charset='utf-8'><img src=\"x\">&nbsp;"))
+        XCTAssertTrue(ImagePasteboard.isJustAnAddress(""))
+        XCTAssertFalse(ImagePasteboard.isJustAnAddress("a.png"), "주소가 아닌 글은 글")
+    }
+
+    // MARK: 저장하지 않은 문서 — 잠시 두었다가 처음 저장할 때 문서 옆으로
+
+    /// 저장하지 않은 문서에 붙여 넣은 그림은 잠시 두는 폴더에 들어가고, 절대 경로 링크로 바로 보인다.
+    func testUnsavedDocumentStagesThePastedImage() throws {
+        let staging = folder.appendingPathComponent("Pasted Images", isDirectory: true)
+        let view = editor("글\n", document: nil)
+        view.imageStagingFolder = staging
+        let data = try png()
+        let date = Date(timeIntervalSince1970: 1_793_000_000)
+        XCTAssertTrue(view.insertImages(from: pasteboard { $0.setData(data, forType: .png) },
+                                        replacing: NSRange(location: 2, length: 0), date: date))
+        let name = ImageAttachment.pastedImageName(date: date)
+        let staged = staging.appendingPathComponent(name)
+        XCTAssertEqual(try Data(contentsOf: staged), data)
+        XCTAssertEqual(view.markdown, "글\n![\((name as NSString).deletingPathExtension)](\(ImageAttachment.encodedPath(staged.path)))")
+        XCTAssertNil(view.window?.attachedSheet, "저장하라고 막지 않는다")
+        let link = try XCTUnwrap(view.markdown.components(separatedBy: "](").last?.dropLast())
+        XCTAssertEqual(ImageReference.localURL(for: String(link), relativeTo: nil)?.path, staged.standardizedFileURL.path,
+                       "절대 경로라 저장하기 전에도 그림이 보인다")
+    }
+
+    /// `⌘V`가 부르는 길 그대로(`paste(_:)`) — 저장하지 않은 문서에 화면 캡처를 붙여 넣으면 그림 줄이 들어간다.
+    /// 앱에서는 확인용 사본에 보낸 `⌘V`가 닿지 않아(다른 단축키도 같았다) 이 길을 시험으로 본다.
+    func testCommandVPathPastesAScreenshotIntoAnUnsavedDocument() throws {
+        let staging = folder.appendingPathComponent("Pasted Images", isDirectory: true)
+        let view = editor("", document: nil)
+        view.imageStagingFolder = staging
+        let data = try png()
+        view.textView.pastePasteboard = pasteboard { $0.setData(data, forType: .png) }
+        view.textView.paste(nil)
+        XCTAssertTrue(view.markdown.hasPrefix("![image-"), view.markdown)
+        XCTAssertTrue(view.markdown.contains(ImageAttachment.encodedPath(staging.path)), view.markdown)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: staging.path).count, 1)
+    }
+
+    /// 처음 저장하면 잠시 둔 그림을 문서 옆으로 복사하고 링크를 상대 경로로 고친다 — 실행 취소 한 번. 다른 링크와 코드
+    /// 블록 안은 그대로.
+    func testFirstSaveAdoptsStagedImagesNextToTheDocument() throws {
+        let staging = folder.appendingPathComponent("Pasted Images", isDirectory: true)
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        let staged = staging.appendingPathComponent("image-1.png")
+        try png().write(to: staged)
+        let other = folder.appendingPathComponent("다른 곳/b.png")
+        try FileManager.default.createDirectory(at: other.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try png().write(to: other)
+        let stagedLink = ImageAttachment.encodedPath(staged.path)
+        let source = "# 제목\n\n![image-1](\(stagedLink))\n\n![b](\(ImageAttachment.encodedPath(other.path)))\n\n"
+            + "```\n![image-1](\(stagedLink))\n```\n끝"
+        let view = editor(source, document: nil)
+        view.imageStagingFolder = staging
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        view.undoManagerOverride = undo
+
+        let documentFolder = folder.appendingPathComponent("글", isDirectory: true)
+        try FileManager.default.createDirectory(at: documentFolder, withIntermediateDirectories: true)
+        view.documentURL = documentFolder.appendingPathComponent("새 노트.md")
+        undo.beginUndoGrouping()
+        XCTAssertTrue(view.adoptStagedImages())
+        undo.endUndoGrouping()
+
+        XCTAssertTrue(view.markdown.contains("![image-1](새%20노트.assets/image-1.png)"), view.markdown)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: documentFolder.appendingPathComponent("새 노트.assets/image-1.png").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: staged.path), "옮기지 않고 복사 — 실행 취소해도 깨지지 않는다")
+        XCTAssertTrue(view.markdown.contains("](\(ImageAttachment.encodedPath(other.path)))"), "임시 폴더 밖의 링크는 그대로")
+        XCTAssertTrue(view.markdown.contains("```\n![image-1](\(stagedLink))\n```"), "코드 블록 안은 글이다")
+        XCTAssertEqual(undo.undoActionName, "그림 옮기기")
+        XCTAssertFalse(view.adoptStagedImages(), "다시 하면 고칠 것이 없다")
+        undo.undo()
+        XCTAssertEqual(view.markdown, source, "실행 취소 한 번에 돌아간다")
+    }
+
     // MARK: 끌어놓기 — 텍스트 뷰의 끌어놓기 길
 
     /// Finder에서 끌어 온 것처럼 보이는 끌기. 텍스트 뷰가 묻는 것만 답한다.

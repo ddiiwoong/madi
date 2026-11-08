@@ -760,6 +760,38 @@ final class DocumentWindowControllerTests: XCTestCase {
         XCTAssertEqual(controller.editor.clipView.bounds.origin.y, 0, accuracy: 0.5, "크기가 바뀌어도 맨 위에 있다")
     }
 
+    /// 저장하지 않은 문서에 그림을 붙여 넣고 처음 저장하면 그 그림이 문서 옆으로 가고, 문서의 글도 상대 경로가 된다.
+    /// 편집기도 새 자리로 그림을 푼다 — 전에는 저장한 뒤에도 편집기가 문서 자리를 몰라 상대 경로 그림을 못 풀었다.
+    func testFirstSaveMovesPastedImagesNextToTheDocument() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("madi-save-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        // 임시 폴더는 문서 폴더 밖이다(앱에서는 Application Support) — 안이면 복사하지 않고 그 자리를 가리킨다.
+        let folder = root.appendingPathComponent("문서", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let staging = root.appendingPathComponent("staging", isDirectory: true)
+        let (document, controller) = open("# 새 글\n\n")
+        controller.editor.imageStagingFolder = staging
+        let bitmap = try XCTUnwrap(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 2, pixelsHigh: 2, bitsPerSample: 8,
+                                                    samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                                    colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+        let board = NSPasteboard(name: NSPasteboard.Name("madi-test-\(UUID().uuidString)"))
+        defer { board.releaseGlobally() }
+        board.clearContents()
+        board.setData(try XCTUnwrap(bitmap.representation(using: .png, properties: [:])), forType: .png)
+        XCTAssertTrue(controller.editor.insertImages(from: board, replacing: nil))
+        XCTAssertTrue(document.markdown.contains(ImageAttachment.encodedPath(staging.path)), "먼저 임시 폴더를 가리킨다")
+
+        let saved = folder.appendingPathComponent("글.md")
+        document.fileURL = saved
+        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        XCTAssertEqual(controller.editor.documentURL, saved)
+        XCTAssertTrue(document.markdown.contains("](글.assets/image-"), document.markdown)
+        XCTAssertFalse(document.markdown.contains(staging.path))
+        let copied = try FileManager.default.contentsOfDirectory(atPath: folder.appendingPathComponent("글.assets").path)
+        XCTAssertEqual(copied.count, 1)
+        XCTAssertTrue(document.isDocumentEdited, "고친 글은 자동 저장이 다시 쓴다")
+    }
+
     private func card(in controller: DocumentWindowController) throws -> FrontMatterCardView {
         try XCTUnwrap(controller.editor.textView.subviews.compactMap { $0 as? FrontMatterCardView }.first)
     }
