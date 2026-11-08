@@ -19,6 +19,24 @@ final class MarkdownDocument: NSDocument {
 
     override class var autosavesInPlace: Bool { true }
 
+    /// 자동 저장을 할지. 시험 과정만 끈다(`MadiTestsSetup` — 시험 번들의 첫 코드).
+    ///
+    /// 왜: 시험이 만든 이름 없는 문서를 고치면 약 15초 뒤 AppKit이 사용자의 `~/Library/Autosave Information`에
+    /// `저장하지 않은 xctest 문서 N.md`로 써 두었다(쌓인 것 106개, 2026-11-08 하루에 74개). 시험은 창을 걷을 뿐 문서를
+    /// 닫지 않으므로 지워지지도 않았다. `autosavesInPlace`를 끄면 제목 막대 · 저장 동작이 달라져 시험이 앱과 어긋나므로,
+    /// 자동 저장 한 길만 막는다.
+    static var autosavingEnabled = true
+
+    override func autosave(withImplicitCancellability autosavingIsImplicitlyCancellable: Bool,
+                           completionHandler: @escaping @Sendable (Error?) -> Void) {
+        guard Self.autosavingEnabled else {
+            completionHandler(nil)
+            return
+        }
+        super.autosave(withImplicitCancellability: autosavingIsImplicitlyCancellable,
+                       completionHandler: completionHandler)
+    }
+
     /// 파일 자리가 바뀌었다(처음 저장, 다른 이름으로 저장, Finder에서 옮김). 창이 편집기에 알리고, 처음 저장이면 저장하지
     /// 않았을 때 넣은 그림을 문서 옆으로 옮긴다.
     override var fileURL: URL? {

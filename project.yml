@@ -88,6 +88,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.jinwoong.md.tests
         GENERATE_INFOPLIST_FILE: "YES"
+        # 시험 번들의 첫 코드 — 문서 자동 저장을 끈다(Tests/MadiTests/MadiTestsSetup.swift).
+        INFOPLIST_KEY_NSPrincipalClass: MadiTestsSetup
 
 schemes:
   Madi:

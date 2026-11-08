@@ -792,6 +792,24 @@ final class DocumentWindowControllerTests: XCTestCase {
         XCTAssertTrue(document.isDocumentEdited, "고친 글은 자동 저장이 다시 쓴다")
     }
 
+    /// 시험 과정은 문서를 자동 저장하지 않는다 — 켜 두면 고친 이름 없는 문서가 사용자의 `~/Library/Autosave
+    /// Information`에 `저장하지 않은 xctest 문서 N.md`로 쌓였다(106개). 앱은 그대로 자동 저장한다(기본값이 켜짐).
+    func testTestsNeverAutosaveIntoTheUsersLibrary() throws {
+        XCTAssertFalse(MarkdownDocument.autosavingEnabled, "시험 번들의 첫 코드(MadiTestsSetup)가 끈다")
+        let (document, controller) = open("# 제목\n\n본문\n")
+        document.editorDidChange(markdown: "# 제목\n\n고친 본문\n")
+        XCTAssertTrue(document.isDocumentEdited)
+        let finished = expectation(description: "자동 저장이 끝났다")
+        document.autosave(withImplicitCancellability: false) { error in
+            XCTAssertNil(error)
+            finished.fulfill()
+        }
+        wait(for: [finished], timeout: 5)
+        XCTAssertNil(document.autosavedContentsFileURL, "어디에도 쓰지 않았다")
+        XCTAssertTrue(document.isDocumentEdited, "고친 표시는 그대로")
+        controller.editor.markdown = controller.editor.markdown
+    }
+
     private func card(in controller: DocumentWindowController) throws -> FrontMatterCardView {
         try XCTUnwrap(controller.editor.textView.subviews.compactMap { $0 as? FrontMatterCardView }.first)
     }
