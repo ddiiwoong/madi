@@ -98,16 +98,24 @@ public enum ImageAttachment {
     }
 
     /// 그림 줄들을 `range` 자리에 넣는 편집. **그림은 자기 줄이어야 보이므로**(글 사이에 끼인
-    /// 그림은 원문으로 남는다) 앞뒤가 글이면 줄을 바꿔 준다. 캐럿은 마지막 그림 줄의 끝으로.
+    /// 그림은 원문으로 남는다) 앞뒤가 글이면 줄을 바꿔 준다. 캐럿은 **그림 다음 줄의 처음으로** — 캐럿이 있는 줄은
+    /// 원문으로 보이므로, 그림 줄에 두면 넣자마자 링크만 보이고 그림이 안 보였다(사용자 — "사진 링크만 나오고 화면이
+    /// 안 나와"). 문서 끝이면 빈 줄을 하나 둔다.
     public static func insertion(_ lines: [String], replacing range: NSRange, in text: NSString) -> TextEdit {
         let start = range.location
         let end = NSMaxRange(range)
         func isBreak(_ unit: unichar) -> Bool { unit == 10 || unit == 13 }
         let before = start > 0 && !isBreak(text.character(at: start - 1)) ? "\n" : ""
-        let after = end < text.length && !isBreak(text.character(at: end)) ? "\n" : ""
+        let after = end < text.length && isBreak(text.character(at: end)) ? "" : "\n"
         let body = lines.joined(separator: "\n")
         let replacement = before + body + after
-        let caret = start + ((before + body) as NSString).length
+        // 뒤에 줄바꿈이 이미 있으면 그것을 건너 다음 줄로(`\r\n`이면 두 글자).
+        var skip = 0
+        if after.isEmpty {
+            skip = 1
+            if text.character(at: end) == 13, end + 1 < text.length, text.character(at: end + 1) == 10 { skip = 2 }
+        }
+        let caret = start + (replacement as NSString).length + skip
         return TextEdit(range: range, replacement: replacement, selection: NSRange(location: caret, length: 0))
     }
 }

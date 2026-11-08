@@ -56,7 +56,8 @@ final class ImageAttachmentTests: XCTestCase {
                                              replacing: NSRange(location: 2, length: 0), in: text)
         XCTAssertEqual(edit.applied(to: text as String), "앞글\n![a](a.png)\n![b](b.png)\n뒤글",
                        "글 사이에 끼인 그림은 그려지지 않는다 — 줄을 바꿔 준다")
-        XCTAssertEqual(edit.selection.location, ("앞글\n![a](a.png)\n![b](b.png)" as NSString).length)
+        XCTAssertEqual(edit.selection.location, ("앞글\n![a](a.png)\n![b](b.png)\n" as NSString).length,
+                       "캐럿은 그림 다음 줄의 처음 — 그림 줄에 두면 원문으로 보여 그림이 안 보인다")
     }
 
     func testInsertionOnAnEmptyLineAddsNoBreaks() {
@@ -132,7 +133,7 @@ final class ImageInsertTests: XCTestCase {
         let view = editor("위\n", document: document)
         let board = pasteboard { $0.writeObjects([picture as NSURL]) }
         XCTAssertTrue(view.insertImages(from: board, replacing: NSRange(location: 2, length: 0)))
-        XCTAssertEqual(view.markdown, "위\n![사진 1](노트.assets/사진%201.png)")
+        XCTAssertEqual(view.markdown, "위\n![사진 1](노트.assets/사진%201.png)\n", "문서 끝이면 빈 줄을 하나 둔다")
         let copied = documentFolder.appendingPathComponent("노트.assets/사진 1.png")
         XCTAssertTrue(FileManager.default.fileExists(atPath: copied.path))
 
@@ -150,7 +151,7 @@ final class ImageInsertTests: XCTestCase {
         try png().write(to: picture)
         let view = editor("", document: document)
         XCTAssertTrue(view.insertImages(from: pasteboard { $0.writeObjects([picture as NSURL]) }, replacing: nil))
-        XCTAssertEqual(view.markdown, "![a](그림/a.png)")
+        XCTAssertEqual(view.markdown, "![a](그림/a.png)\n")
         XCTAssertFalse(FileManager.default.fileExists(atPath: folder.appendingPathComponent("노트.assets").path))
     }
 
@@ -162,7 +163,7 @@ final class ImageInsertTests: XCTestCase {
         let date = Date(timeIntervalSince1970: 1_793_000_000)
         XCTAssertTrue(view.insertImages(from: board, replacing: nil, date: date))
         let name = ImageAttachment.pastedImageName(date: date)
-        XCTAssertEqual(view.markdown, "![\((name as NSString).deletingPathExtension)](노트.assets/\(name))")
+        XCTAssertEqual(view.markdown, "![\((name as NSString).deletingPathExtension)](노트.assets/\(name))\n")
         XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent("노트.assets/\(name)")), data)
     }
 
@@ -252,11 +253,40 @@ final class ImageInsertTests: XCTestCase {
         let name = ImageAttachment.pastedImageName(date: date)
         let staged = staging.appendingPathComponent(name)
         XCTAssertEqual(try Data(contentsOf: staged), data)
-        XCTAssertEqual(view.markdown, "글\n![\((name as NSString).deletingPathExtension)](\(ImageAttachment.encodedPath(staged.path)))")
+        XCTAssertEqual(view.markdown, "글\n![\((name as NSString).deletingPathExtension)](\(ImageAttachment.encodedPath(staged.path)))\n")
         XCTAssertNil(view.window?.attachedSheet, "저장하라고 막지 않는다")
-        let link = try XCTUnwrap(view.markdown.components(separatedBy: "](").last?.dropLast())
+        let link = try XCTUnwrap(view.markdown.components(separatedBy: "](").last?.dropLast(2))
         XCTAssertEqual(ImageReference.localURL(for: String(link), relativeTo: nil)?.path, staged.standardizedFileURL.path,
                        "절대 경로라 저장하기 전에도 그림이 보인다")
+    }
+
+    /// 넣자마자 그림이 보인다 — 캐럿이 그림 다음 줄로 가서 그림 줄이 원문이 아니다. 글 가운데에 넣어도 같다.
+    func testPastedImageShowsRightAway() throws {
+        let staging = folder.appendingPathComponent("Pasted Images", isDirectory: true)
+        for (source, location) in [("", 0), ("앞 문단\n뒤 문단\n", 5)] {
+            let view = editor(source, document: nil)
+            view.imageStagingFolder = staging
+            let data = try png()
+            XCTAssertTrue(view.insertImages(from: pasteboard { $0.setData(data, forType: .png) },
+                                            replacing: NSRange(location: location, length: 0)))
+            let text = view.markdown as NSString
+            let imageLine = text.lineRange(for: text.range(of: "![image-"))
+            XCTAssertFalse(NSLocationInRange(view.textView.selectedRange().location, imageLine),
+                           "캐럿이 그림 줄에 있지 않다: \(view.markdown.debugDescription)")
+            XCTAssertEqual(view.textView.imagePlacements.count, 1, "그림이 보인다: \(view.markdown.debugDescription)")
+        }
+    }
+
+    /// 그림 줄 끝의 `\`(줄바꿈 표시)는 그림 줄로 본다 — 그 `\`도 숨긴다.
+    func testImageLineWithATrailingBackslashStillShows() throws {
+        let picture = folder.appendingPathComponent("a.png")
+        try png().write(to: picture)
+        let view = editor("![a](\(picture.path))\\\n\n끝\n", document: nil)
+        view.textView.setSelectedRange(NSRange(location: (view.markdown as NSString).length, length: 0))
+        view.markdown = view.markdown
+        XCTAssertEqual(view.textView.imagePlacements.count, 1)
+        let slash = (view.markdown as NSString).range(of: ")\\").location + 1
+        XCTAssertNotNil(view.textView.textStorage?.attribute(.mdHiddenMarker, at: slash, effectiveRange: nil))
     }
 
     /// `⌘V`가 부르는 길 그대로(`paste(_:)`) — 저장하지 않은 문서에 화면 캡처를 붙여 넣으면 그림 줄이 들어간다.
@@ -368,7 +398,7 @@ final class ImageInsertTests: XCTestCase {
         XCTAssertTrue(view.textView.acceptableDragTypes.contains(.fileURL), "파일을 받겠다고 알린다")
         XCTAssertEqual(view.textView.dragOperation(for: drag, type: .fileURL), .copy, "끄는 동안 '복사' 표시")
         XCTAssertTrue(view.textView.performDragOperation(drag))
-        XCTAssertEqual(view.markdown, "위 문단\n![밖에 있는 사진](노트.assets/밖에%20있는%20사진.png)")
+        XCTAssertEqual(view.markdown, "위 문단\n![밖에 있는 사진](노트.assets/밖에%20있는%20사진.png)\n")
         XCTAssertTrue(FileManager.default.fileExists(
             atPath: folder.appendingPathComponent("글/노트.assets/밖에 있는 사진.png").path))
     }

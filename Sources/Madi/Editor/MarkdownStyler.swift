@@ -454,7 +454,14 @@ public final class MarkdownStyler {
             guard tokens.count == 1, case let .image(raw) = tokens[0].kind else { continue }
             let token = tokens[0]
             let trimmed = trimmedRange(line.contentRange, in: text)
-            guard NSEqualRanges(token.range, trimmed) else { continue }
+            // 끝의 `\` 하나(CommonMark의 줄바꿈 표시)는 그림 줄로 본다 — `![a](a.png)\`가 링크 글로 남았다(사용자 문서에서
+            // 봄: "사진 링크만 나오고 화면이 안 나와"). 그 `\`도 그림과 함께 숨긴다.
+            var hidden = token.range
+            if !NSEqualRanges(token.range, trimmed) {
+                guard token.range.location == trimmed.location, NSMaxRange(trimmed) == NSMaxRange(token.range) + 1,
+                      text.character(at: NSMaxRange(token.range)) == 0x5C else { continue }
+                hidden = trimmed
+            }
 
             // 로컬이 먼저다. 못 풀면 원격을 묻는데, 저장소가 꺼져 있으면 nil을
             // 돌려주므로 **게이트는 한 곳**(InlineImageStore.loadsRemote)이다.
@@ -480,7 +487,7 @@ public final class MarkdownStyler {
 
             // 글자를 모두 숨긴다 — 마커만이 아니라 `alt`와 경로까지. 그림이 보이는
             // 자리에 원문이 함께 보일 이유가 없다.
-            hide(token.range, in: storage)
+            hide(hidden, in: storage)
 
             let style = NSMutableParagraphStyle()
             style.lineSpacing = theme.lineSpacing
