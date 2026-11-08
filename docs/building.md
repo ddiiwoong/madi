@@ -24,6 +24,7 @@ make release     # 배포용 DMG · ZIP — 서명 · 공증까지 (docs/releasi
 make public-check  # 공개 전 점검 — 추적 파일과 모든 커밋 이력 (아래 참고)
 make l10n-check    # 영어 표가 소스의 화면 글자와 맞는지 (아래 참고)
 make screenshots   # README 그림을 실제 편집기로 다시 그림 (docs/images/)
+make icon          # 앱 아이콘을 다시 그림 (scripts/icon → Sources/Madi/Resources/AppIcon.icns)
 make clean       # .build와 생성된 .xcodeproj 삭제
 make open-log    # 마지막 빌드 로그 꼬리
 ```

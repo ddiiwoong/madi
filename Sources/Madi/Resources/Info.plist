@@ -16,6 +16,8 @@
 	     한 이름을 두 글자로 쓴 것이고 두 개의 이름이 아니다. -->
 	<key>CFBundleDisplayName</key>
 	<string>마디</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

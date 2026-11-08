@@ -130,7 +130,8 @@ ALLOW_DIRTY=1 SKIP_CHECKS=1 NOTARIZE=0 bash scripts/release.sh   # 고치는 중
 - **커밋 이력.** 정리했습니다(2026-11-09). 소스는 공개 저장소 `ddiiwoong/madi`에 두고 Releases도 거기에
   올립니다. 공개 뒤에도 `make public-check`(이력 포함)가 통과해야 합니다. 걸리면 그 커밋을 올리기 전에 고칩니다.
   한 번 올린 이력은 되돌릴 수 없습니다.
-- **앱 아이콘.** 아직 없어서 Finder와 Dock에 기본 아이콘이 나옵니다. 스크립트가 경고만 합니다.
+- **앱 아이콘.** `Sources/Madi/Resources/AppIcon.icns`입니다(`make icon`이 그린다). 0.1.0에는 없었고
+  다음 판부터 들어갑니다. 빠지면 스크립트가 경고합니다.
 - **라이선스.** Mermaid 번들에 elkjs(EPL-2.0)가 들어 있습니다. EPL-2.0은 받는 사람에게 원본을 얻는 길을
   알리라고 해서, 스크립트가 릴리스 노트 끝에 '포함된 오픈 소스' 절을 붙입니다(글꼴 · 다이어그램 라이선스
   목록과 elkjs 원본 저장소로 가는 링크). 자세한 것은 `Sources/Madi/Resources/Diagrams/README.md`.

@@ -153,6 +153,16 @@ screenshots:
 		scripts/screenshots/main.swift
 	@$(BUILD)/screenshots/render docs/images/sample.md docs/images
 
+# 앱 아이콘 — scripts/icon/main.swift가 크기마다 따로 그리고 iconutil이 .icns로 묶는다.
+# 결과(Sources/Madi/Resources/AppIcon.icns)는 저장소에 둔다 — 빌드가 이 타깃에 기대지 않게.
+.PHONY: icon
+icon:
+	@mkdir -p $(BUILD)/icon
+	@swiftc -O -swift-version 6 -o $(BUILD)/icon/render scripts/icon/main.swift
+	@$(BUILD)/icon/render Sources/Madi/Resources/Fonts $(BUILD)/icon/AppIcon.iconset
+	@iconutil -c icns -o Sources/Madi/Resources/AppIcon.icns $(BUILD)/icon/AppIcon.iconset
+	@echo "icon: Sources/Madi/Resources/AppIcon.icns"
+
 # 릴리스 — 검사 → 유니버설 Release 빌드 → Developer ID 서명 → DMG · ZIP → 공증 → 스테이플 → Gatekeeper 확인.
 # 판은 project.yml의 MARKETING_VERSION, 바뀐 점은 CHANGELOG.md의 그 판 절. 태그 · 올리기는 하지 않는다.
 # 순서와 한 번만 할 일(공증 자격 증명)은 docs/releasing.md. 공증 없이 시험하려면 NOTARIZE=0.

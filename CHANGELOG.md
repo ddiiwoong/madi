@@ -6,6 +6,12 @@
 `make release`는 `project.yml`의 `MARKETING_VERSION`과 같은 판의 절(`## [x.y.z]`)이 여기 있어야
 만들고, 그 절을 그대로 릴리스 노트로 씁니다. 순서는 [릴리스하기](docs/releasing.md).
 
+## [Unreleased]
+
+### 바뀐 것
+
+- 앱 아이콘이 생겼습니다 — 남색 바탕 위 문서 한 장에 마크다운 제목 `# 마디`. 전에는 Finder와 Dock에 기본 아이콘이 나왔습니다.
+
 ## [0.1.0] - 2026-11-09
 
 첫 판입니다. macOS 14 이상, Apple 실리콘 · Intel.
