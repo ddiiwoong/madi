@@ -39,6 +39,9 @@
   - **돌려 본 것**(`NOTARIZE=0`): 아키텍처 x86_64 · arm64, Info.plist 0.1.0(92), 서명 runtime 0x10000 · 타임스탬프, DMG 6.8MB ·
     ZIP 6.2MB, 안의 앱 서명 그대로, `spctl` 둘 다 `Unnotarized Developer ID`(공증 전이라 맞다). 고친 것 하나: 릴리스 노트의
     `printf '- …'`를 printf가 옵션으로 읽었다. 거절하는 길 셋도 봤다(커밋 안 된 변경, 자격 증명 없음, 없는 프로필 이름).
+    커밋한 뒤 검사까지 끝까지(`make release NOTARIZE=0`): 89초, 시험 944개 통과. 그 전에 공개 점검이 616cda0 시험의
+    가짜 홈 경로(사용자 이름이 한 글자)를 잡아 고쳤다(`c2492d6`) — 두었으면 `make release`가 늘 검사에서 멈췄다.
+    이 문장에도 처음에는 그 경로를 그대로 적어 같은 점검에 걸렸다. 경로는 글로 풀어 쓴다.
   - **강화된 런타임에서 띄워 본 것**: Release 앱 사본을 다른 식별자로 바꿔 Developer ID · `--options runtime`으로 다시
     서명하고 `madi://`로 시험 문서를 열었다 — Mermaid · KaTeX(웹뷰), 앱에 든 글꼴(Pretendard · IBM Plex Mono), 문서 옆
     그림, 알림 상자 · 구문 강조가 모두 그대로였다. 사본은 띄운 뒤 등록 · 설정 · 창 상태까지 지웠다.
