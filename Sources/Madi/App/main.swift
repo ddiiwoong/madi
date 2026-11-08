@@ -61,6 +61,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             pendingLinks = []
             for link in links { urlRunner.handle(link) }
         }
+        // 오래된 임시 그림(저장하지 않은 문서에 붙여 넣은 것)을 휴지통으로 — 되살린 문서가 다 열린 뒤에.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in self?.cleanUpStagedImages() }
+    }
+
+    /// 열린 문서의 글은 여기(메인)서 모으고, 파일 읽기와 휴지통 넣기는 뒤에서.
+    private func cleanUpStagedImages() {
+        guard let staging = ImageImporter.defaultStagingFolder,
+              FileManager.default.fileExists(atPath: staging.path) else { return }
+        let controller = NSDocumentController.shared
+        let openTexts = controller.documents.compactMap { ($0 as? MarkdownDocument)?.markdown }
+        let recent = controller.recentDocumentURLs
+        let autosave = try? FileManager.default.url(for: .autosavedInformationDirectory, in: .userDomainMask,
+                                                    appropriateFor: nil, create: false)
+        DispatchQueue.global(qos: .utility).async {
+            let trashed = StagedImageJanitor.run(stagingFolder: staging, openTexts: openTexts, autosaveFolder: autosave,
+                                                 recentDocuments: recent, trash: StagedImageJanitor.moveToTrash)
+            guard !trashed.isEmpty else { return }
+            DispatchQueue.main.async {
+                AppLog.info(String(localized: "오래된 임시 그림 \(trashed.count)개를 휴지통으로 옮겼습니다"),
+                            detail: trashed.map(\.lastPathComponent).joined(separator: "\n"))
+            }
+        }
     }
 
     /// Open an untitled document on launch when nothing was restored, so the

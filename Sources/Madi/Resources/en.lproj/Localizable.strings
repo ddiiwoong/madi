@@ -275,6 +275,7 @@
 "그림 옮기기" = "Move Images Next to Document";
 "저장하지 않았을 때 넣은 그림을 문서 옆으로 옮겼습니다" = "Moved the images added before saving next to the document";
 "그림을 문서 옆으로 옮기지 못했습니다" = "Couldn’t move the images next to the document";
+"오래된 임시 그림 %lld개를 휴지통으로 옮겼습니다" = "Moved %lld old pasted images to the Trash";
 "그림 %lld개를 넣었습니다" = "Added %lld image(s)";
 
 /* ImageEmbedder.swift */
