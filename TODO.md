@@ -24,6 +24,19 @@
 
 ## 끝난 것
 
+- **0.1.1**(2026-11-09, 사용자 — "아이콘 넣어서 0.1.1 내 줘"). `make release` 149초(시험 971개, 커밋 `956a49d`, 빌드 101),
+  공증 두 번 `Accepted`, 아이콘 경고 없음. 태그 `v0.1.1`을 올리고 Release에 DMG(8.2MB) · ZIP(6.6MB) · `SHA256SUMS`.
+  `releases/latest`가 v0.1.1이고 자산마다 `digest`가 있다. 로그인 없이 받은 DMG가 체크섬과 맞고 격리 표시를 붙여도
+  Gatekeeper가 `Notarized Developer ID`로 받는다.
+  - **업데이트 길을 진짜 판으로**: Developer ID로 서명한 작은 실행 파일(판 0.0.9로 묻는다)이 v0.1.1을 받아 실제 팀으로
+    확인하고, 스크래치에 둔 0.1.0 Release 앱 자리에 바꿔 넣었다 — 바꾼 앱은 0.1.1 · 아이콘 있음 · `codesign --strict`
+    통과 · `Notarized Developer ID`. Release 0.1.1 사본(식별자만 바꿔 강화된 런타임으로 다시 서명)도 켤 때 저절로 알리고,
+    받고 풀기까지 하고 식별자에서 거절했다 — 강화된 런타임이 `ditto` · 네트워크를 막지 않는다.
+  - **GitHub의 받기 주소**: v0.1.1의 ZIP도 `releases/download/…`가 504를 줬다(DMG는 받혔다). API 주소로는 받혔고 빌드한
+    ZIP과 바이트가 같다. 앱은 API 주소로 대체하므로 업데이트에는 상관없지만, 릴리스 페이지에서 ZIP을 누르는 사람은
+    실패할 수 있다 — 다시 재 볼 것.
+  - Homebrew 탭의 `madi-0.1.0` 가지에 0.1.1 cask(`auto_updates true`)를 더했다. PR #2(제목은 아직 0.1.0)를 사람이 머지한다.
+
 - **업데이트**(2026-11-09, 사용자 — "업데이트 기능도 추가해 주고"). 사용자가 고른 것: Sparkle이 아니라 앱이 직접 받아
   바꿔 넣기(의존성 0개 그대로), 켤 때 하루 한 번 자동 확인(설정 ▸ 일반에서 끔, 기본 켜짐).
   - **차례**(`ReleaseFeed` · `ReleaseChecker` · `UpdateInstaller` · `UpdateController`): `releases/latest`를 묻는다 →
