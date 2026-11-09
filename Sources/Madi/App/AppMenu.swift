@@ -185,6 +185,10 @@ enum AppMenu {
         appMenu.addItem(withTitle: String(localized: "마디 정보"),
                         action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
                         keyEquivalent: "")
+        // 응답자 연쇄가 아니라 컨트롤러에 바로 보낸다 — 창이 하나도 없어도 확인할 수 있어야 한다.
+        let update = appMenu.addItem(withTitle: String(localized: "업데이트 확인…"),
+                                     action: #selector(UpdateController.checkForUpdates(_:)), keyEquivalent: "")
+        update.target = UpdateController.shared
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: String(localized: "설정…"),
                         action: #selector(DocumentWindowController.showSettings(_:)),

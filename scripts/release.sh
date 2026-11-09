@@ -280,6 +280,8 @@ cask "madi" do
     strategy :github_latest
   end
 
+  # 0.1.1부터 앱이 스스로 새 판을 받아 바꿔 넣는다(마디 ▸ 업데이트 확인…). brew upgrade가 그것과 다투지 않게.
+  auto_updates true
   depends_on macos: :$macos_symbol
 
   app "Madi.app"

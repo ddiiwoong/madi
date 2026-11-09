@@ -49,6 +49,8 @@ final class SettingsPanel: NSWindowController {
     // 일반
     private let remoteImageCheck = NSButton(checkboxWithTitle: String(localized: "원격 이미지 불러오기"),
                                             target: nil, action: nil)
+    private let updateCheck = NSButton(checkboxWithTitle: String(localized: "켤 때 새 판 확인(하루 한 번)"),
+                                       target: nil, action: nil)
     private let associationLabel = NSTextField(wrappingLabelWithString: "")
     private let associationButton = NSButton(title: String(localized: "마디 사용"), target: nil, action: nil)
     private let languagePicker = NSPopUpButton()
@@ -471,6 +473,8 @@ final class SettingsPanel: NSWindowController {
     private func makeGeneralTab() -> NSView {
         remoteImageCheck.target = self
         remoteImageCheck.action = #selector(changed)
+        updateCheck.target = self
+        updateCheck.action = #selector(changed)
         associationButton.bezelStyle = .rounded
         associationButton.target = self
         associationButton.action = #selector(claimAssociation)
@@ -498,6 +502,15 @@ final class SettingsPanel: NSWindowController {
             문서를 열었을 뿐인데 바깥으로 요청이 나가면 그 주소를 가진 쪽이 \
             문서를 언제 열었는지 알 수 있고, 주소 자체가 추적용일 수 있습니다. \
             켜도 https 주소만 받고, 로컬 문서의 그림은 영향을 받지 않습니다.
+            """)),
+            spacer(),
+            NSTextField(labelWithString: String(localized: "업데이트")),
+            updateCheck,
+            // 무엇이 나가는지 적는다 — 원격 그림 항목 바로 아래라, 말하지 않으면 같은 종류의 요청으로 읽힌다.
+            note(String(localized: """
+            GitHub에 마디의 최신 판을 묻는 요청 하나를 보냅니다. 문서 내용은 보내지 않고, GitHub는 요청한 \
+            IP 주소와 마디의 판 번호를 봅니다. 꺼도 마디 메뉴의 ‘업데이트 확인…’으로 언제든 확인할 수 있습니다. \
+            직접 빌드한 마디는 켤 때 확인하지 않습니다.
             """)),
             spacer(),
             NSTextField(labelWithString: String(localized: "파일 연결")),
@@ -725,6 +738,7 @@ final class SettingsPanel: NSWindowController {
         slantCheck.state = preferences.syntheticSlant ? .on : .off
         codeViewCheck.state = preferences.openInCodeView ? .on : .off
         remoteImageCheck.state = preferences.loadsRemoteImages ? .on : .off
+        updateCheck.state = preferences.checksForUpdates ? .on : .off
         select(preferences.appearance, in: appearancePicker)
         select(preferences.colorTheme, in: themePicker)
         select(preferences.lineSpacing, in: lineSpacingPicker)
@@ -780,7 +794,8 @@ final class SettingsPanel: NSWindowController {
             bodyFontFamily: fontSelection(bodyFontPicker),
             codeFontFamily: fontSelection(codeFontPicker),
             headingFont: headingSelection(),
-            colorTheme: selection(themePicker, preferences.colorTheme)
+            colorTheme: selection(themePicker, preferences.colorTheme),
+            checksForUpdates: updateCheck.state == .on
         )
         updateSizeLabel()
         preview.apply(preferences)

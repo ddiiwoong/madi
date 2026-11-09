@@ -17,6 +17,7 @@ import Foundation
 /// - `loadsRemoteImages` → `InlineImageStore`의 원격 받기
 /// - `printMargin` · `printOrientation` · `printPaper` → `NSPrintInfo`(프린트와 PDF 둘 다)
 /// - `bodyFontFamily` · `codeFontFamily` → `MarkdownTheme`의 본문·제목·코드 글꼴
+/// - `checksForUpdates` → 켤 때 하루 한 번 새 판 확인(`UpdateController.checkAtLaunchIfDue`)
 public struct EditorPreferences: Equatable, Sendable {
 
     /// 화면 모양. 마디의 색은 거의 다 의미색이라 시스템을 저절로 따르는데, 그래서
@@ -192,6 +193,9 @@ public struct EditorPreferences: Equatable, Sendable {
     /// 바깥으로 요청이 나가는 것은 사용자가 시킨 일이 아니고, 문서에 적힌 주소가
     /// 추적용일 수 있다. 켜는 경우에도 `https`만 받는다.
     public var loadsRemoteImages: Bool
+    /// 켤 때 하루 한 번 GitHub에 새 판이 있는지 묻는다. 기본은 켜짐(2026-11-09, 사용자가 골랐다) — 원격 그림과
+    /// 달리 문서가 시킨 요청이 아니고, 보내는 것은 판을 묻는 GET 하나다. 설정 ▸ 일반에서 끈다.
+    public var checksForUpdates: Bool
     public var printMargin: PrintMargin
     public var printOrientation: PrintOrientation
     public var printPaper: PrintPaper
@@ -276,8 +280,10 @@ public struct EditorPreferences: Equatable, Sendable {
                 bodyFontFamily: String? = nil,
                 codeFontFamily: String? = nil,
                 headingFont: HeadingFont = .sameAsBody,
-                colorTheme: ColorTheme = .standard) {
+                colorTheme: ColorTheme = .standard,
+                checksForUpdates: Bool = true) {
         self.bodyPointSize = Self.clamp(bodyPointSize)
+        self.checksForUpdates = checksForUpdates
         self.colorTheme = colorTheme
         self.highlightCode = highlightCode
         self.alignTables = alignTables
@@ -358,12 +364,13 @@ public final class PreferenceStore {
         /// 없으면 본문과 같음, 빈 값이면 시스템, 이름이면 그 패밀리.
         static let headingFontFamily = "editor.headingFontFamily"
         static let colorTheme = "editor.colorTheme"
+        static let checksForUpdates = "update.checkAtLaunch"
 
         static let all = [bodyPointSize, highlightCode, alignTables, syntheticSlant,
                           openInCodeView, appearance, lineSpacing, documentWidth,
                           loadsRemoteImages, printMargin, printOrientation, printPaper,
                           translationTarget, bodyFontFamily, codeFontFamily, headingFontFamily,
-                          colorTheme]
+                          colorTheme, checksForUpdates]
     }
 
     private let defaults: UserDefaults
@@ -409,7 +416,9 @@ public final class PreferenceStore {
             bodyFontFamily: family(Key.bodyFontFamily, standard.bodyFontFamily),
             codeFontFamily: family(Key.codeFontFamily, standard.codeFontFamily),
             headingFont: headingFont(),
-            colorTheme: value(Key.colorTheme, standard.colorTheme)
+            colorTheme: value(Key.colorTheme, standard.colorTheme),
+            checksForUpdates: defaults.object(forKey: Key.checksForUpdates) as? Bool
+                ?? standard.checksForUpdates
         )
     }
 
@@ -437,6 +446,7 @@ public final class PreferenceStore {
         defaults.set(preferences.lineSpacing.rawValue, forKey: Key.lineSpacing)
         defaults.set(preferences.documentWidth.rawValue, forKey: Key.documentWidth)
         defaults.set(preferences.loadsRemoteImages, forKey: Key.loadsRemoteImages)
+        defaults.set(preferences.checksForUpdates, forKey: Key.checksForUpdates)
         defaults.set(preferences.printMargin.rawValue, forKey: Key.printMargin)
         defaults.set(preferences.printOrientation.rawValue, forKey: Key.printOrientation)
         defaults.set(preferences.printPaper.rawValue, forKey: Key.printPaper)
@@ -483,4 +493,26 @@ public final class PreferenceStore {
     }
 
     static let toolbarDisplayModeKey = "toolbar.displayMode"
+
+    /// 마지막으로 새 판을 확인한 때(성공한 확인만). 켤 때의 하루 한 번을 잰다.
+    public var lastUpdateCheck: Date? {
+        get { defaults.object(forKey: Self.lastUpdateCheckKey) as? Date }
+        set {
+            if let newValue { defaults.set(newValue, forKey: Self.lastUpdateCheckKey) }
+            else { defaults.removeObject(forKey: Self.lastUpdateCheckKey) }
+        }
+    }
+
+    static let lastUpdateCheckKey = "update.lastCheck"
+
+    /// 끌 때 새 판을 바꿔 넣다가 실패한 까닭. 끄는 중에는 알릴 수 없어 적어 두고, 다음에 켤 때 한 번 알린다.
+    public var updateInstallFailure: String? {
+        get { defaults.string(forKey: Self.updateInstallFailureKey) }
+        set {
+            if let newValue { defaults.set(newValue, forKey: Self.updateInstallFailureKey) }
+            else { defaults.removeObject(forKey: Self.updateInstallFailureKey) }
+        }
+    }
+
+    static let updateInstallFailureKey = "update.installFailure"
 }

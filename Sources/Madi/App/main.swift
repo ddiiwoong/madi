@@ -63,6 +63,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // 오래된 임시 그림(저장하지 않은 문서에 붙여 넣은 것)을 휴지통으로 — 되살린 문서가 다 열린 뒤에.
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in self?.cleanUpStagedImages() }
+        // 새 판 확인(하루 한 번) — 켜자마자 묻는 창을 띄우지 않게 조금 뒤에.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { UpdateController.shared.launched() }
+    }
+
+    /// 받아 둔 새 판이 있으면 여기서 바꿔 넣는다(`UpdateController`).
+    func applicationWillTerminate(_ notification: Notification) {
+        UpdateController.shared.installPendingUpdate()
     }
 
     /// 열린 문서의 글은 여기(메인)서 모으고, 파일 읽기와 휴지통 넣기는 뒤에서.
