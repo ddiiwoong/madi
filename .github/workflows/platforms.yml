@@ -1,0 +1,156 @@
+# 이 Mac에서 잴 수 없는 플랫폼을 잰다 — Intel Mac에서 배포한 판이 뜨는지, Core가 Windows에서 서는지.
+#
+# 비밀을 쓰지 않는다. 서명 · 공증은 여기서 하지 않는다(그것은 make release, docs/releasing.md). 읽기 권한만 쓴다.
+#
+#   intel-mac     GitHub의 마지막 Intel 러너(macos-15-intel, 2027년 8월까지)에서 Releases의 ZIP을 받아 띄운다.
+#                 유니버설 앱의 x86_64 조각이 진짜 Intel에서 도는지 — 이 Mac(Apple 실리콘, macOS 27)에는
+#                 Rosetta도 없어 x86_64 조각을 돌려 볼 길이 없다.
+#   core-tests    Core만으로 서는 시험 파일을 고른다(scripts/core-tests.sh) — Windows 일이 그 목록을 쓴다.
+#   windows-core  Windows에서 Core를 타입 검사하고, 고른 시험을 Core와 한 모듈로 묶어 돌린다(TODO 'Windows' 1단계).
+name: 다른 플랫폼
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: Intel에서 띄울 릴리스 태그(비우면 맨 마지막 판)
+        required: false
+  push:
+    branches: ["ci/**"]
+
+permissions:
+  contents: read
+
+jobs:
+  intel-mac:
+    name: Intel Mac — 배포한 판 띄우기
+    runs-on: macos-15-intel
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE: ${{ inputs.release }}
+    steps:
+      - name: 기계
+        run: |
+          uname -m
+          sw_vers
+          sysctl -n machdep.cpu.brand_string
+      - name: 받기
+        run: |
+          tag="${RELEASE:-$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)}"
+          echo "tag=$tag" >> "$GITHUB_ENV"
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern 'Madi-*.zip' --pattern SHA256SUMS
+          grep '\.zip$' SHA256SUMS | shasum -a 256 -c
+          ditto -x -k Madi-*.zip app
+      - name: 앱 살피기
+        run: |
+          app=app/Madi.app
+          lipo -archs "$app/Contents/MacOS/Madi"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          spctl --assess --type execute -vv "$app" || true
+          xcrun stapler validate "$app" || true
+      - name: 띄우기 — 20초 살아 있는가
+        run: |
+          app="$PWD/app/Madi.app"
+          "$app/Contents/MacOS/Madi" -ApplePersistenceIgnoreState YES > madi-stdout.log 2>&1 &
+          pid=$!
+          sleep 20
+          if kill -0 "$pid"; then
+            echo "pid $pid 살아 있음 — $(ps -o pid=,stat=,command= -p "$pid")"
+            echo "아키텍처: $(file -b "$app/Contents/MacOS/Madi" | head -1)"
+          else
+            wait "$pid"; status=$?
+            echo "::error::20초 안에 끝났다(종료 코드 $status)"
+            cat madi-stdout.log
+            ls -la ~/Library/Logs/DiagnosticReports/ || true
+            exit 1
+          fi
+          screencapture -x launch.png || true
+          kill "$pid"
+          ls ~/Library/Logs/DiagnosticReports/ 2>/dev/null | grep -i madi && { echo "::error::충돌 보고가 있다"; exit 1; } || true
+          {
+            echo "### Intel Mac — $tag"
+            echo "- 기계: $(uname -m), macOS $(sw_vers -productVersion), $(sysctl -n machdep.cpu.brand_string)"
+            echo "- 앱: $(lipo -archs "$app/Contents/MacOS/Madi"), 20초 동안 살아 있었다"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: intel-mac
+          path: |
+            madi-stdout.log
+            launch.png
+          if-no-files-found: ignore
+
+  core-tests:
+    name: Core만으로 서는 시험 고르기
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift --version
+      - run: bash scripts/core-tests.sh core-tests.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: core-tests
+          path: core-tests.txt
+
+  windows-core:
+    name: Windows — Core 타입 검사와 시험
+    needs: core-tests
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: compnerd/gha-setup-swift@main
+        with:
+          swift-version: swift-6.3.1-release
+          swift-build: 6.3.1-RELEASE
+      - uses: actions/download-artifact@v4
+        with:
+          name: core-tests
+      - name: Core 타입 검사
+        shell: pwsh
+        run: |
+          swift --version
+          $files = (Get-ChildItem Sources/Madi/Core -Filter *.swift).FullName
+          "Core 파일 $($files.Count)개"
+          swiftc -typecheck -swift-version 6 -module-name MadiCore @files 2>&1 | Tee-Object -FilePath core-typecheck.log
+          if ($LASTEXITCODE -ne 0) { "### Windows — Core 타입 검사 실패" >> $env:GITHUB_STEP_SUMMARY; exit 1 }
+          "### Windows — Core $($files.Count)개 파일 타입 검사 통과" >> $env:GITHUB_STEP_SUMMARY
+      # 꾸러미를 저장소 뿌리에 만든다(이 작업 공간에만, 커밋하지 않는다). 시험 몇은 `#filePath`에서 세 단계 올라가
+      # 저장소 뿌리를 찾아 docs/와 en.lproj를 읽는다 — 시험 파일이 `<뿌리>/Tests/MadiCoreTests/`에 있어야 맞는다.
+      - name: Core 시험 — Core와 한 모듈로
+        if: always()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force Tests/MadiCoreTests | Out-Null
+          Copy-Item Sources/Madi/Core/*.swift Tests/MadiCoreTests/
+          $tests = Get-Content core-tests.txt | Where-Object { $_ -ne "" }
+          foreach ($t in $tests) {
+            (Get-Content $t) | Where-Object { $_ -notmatch '^@testable import Madi$' } |
+              Set-Content -Encoding utf8 (Join-Path Tests/MadiCoreTests (Split-Path $t -Leaf))
+          }
+          @'
+          // swift-tools-version:6.0
+          import PackageDescription
+          let package = Package(
+              name: "MadiCoreProbe",
+              targets: [.testTarget(name: "MadiCoreTests", path: "Tests/MadiCoreTests")]
+          )
+          '@ | Set-Content -Encoding utf8 Package.swift
+          "시험 파일 $($tests.Count)개"
+          swift test 2>&1 | Tee-Object -FilePath core-test.log
+          $status = $LASTEXITCODE
+          $summary = Select-String -Path core-test.log -Pattern 'Executed \d+ tests?' | Select-Object -Last 1
+          "### Windows — Core 시험(파일 $($tests.Count)개): $summary" >> $env:GITHUB_STEP_SUMMARY
+          exit $status
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-core
+          path: |
+            core-typecheck.log
+            core-test.log
+          if-no-files-found: ignore
