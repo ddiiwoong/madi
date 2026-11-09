@@ -30,8 +30,9 @@ AppKit · Swift 6 · **Swift 의존성 없음**. 패키지 매니저도, 두 번
 [목록과 라이선스](Sources/Madi/Resources/Diagrams/README.md)).
 빌드·테스트·기여 방법은 [빌드와 기여](docs/building.md)에 있습니다.
 
-> **설치: 0.1.0**(2026-11-09). [Releases](https://github.com/ddiiwoong/madi/releases/latest)에서
-> DMG를 받아 열고 마디를 응용 프로그램 폴더로 끌어 넣습니다. 서명 · 공증이 돼 있어 바로 열립니다.
+> **설치: 0.1.1**(2026-11-09). [Releases](https://github.com/ddiiwoong/madi/releases/latest)에서
+> DMG를 받아 열고 마디를 응용 프로그램 폴더로 끌어 넣습니다. 서명 · 공증이 돼 있어 바로 열립니다. 그다음
+> 판부터는 마디가 스스로 받아 바꿔 넣습니다(마디 ▸ 업데이트 확인…).
 > Homebrew로는 `brew install --cask ddiiwoong/tap/madi`입니다. 직접 빌드할 수도 있습니다(`make build`의
 > ad-hoc 서명은 빌드한 Mac에서만 돕니다). 바뀐 점은 [CHANGELOG.md](CHANGELOG.md), 내는 방법은
 > [릴리스하기](docs/releasing.md).
@@ -68,6 +69,7 @@ AppKit · Swift 6 · **Swift 의존성 없음**. 패키지 매니저도, 두 번
 | 내보내기 | PDF, 이미지를 `data:`로 묻은 단일 마크다운, 프린트 |
 | 도구 | Apple 번역(한국어와 20개가 넘는 언어 사이, 마크업 보존, 원문·번역 나란히 보기), 기록 패널(`⌘⇧L`), 설정(`⌘,`) |
 | 링크 | `madi://` 주소로 열기(줄 번호 · 낱말 찾기) · 새 문서 · 새 파일로 새 글 쓰기 · 끝에 더하기(묻고 나서) — 단축어 · 셸 · 다른 앱에서 |
+| 업데이트 | 켤 때 하루 한 번 새 판 확인(설정에서 끔), 받아서 서명을 확인하고 바꿔 넣은 뒤 다시 열기 — Sparkle 없이 |
 | 실험 | 블록 편집기(`⌥⌘B`) — 문서를 블록 배열로 편집하는 두 번째 창. 표를 격자로 만드는 설계의 1단계이고, 기본 편집기는 그대로입니다 |
 
 ## 요구 사항

@@ -30,9 +30,10 @@ web view that draws Mermaid and KaTeX (Mermaid 12.2.0, KaTeX 0.19.1 — both MIT
 [list and licenses](Sources/Madi/Resources/Diagrams/README.md), Korean).
 How to build, test and contribute: [docs/building.md](docs/building.md) (Korean).
 
-> **Install: 0.1.0** (2026-11-09). Download the DMG from
+> **Install: 0.1.1** (2026-11-09). Download the DMG from
 > [Releases](https://github.com/ddiiwoong/madi/releases/latest), open it and drag Madi into
-> Applications. It is signed and notarized, so it opens without a warning. With Homebrew:
+> Applications. It is signed and notarized, so it opens without a warning. Later versions install
+> themselves (Madi ▸ Check for Updates…). With Homebrew:
 > `brew install --cask ddiiwoong/tap/madi`. You can also build it yourself (`make build` signs
 > ad-hoc, so that copy runs only on the Mac that built it). Changes are in
 > [CHANGELOG.md](CHANGELOG.md) and the release steps in [releasing](docs/releasing.md) (both Korean).
@@ -71,6 +72,7 @@ The full list and every shortcut are in [docs/features.md](docs/features.md) (Ko
 | Navigation | Outline · recent documents · file browser sidebar (each toggles) |
 | Documents | YAML front matter card; `NSDocument` open, save, autosave and version restore |
 | Export | PDF, a single Markdown file with images embedded as `data:` URLs, print |
+| Updates | Checks once a day at launch (can be turned off); downloads the new version, checks its signature, replaces itself and relaunches — no Sparkle |
 | Tools | Apple Translation (between Korean and more than 20 languages, markup preserved, source and translation side by side), activity log (`⌘⇧L`), settings (`⌘,`) |
 | Experimental | Block editor (`⌥⌘B`) — a second window that edits the document as an array of blocks. It is stage 1 of the design for grid tables; the default editor is unchanged |
 
