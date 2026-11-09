@@ -1593,8 +1593,13 @@ lipo -archs …/Madi.app/Contents/MacOS/Madi → x86_64 arm64
       Engine에 기대는 것이 보통이고 Intel Mac에는 그것이 없으므로 `.unsupported`가
       나올 가능성이 크다. 코드는 그 경로를 이미 처리하므로 **깨지지는 않고 기능만
       없다.** 실기에서 재야 확실해진다.
-- [ ] Intel 실기에서 실행 확인. 이 Mac은 Apple Silicon이라 로제타로도 검증이 되지 않는다
-      (유니버설 바이너리의 x86_64 조각은 로제타가 아니라 Intel 하드웨어에서 돌 코드다).
+- [ ] Intel 실기에서 실행 확인. 이 Mac(Apple 실리콘, macOS 27.0.1)에서는 x86_64 조각을 돌릴 수 없다 —
+      `arch -x86_64`가 `/usr/bin/true`에도 `Bad CPU type`을 낸다(재 봄, 2026-11-09). Rosetta가 설치돼 있지 않고
+      (`/Library/Apple/usr/libexec/oah`에 `RosettaLinux`뿐), dyld 공유 캐시도 arm64e뿐이다. 그래서
+      `.github/workflows/platforms.yml`의 `intel-mac`이 GitHub의 Intel 러너(`macos-15-intel`, 2027년 8월까지)에서
+      **배포한 판**의 ZIP을 받아 체크섬 · 서명을 보고 20초 띄운다. **아직 한 번도 돌지 않았다** — 이 세션의 git
+      자격 증명(PAT)에 `workflow` 권한이 없어 그 파일이 든 가지(`ci/platforms`)를 올리지 못했다. 사람이 올린다.
+      그래도 남는 것: macOS 26의 Intel에서 Apple 번역(Intel 러너는 macOS 15라 번역 메뉴가 꺼져 있다).
 
 ### Windows — 빌드 설정이 아니라 **두 번째 앱**이다
 
@@ -1633,6 +1638,13 @@ Swift on Windows에서 그대로 컴파일될 것으로 **예상**된다(확인 
 권하는 순서: **Core만 Windows에서 컴파일·테스트해 보는 것**이 1단계다. 하루짜리 실험이고,
 여기서 막히면(Foundation 차이·정규식 동작 차이) 그 위의 모든 계획이 바뀐다. UI는 그 뒤에
 결정한다.
+
+- [ ] **1단계 준비됨, 결과 기다림**(2026-11-09, 사용자 — "인텔 윈도우 버전도 챙겨 줘"). 위 수치는 10월의 것이다 — 지금
+      Core는 42개 파일이다. `.github/workflows/platforms.yml`의 `windows-core`가 `windows-latest`에서 Swift 6.3.1로
+      Core를 타입 검사하고, `scripts/core-tests.sh`가 고른 시험(Core만으로 서는 24개 파일)을 Core와 한 모듈로 묶어
+      `swift test`를 돌린다. 이 Mac에서 같은 꾸러미로 돌리면 시험 376개가 통과한다 — 처음에는 꾸러미를 하위 폴더에
+      둬서 `#filePath`로 저장소 뿌리를 찾는 시험 8개가 실패했고, 꾸러미를 뿌리에 두어 고쳤다. **Windows에서는 아직
+      돌지 않았다**(위 Intel 항목과 같은 까닭 — `workflow` 권한). 결과가 나오면 여기에 적고 UI 길을 고른다.
 
 ## 설계가 끝난 것 — 구현 대기
 

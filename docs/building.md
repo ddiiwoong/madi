@@ -25,6 +25,7 @@ make public-check  # 공개 전 점검 — 추적 파일과 모든 커밋 이력
 make l10n-check    # 영어 표가 소스의 화면 글자와 맞는지 (아래 참고)
 make screenshots   # README 그림을 실제 편집기로 다시 그림 (docs/images/)
 make icon          # 앱 아이콘을 다시 그림 (scripts/icon → Sources/Madi/Resources/AppIcon.icns)
+bash scripts/core-tests.sh  # Core만으로 서는 시험 파일 목록 (Windows 점검이 쓴다)
 make clean       # .build와 생성된 .xcodeproj 삭제
 make open-log    # 마지막 빌드 로그 꼬리
 ```
@@ -69,6 +70,20 @@ make open-log    # 마지막 빌드 로그 꼬리
 
 참고로 macOS 26이 Intel을 지원하는 마지막 버전이라, 유니버설 빌드의 쓸모에는 만료 시점이
 있습니다.
+
+### 이 Mac에서 잴 수 없는 플랫폼
+
+Apple 실리콘의 macOS 27에는 Rosetta가 없어 x86_64 조각을 돌려 볼 수 없고, Windows 기계도 없습니다. 그래서
+GitHub Actions의 `다른 플랫폼`(`.github/workflows/platforms.yml`)이 잽니다. 비밀은 쓰지 않습니다.
+
+| 일 | 러너 | 하는 것 |
+|---|---|---|
+| `intel-mac` | `macos-15-intel` | 배포한 판(Releases의 ZIP)을 받아 체크섬 · 서명을 보고 20초 띄운다 |
+| `core-tests` | `macos-latest` | `scripts/core-tests.sh`로 Core만으로 서는 시험 파일을 고른다 |
+| `windows-core` | `windows-latest` | Core를 타입 검사하고, 고른 시험을 Core와 한 모듈로 묶어 `swift test` |
+
+`ci/`로 시작하는 가지를 올리면 돌고, Actions 탭에서 손으로 돌릴 수도 있습니다(Intel에서 띄울 태그를 고를 수
+있다). 워크플로 파일을 올리는 자격 증명에는 GitHub의 `workflow` 권한이 있어야 합니다.
 
 ## 서명
 
