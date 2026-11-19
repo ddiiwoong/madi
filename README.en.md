@@ -30,7 +30,7 @@ web view that draws Mermaid and KaTeX (Mermaid 12.2.0, KaTeX 0.19.1 — both MIT
 [list and licenses](Sources/Madi/Resources/Diagrams/README.md), Korean).
 How to build, test and contribute: [docs/building.md](docs/building.md) (Korean).
 
-> **Install: 0.1.1** (2026-11-09). Download the DMG from
+> **Install: 0.1.2** (2026-11-20). Download the DMG from
 > [Releases](https://github.com/ddiiwoong/madi/releases/latest), open it and drag Madi into
 > Applications. It is signed and notarized, so it opens without a warning. Later versions install
 > themselves (Madi ▸ Check for Updates…). With Homebrew:
