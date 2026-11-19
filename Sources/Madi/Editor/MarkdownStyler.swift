@@ -223,6 +223,7 @@ public final class MarkdownStyler {
         // 바뀌므로 다른 행의 글자 간격이 낡는다. 그 줄만 칠하면 표가 어긋난 채 남는다.
         // 격자로 그리는 표도 그렇다 — 캐럿이 표의 한 행으로 들어와도 바뀌는 것은 표 전체다.
         if alignsTables || drawsTables, writeRange.length != full.length {
+            writeRange = Self.extendedOverPipeLines(writeRange, in: text, limit: full)
             writeRange = extendedOverTables(writeRange, in: text, limit: full, lines: lines)
         }
         // 다이어그램·수식 블록도 **통째로** 칠한다. 블록은 캐럿이 안에 있으면 원문, 밖에 있으면
@@ -390,6 +391,32 @@ public final class MarkdownStyler {
             if line.kind == .codeBody { run.append(line) } else { flush() }
         }
         flush()
+    }
+
+    /// 고친 둘레에 잇닿은, 막대(`|`)가 든 줄들까지 넓힌다. `range`는 줄 단위다.
+    ///
+    /// 표의 생김새는 고친 줄 밖에서도 바뀐다(`TableStyleConsistencyTests`에서 잼): 행 하나의 첫 막대를 지우면 그 줄이 표에서
+    /// 빠지면서 표가 둘로 갈리고 아래쪽이 **새 표**가 된다. 새 표는 고친 줄에 걸치지 않아 `extendedOverTables`가 넣지 않는다.
+    /// 머리 행 · 구분 행을 고쳐 표가 사라지면, 남은 행에는 옛 맞추기 간격이나 숨김 · 접힘이 그대로 남는다. 표의 행은 모두
+    /// 막대를 담으므로(`MarkdownSyntax` — 막대가 든 줄이 행이다) 잇닿은 막대 줄을 넣으면 옛 표와 새 표의 행이 다 들어온다.
+    /// 막대가 없는 줄에서 멈추므로 넓어지는 것은 표 하나 크기다.
+    static func extendedOverPipeLines(_ range: NSRange, in text: NSString, limit: NSRange) -> NSRange {
+        func hasPipe(_ line: NSRange) -> Bool {
+            text.range(of: "|", options: .literal, range: line).location != NSNotFound
+        }
+        var start = max(limit.location, range.location)
+        while start > limit.location {
+            let previous = text.lineRange(for: NSRange(location: start - 1, length: 0))
+            guard hasPipe(previous) else { break }
+            start = previous.location
+        }
+        var end = min(NSMaxRange(limit), NSMaxRange(range))
+        while end < NSMaxRange(limit) {
+            let next = text.lineRange(for: NSRange(location: end, length: 0))
+            guard hasPipe(next), NSMaxRange(next) > end else { break }
+            end = NSMaxRange(next)
+        }
+        return NSRange(location: start, length: max(0, end - start))
     }
 
     /// `range`가 걸친 표들을 통째로 감싸도록 넓힌다.
@@ -751,7 +778,9 @@ public final class MarkdownStyler {
             renderings[first.range] = rendering
 
             guard NSIntersectionRange(block.range, writeRange).length > 0
-                    || NSLocationInRange(block.range.location, writeRange) else { continue }
+                    || NSLocationInRange(block.range.location, writeRange)
+                    || !Self.isFolded(header: first.range, rest: blockLines.dropFirst().map(\.range),
+                                      height: rendering.size.height, in: storage) else { continue }
             for line in blockLines {
                 if line.range.length > 0 {
                     hide(line.range, in: storage)
@@ -1017,6 +1046,8 @@ public final class MarkdownStyler {
             placements.append(ImagePlacement(lineRange: first.range, size: entry.grid.size, image: entry.image))
 
             let writes = NSIntersectionRange(block, writeRange).length > 0 || NSLocationInRange(block.location, writeRange)
+                || !Self.isFolded(header: first.range, rest: table.rows.dropFirst().map(\.range),
+                                  height: entry.grid.size.height + 2, in: storage)
             guard writes else { continue }
             for row in table.rows {
                 if row.range.length > 0 {
@@ -1429,6 +1460,33 @@ public final class MarkdownStyler {
 
     private func hide(_ range: NSRange, in storage: NSTextStorage) {
         storage.addAttribute(.mdHiddenMarker, value: true, range: range)
+    }
+
+    /// 그림으로 바꿀 블록의 자리가 저장소에 이미 마련돼 있는가 — 머리 줄이 그림 높이를 갖고, 나머지 줄은 접혔고, 글자가
+    /// 숨었다(`placeTables` · `placeWideCode`가 쓰는 꼴).
+    ///
+    /// 그림 목록은 문서 전체로 만들고 쓰기만 고친 둘레로 좁히므로, 둘레 밖에서 블록이 **새로** 그림이 되면 그림만 놓이고
+    /// 자리는 없다 — 그림이 한 줄 높이에 눌려 원문 위에 겹쳐 그려진다(사용자가 본 것: 표의 글자가 여러 겹으로 포개짐).
+    /// 둘레를 넓히는 규칙(`extendedOverPipeLines`)이 아는 길은 막지만, 펜스를 닫아 그 아래가 코드에서 풀리는 것처럼
+    /// 멀리서 바뀌는 길도 있다. 그래서 그림을 놓을 때마다 자리를 보고, 없으면 둘레 밖이어도 쓴다. 블록마다 줄 수만큼
+    /// 속성을 읽을 뿐이다.
+    static func isFolded(header: NSRange, rest: [NSRange], height: CGFloat, in storage: NSTextStorage) -> Bool {
+        func style(at location: Int) -> NSParagraphStyle? {
+            guard location < storage.length else { return nil }
+            return storage.attribute(.paragraphStyle, at: location, effectiveRange: nil) as? NSParagraphStyle
+        }
+        func isHidden(_ line: NSRange) -> Bool {
+            line.length == 0 || (NSMaxRange(line) <= storage.length
+                && storage.attribute(.mdHiddenMarker, at: line.location, effectiveRange: nil) != nil
+                && storage.attribute(.mdHiddenMarker, at: NSMaxRange(line) - 1, effectiveRange: nil) != nil)
+        }
+        guard let top = style(at: header.location), abs(top.minimumLineHeight - height) < 0.01,
+              abs(top.maximumLineHeight - height) < 0.01, isHidden(header) else { return false }
+        for line in rest {
+            guard let folded = style(at: line.location), folded.maximumLineHeight > 0, folded.maximumLineHeight < 1,
+                  isHidden(line) else { return false }
+        }
+        return true
     }
 
     private func bold(_ font: NSFont) -> NSFont {

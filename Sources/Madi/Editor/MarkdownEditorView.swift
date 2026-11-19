@@ -95,6 +95,9 @@ public final class MarkdownEditorView: NSView {
     private var searchState = MarkdownStyler.SearchState()
     private var currentQuery = ""
     private var lastCaretLine: Int?
+    /// 글자 편집 중에 온 선택 변경 — 떠난 줄을 들고 편집이 끝나기를 기다린다(`textViewDidChangeSelection`).
+    private struct PendingCaretTransition { let from: Int? }
+    private var pendingCaretTransition: PendingCaretTransition?
     private var isStyling = false
     private var pendingRestyle = false
 
@@ -1351,6 +1354,8 @@ extension MarkdownEditorView: NSTextViewDelegate {
         let dirty = NSRange(location: max(0, edited.location - 1),
                             length: min(storage.length - max(0, edited.location - 1), edited.length + 2))
         restyle(dirty: dirty)
+        // 편집 중에 미뤄 둔 캐럿 줄 바뀜 — 이제 저장소가 편집을 다 처리했다.
+        flushPendingCaretTransition()
         if searchState.ranges.isEmpty == false {
             // Matches moved; recompute rather than leave stale highlights.
             scheduleSearchRefresh()
@@ -1364,9 +1369,28 @@ extension MarkdownEditorView: NSTextViewDelegate {
 
     public func textViewDidChangeSelection(_ notification: Notification) {
         let new = caretLine()
-        restyleCaretTransition(from: lastCaretLine, to: new)
+        if storage.editedMask.isEmpty {
+            restyleCaretTransition(from: lastCaretLine, to: new)
+        } else {
+            // 글자 편집이 **아직 처리되는 중**이다 — 텍스트 뷰는 붙여넣기 · Enter의 선택 변경을 저장소가 편집을 다 처리하기
+            // 전에 알린다(실측: 이 자리의 `editedMask`가 3). 그 안에서 바꾼 속성은 저장소에 남지만 레이아웃 관리자에게 가지
+            // 않아, 편집한 글자 밖의 줄은 옛 레이아웃으로 남는다. 캐럿이 나가 표가 격자로 바뀌면 머리 행이 옛 한 줄
+            // 높이인 채로 격자 그림이 그 줄에 눌려 원문 위에 겹쳐 그려졌다(사용자가 본 '여러 글자가 겹쳐 보이는' 것).
+            // 그래서 편집이 끝난 뒤(`textDidChange`)로 미룬다. 그 알림이 오지 않는 편집에 대비해 다음 차례에도 한 번 본다.
+            if pendingCaretTransition == nil {
+                pendingCaretTransition = PendingCaretTransition(from: lastCaretLine)
+                DispatchQueue.main.async { [weak self] in self?.flushPendingCaretTransition() }
+            }
+        }
         lastCaretLine = new
         scheduleFormatBar()
+    }
+
+    /// 편집 중에 와서 미뤄 둔 캐럿 줄 바뀜을 칠한다. 떠난 줄은 그때의 줄 번호, 들어간 줄은 지금 캐럿의 줄이다.
+    private func flushPendingCaretTransition() {
+        guard let pending = pendingCaretTransition else { return }
+        pendingCaretTransition = nil
+        restyleCaretTransition(from: pending.from, to: caretLine())
     }
 
     /// 다른 곳(검색 칸 등)으로 캐럿이 가면 서식 막대를 거둔다.
