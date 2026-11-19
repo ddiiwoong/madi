@@ -573,6 +573,8 @@ public final class MarkdownEditorView: NSView {
             if layoutHeader { textView.layoutSubtreeIfNeeded() }
         }
         textView.setInsets(insets, topAccessory: headerSpace)
+        // 넓은 표 · 코드는 창 오른쪽에 기본 여백만 남기고 편다 — 넓은 창에서 글을 가운데 두느라 빈 자리를 쓴다.
+        textView.wideRightMargin = theme.textInsets.width
     }
 
     // MARK: 머리 — 글과 함께 굴러가는 카드
@@ -662,7 +664,7 @@ public final class MarkdownEditorView: NSView {
     /// 글 칸의 폭이 바뀌었다(텍스트 뷰가 알린다). 여백이 그대로인 좁은 창에서는 위의 `setFrameSize`가 다시 칠하지 않는데,
     /// 코드 줄이 넘치는지와 표 열은 글 칸 폭으로 잰다 — 칠한 폭과 다르면 다시 칠한다. 레이아웃 도중이라 다음 차례에.
     private func textColumnDidChange() {
-        guard Double(textView.textColumnWidth) != styler.textColumnWidth, !columnRestyleScheduled else { return }
+        guard stylerWidthsAreStale, !columnRestyleScheduled else { return }
         if isLiveResizing {
             restyleAfterLiveResize = true
             return
@@ -671,9 +673,15 @@ public final class MarkdownEditorView: NSView {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.columnRestyleScheduled = false
-            guard Double(self.textView.textColumnWidth) != self.styler.textColumnWidth else { return }
+            guard self.stylerWidthsAreStale else { return }
             self.restyleAll()
         }
+    }
+
+    /// 칠한 폭(글 칸, 넓은 그림의 자리)이 지금 텍스트 뷰와 다른가.
+    private var stylerWidthsAreStale: Bool {
+        Double(textView.textColumnWidth) != styler.textColumnWidth
+            || Double(textView.wideAreaWidth) != max(styler.textColumnWidth, styler.wideAreaWidth)
     }
 
     public override func viewWillStartLiveResize() {
@@ -684,7 +692,7 @@ public final class MarkdownEditorView: NSView {
     public override func viewDidEndLiveResize() {
         super.viewDidEndLiveResize()
         isLiveResizing = false
-        if Double(textView.textColumnWidth) != styler.textColumnWidth { restyleAfterLiveResize = true }
+        if stylerWidthsAreStale { restyleAfterLiveResize = true }
         if restyleAfterLiveResize {
             restyleAfterLiveResize = false
             restyleAll()
@@ -878,6 +886,7 @@ public final class MarkdownEditorView: NSView {
         styler.isDarkAppearance = isDarkAppearance
         styler.contentWidth = max(120, Double(container.size.width) - 24)
         styler.textColumnWidth = Double(textView.textColumnWidth)
+        styler.wideAreaWidth = Double(textView.wideAreaWidth)
         styler.style(storage, caretLine: lastCaretLine, search: searchState, lines: currentLines())
         syncCodeBlockBackgrounds()
         isStyling = false

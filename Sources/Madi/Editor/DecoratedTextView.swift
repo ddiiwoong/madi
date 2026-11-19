@@ -43,13 +43,27 @@ public class DecoratedTextView: NSTextView {
 
     /// 가로 보기(`WidePlacementView`)를 누른 것 — 그림과 그림 좌표의 점, 사건. true면 먹는다. 편집기가 단다.
     var wideClickHandler: ((MarkdownStyler.ImagePlacement, NSPoint, NSEvent) -> Bool)?
-    /// 글 칸의 폭이 바뀌었다. 편집기가 단다 — 표 열과 코드 줄의 넘침이 이 폭을 따른다.
+    /// 글 칸의 폭이나 넓은 그림의 자리(`wideAreaWidth`)가 바뀌었다. 편집기가 단다 — 표 열과 코드 줄의 넘침이 이 폭을 따른다.
     var onColumnWidthChange: (() -> Void)?
 
+    /// 넓은 그림이 오른쪽에 남길 여백 — 편집기가 테마의 기본 여백을 넣는다. nil이면 넓은 그림도 글 칸에서 멈춘다.
+    ///
+    /// 넓은 창에서는 글을 가운데 두느라 글 칸 양옆이 비는데(`MarkdownTheme.textInsets(forViewWidth:)`), 넓은 표를 글 칸에서
+    /// 자르면 그 빈자리를 두고 잘린다(사용자 — "표 너비가 크면 다 안보이는", 고른 것: 오른쪽 빈자리까지 넓혀 보이기).
+    /// 그래서 넓은 그림은 창 오른쪽에 이 여백만 남기고 편다 — 왼쪽은 글 칸에 맞춘 그대로다(`wideAreaWidth`).
+    var wideRightMargin: CGFloat? {
+        didSet {
+            guard wideRightMargin != oldValue else { return }
+            drawnDecorations = drawnDecorations.filter { $0.key.level != 0 }
+            needsDisplay = true
+            updateWideViews()
+        }
+    }
+
     public override func setFrameSize(_ newSize: NSSize) {
-        let before = textColumnWidth
+        let before = (textColumnWidth, wideAreaWidth)
         super.setFrameSize(newSize)
-        if textColumnWidth != before { onColumnWidthChange?() }
+        if textColumnWidth != before.0 || wideAreaWidth != before.1 { onColumnWidthChange?() }
         updateWideViews()
     }
 
@@ -184,10 +198,16 @@ public class DecoratedTextView: NSTextView {
         guard glyphRange.length > 0 else { return nil }
 
         // 블록이 차지하는 줄들의 높이. 가로는 쓰지 않는다 — 글자 폭을 따라가면
-        // 다시 들쭉날쭉해지므로 **글 넓이 전체**로 바꿔 끼운다.
+        // 다시 들쭉날쭉해지므로 **글 넓이 전체**로 바꿔 끼운다. 넓은 코드 블록(가로 보기)은 그 보기의 폭까지 —
+        // 오른쪽 빈자리로 넓힌 글이 바탕 밖에 놓이지 않게.
         var box = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
         box.origin.x = origin.x + textContainer.lineFragmentPadding
         box.size.width = textContainer.size.width - textContainer.lineFragmentPadding * 2
+        // 이어 붙은 블록은 바탕 하나라, 그 안의 넓은 블록 가운데 가장 넓은 것을 따른다.
+        for wide in imagePlacements
+        where wide.alignsToColumn && NSLocationInRange(wide.lineRange.location, range) && isWide(wide) {
+            box.size.width = max(box.width, min(wide.size.width, wideAreaWidth))
+        }
         box.origin.y += origin.y
         return NSRect(x: box.minX - codeBlockPadding.left, y: box.minY - codeBlockPadding.top,
                       width: box.width + codeBlockPadding.left + codeBlockPadding.right,
@@ -486,6 +506,25 @@ extension DecoratedTextView {
         placement.size.width > textColumnWidth + 0.5
     }
 
+    /// 넓은 그림이 쓸 수 있는 폭 — 글 칸의 왼쪽 끝부터 오른쪽 여백(`wideRightMargin`) 앞까지. 글 칸보다 좁지 않다.
+    /// 오른쪽 끝은 왼쪽과 마주 본다: 기본 여백에 줄 조각 여백을 더한 만큼 들어간 자리다.
+    var wideAreaWidth: CGFloat {
+        guard let textContainer, let margin = wideRightMargin else { return textColumnWidth }
+        let left = textContainerOrigin.x + textContainer.lineFragmentPadding
+        let right = bounds.width - margin - textContainer.lineFragmentPadding
+        return max(textColumnWidth, (right - left).rounded(.down))
+    }
+
+    /// 넓은 그림의 가로 보기가 놓일 자리(뷰 좌표) — 그림 자리에서 넓힌 자리의 오른쪽 끝까지(그림이 더 좁으면 그림만큼),
+    /// 그림 아래 막대의 자리까지.
+    func wideFrame(of placement: MarkdownStyler.ImagePlacement) -> NSRect? {
+        guard let frame = frame(of: placement), let textContainer else { return nil }
+        let right = textContainerOrigin.x + textContainer.lineFragmentPadding + wideAreaWidth
+        return NSRect(x: frame.minX, y: frame.minY,
+                      width: max(0, min(placement.size.width, right - frame.minX)),
+                      height: frame.height + placement.scrollBarSpace).integral
+    }
+
     /// 지금 띄운 가로 보기들(그림 자리 → 보기). 시험이 쓴다.
     var wideViews: [WidePlacementView] {
         subviews.compactMap { $0 as? WidePlacementView }
@@ -496,20 +535,17 @@ extension DecoratedTextView {
     func updateWideViews() {
         let existing = Dictionary(wideViews.map { ($0.placement.lineRange, $0) }, uniquingKeysWith: { first, _ in first })
         let wide = imagePlacements.filter(isWide)
-        guard !wide.isEmpty, let textContainer else {
+        guard !wide.isEmpty, textContainer != nil else {
             existing.values.forEach { $0.removeFromSuperview() }
             return
         }
         let area = visibleRect.insetBy(dx: 0, dy: -240)
         guard let visible = visibleCharacterRange(in: area) else { return }
-        let columnRight = textContainerOrigin.x + textContainer.lineFragmentPadding + textColumnWidth
         var kept = Set<NSRange>()
         for placement in wide
         where NSIntersectionRange(placement.lineRange, visible).length > 0
             || NSLocationInRange(placement.lineRange.location, visible) {
-            guard let frame = frame(of: placement) else { continue }
-            let column = NSRect(x: frame.minX, y: frame.minY, width: max(0, columnRight - frame.minX),
-                                height: frame.height).integral
+            guard let target = wideFrame(of: placement) else { continue }
             let view = existing[placement.lineRange] ?? {
                 let made = WidePlacementView(placement: placement)
                 made.onMouseDown = { [weak self] placement, point, event in
@@ -520,7 +556,7 @@ extension DecoratedTextView {
                 return made
             }()
             view.show(placement)
-            if view.frame != column { view.frame = column }
+            if view.frame != target { view.frame = target }
             kept.insert(placement.lineRange)
         }
         for (range, view) in existing where !kept.contains(range) { view.removeFromSuperview() }

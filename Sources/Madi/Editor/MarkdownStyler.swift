@@ -53,14 +53,18 @@ public final class MarkdownStyler {
         /// 글 칸의 왼쪽 끝에 놓는가 — 그림 안에 글자의 들여쓰기가 들어 있는 것(넓은 코드 블록). 줄 조각의 자리를 따르면
         /// 줄 조각 여백만큼 더 들어가 다른 코드 블록의 글과 5pt 어긋났다(그림으로 봄).
         public var alignsToColumn = false
+        /// 그림 아래에 비워 둔 가로 막대의 자리(pt). 넓힌 자리(`wideAreaWidth`)에도 다 들지 않는 넓은 그림만 갖는다 —
+        /// 가로 보기(`WidePlacementView`)가 이 자리에 늘 보이는 막대를 그린다.
+        public var scrollBarSpace: CGFloat = 0
 
         public init(lineRange: NSRange, size: CGSize, image: NSImage, centered: Bool = false,
-                    alignsToColumn: Bool = false) {
+                    alignsToColumn: Bool = false, scrollBarSpace: CGFloat = 0) {
             self.lineRange = lineRange
             self.size = size
             self.image = image
             self.centered = centered
             self.alignsToColumn = alignsToColumn
+            self.scrollBarSpace = scrollBarSpace
         }
     }
 
@@ -165,6 +169,22 @@ public final class MarkdownStyler {
     /// 글 칸의 폭 — 줄 조각 여백을 뺀, 글이 실제로 줄을 바꾸는 폭(`DecoratedTextView.textColumnWidth`와 같다).
     /// 코드 줄이 넘치는지를 이것으로 잰다.
     public var textColumnWidth: Double = 700
+
+    /// 넓은 그림이 쓸 수 있는 폭 — 글 칸의 왼쪽 끝부터 창 오른쪽의 빈자리까지(`DecoratedTextView.wideAreaWidth`와 같다).
+    /// 글 칸보다 좁으면 글 칸이다. 넓은 표는 이 폭까지 열을 편다. 이 폭에도 다 들지 않는 그림만 가로 막대를 갖는다
+    /// (사용자 — "표 너비가 크면 다 안보이는", 고른 것: 오른쪽 빈자리까지 넓혀 보이고, 넘치면 잘린 쪽 표시와 늘 보이는 막대).
+    public var wideAreaWidth: Double = 0
+
+    /// 넓은 그림이 실제로 쓰는 폭.
+    private var wideArea: Double { max(textColumnWidth, wideAreaWidth) }
+
+    /// 가로 막대가 차지하는 높이 — 그림과의 틈, 막대, 아래 틈.
+    static let wideScrollBarSpace: CGFloat = 12
+
+    /// 넓은 그림이 넓힌 자리에도 다 들지 않으면 막대의 자리, 들면 0.
+    private func scrollBarSpace(forWidth width: CGFloat) -> CGFloat {
+        Double(width) > wideArea + 0.5 ? Self.wideScrollBarSpace : 0
+    }
 
     /// 넓은 것을 **줄을 바꾸지 않고 가로로 굴리게** 둘지(사용자 — "코드랑 표 둘 다 추천안으로"). 켜면:
     /// - 글 칸보다 긴 줄이 있는 코드 블록은 캐럿이 밖에 있을 때 줄을 바꾸지 않은 그림이 된다(`placeWideCode`).
@@ -773,14 +793,16 @@ public final class MarkdownStyler {
                                                documentEnd: NSMaxRange(block.range))
                 codeCache[key] = .wide(rendering)
             }
+            let bar = scrollBarSpace(forWidth: rendering.size.width)
+            let height = rendering.size.height + bar
             placements.append(ImagePlacement(lineRange: first.range, size: rendering.size, image: rendering.image,
-                                             alignsToColumn: true))
+                                             alignsToColumn: true, scrollBarSpace: bar))
             renderings[first.range] = rendering
 
             guard NSIntersectionRange(block.range, writeRange).length > 0
                     || NSLocationInRange(block.range.location, writeRange)
                     || !Self.isFolded(header: first.range, rest: blockLines.dropFirst().map(\.range),
-                                      height: rendering.size.height, in: storage) else { continue }
+                                      height: height, in: storage) else { continue }
             for line in blockLines {
                 if line.range.length > 0 {
                     hide(line.range, in: storage)
@@ -791,9 +813,9 @@ public final class MarkdownStyler {
                 let paragraph = text.lineRange(for: NSRange(location: line.range.location, length: 0))
                 let style = NSMutableParagraphStyle()
                 if line.lineNumber == first.lineNumber {
-                    // 그림의 높이 그대로 — 그림 안에 줄 간격이 다 들어 있다.
-                    style.minimumLineHeight = rendering.size.height
-                    style.maximumLineHeight = rendering.size.height
+                    // 그림의 높이 그대로 — 그림 안에 줄 간격이 다 들어 있다. 넘치면 막대의 자리를 더한다.
+                    style.minimumLineHeight = height
+                    style.maximumLineHeight = height
                 } else {
                     style.minimumLineHeight = 0
                     style.maximumLineHeight = 0.001
@@ -1043,11 +1065,14 @@ public final class MarkdownStyler {
             guard entry.grid.size.height > 0 else { continue }
             drawn.append(DrawnTable(headerLine: first.range, grid: entry.grid))
             foldedTableRanges.append(block)
-            placements.append(ImagePlacement(lineRange: first.range, size: entry.grid.size, image: entry.image))
+            let bar = scrollBarSpace(forWidth: entry.grid.size.width)
+            let height = entry.grid.size.height + 2 + bar
+            placements.append(ImagePlacement(lineRange: first.range, size: entry.grid.size, image: entry.image,
+                                             scrollBarSpace: bar))
 
             let writes = NSIntersectionRange(block, writeRange).length > 0 || NSLocationInRange(block.location, writeRange)
                 || !Self.isFolded(header: first.range, rest: table.rows.dropFirst().map(\.range),
-                                  height: entry.grid.size.height + 2, in: storage)
+                                  height: height, in: storage)
             guard writes else { continue }
             for row in table.rows {
                 if row.range.length > 0 {
@@ -1064,8 +1089,8 @@ public final class MarkdownStyler {
                 let style = NSMutableParagraphStyle()
                 if row.lineNumber == first.lineNumber {
                     style.paragraphSpacing = theme.paragraphSpacing
-                    style.minimumLineHeight = entry.grid.size.height + 2
-                    style.maximumLineHeight = entry.grid.size.height + 2
+                    style.minimumLineHeight = height
+                    style.maximumLineHeight = height
                 } else {
                     // 접는다. 0은 "제한 없음"이라 아주 작은 값을 준다.
                     style.minimumLineHeight = 0
@@ -1080,10 +1105,10 @@ public final class MarkdownStyler {
         imagePlacements = placements.sorted { $0.lineRange.location < $1.lineRange.location }
     }
 
-    /// 격자를 다시 쓸 수 있는지 가리는 열쇠 — 원문, 글 넓이, 글꼴, 줄 간격, 색 테마(칸의 글자 색과 선
+    /// 격자를 다시 쓸 수 있는지 가리는 열쇠 — 원문, 글 넓이, 넓힌 자리, 글꼴, 줄 간격, 색 테마(칸의 글자 색과 선
     /// 색이 격자에 들어 있다), 내보내는 중인가(그때는 기본 색이다).
     private func tableCacheKey(_ source: String) -> String {
-        "\(contentWidth)|\(theme.bodyPointSize)|\(theme.lineSpacingScale)|\(theme.bodyFontFamily ?? "")|"
+        "\(contentWidth)|\(wideArea)|\(theme.bodyPointSize)|\(theme.lineSpacingScale)|\(theme.bodyFontFamily ?? "")|"
             + "\(theme.codeFontFamily ?? "")|\(appliesSyntheticSlant)|\(theme.colorTheme.rawValue)|"
             + "\(theme.isForOutput)|\(widensBlocks)\n" + source
     }
@@ -1103,9 +1128,18 @@ public final class MarkdownStyler {
         let font = theme.bodyFont
         let lineHeight = ceil(font.ascender - font.descender + font.leading)
         // 넓게 굴릴 때는 열이 본문 여섯 글자 폭(+ 가장 긴 낱말)보다 좁아지지 않는다 — 넘치는 표는 가로로 굴린다.
-        return TableGrid(rows: rows, columnCount: table.columnCount, lineHeight: lineHeight,
-                         maxWidth: CGFloat(contentWidth), minimumColumnWidth: theme.bodyPointSize * 4,
-                         readableWidth: widensBlocks ? theme.bodyPointSize * 6 : nil)
+        let readable = widensBlocks ? theme.bodyPointSize * 6 : nil
+        let grid = TableGrid(rows: rows, columnCount: table.columnCount, lineHeight: lineHeight,
+                             maxWidth: CGFloat(contentWidth), minimumColumnWidth: theme.bodyPointSize * 4,
+                             readableWidth: readable)
+        // 글 칸에 들지 않는 표는 오른쪽 빈자리까지 열을 편다 — 넓은 창에서는 다 보이고, 그래도 넘치면 열이 덜 좁다. 글 칸에
+        // 드는 표는 전과 같다(칸 안에서 줄을 바꿔 글 칸에 맞춘다).
+        let wider = CGFloat(contentWidth + wideArea - textColumnWidth)
+        guard readable != nil, grid.size.width > CGFloat(contentWidth) + 0.5, wider > CGFloat(contentWidth) + 0.5 else {
+            return grid
+        }
+        return TableGrid(rows: rows, columnCount: table.columnCount, lineHeight: lineHeight, maxWidth: wider,
+                         minimumColumnWidth: theme.bodyPointSize * 4, readableWidth: readable)
     }
 
     /// 칸 하나의 글. 칸 밖과 같은 인라인 칠하기(`styleInline`)를 거친 뒤 숨긴 마커를 뺀다.
