@@ -132,4 +132,37 @@ final class TaskBoxTests: XCTestCase {
         XCTAssertGreaterThan(brightness(NSPoint(x: open.midX, y: open.midY)), 0.9, "빈 칸의 가운데는 비었다")
         XCTAssertLessThan(brightness(NSPoint(x: open.minX + 0.8, y: open.midY)), 0.85, "테두리는 보인다")
     }
+
+    /// 한 일과 빈 칸이 같은 자리 — 상자의 크기 · 자리와 상자 뒤 글의 시작이 같다. `x`는 공백보다 넓어 전에는 한 일 뒤의 글이
+    /// 밀렸다(사용자 — "체크박스 체크된것 안된것 비교하면 간격이 안맞아"). 캐럿이 있는 줄은 원문 그대로다.
+    func testCheckedAndOpenBoxesLineUp() throws {
+        let text = "앞\n\n- [ ] 같은 글\n- [x] 같은 글\n- [X] 같은 글\n"
+        let view = editor(text)
+        let tv = view.textView
+        tv.setSelectedRange(NSRange(location: 0, length: 0))
+        let layout = try XCTUnwrap(tv.layoutManager)
+        layout.ensureLayout(for: try XCTUnwrap(tv.textContainer))
+        let ns = text as NSString
+        let lines = ["- [ ]", "- [x]", "- [X]"].map { ns.range(of: $0).location }
+        func x(of location: Int) -> CGFloat {
+            layout.location(forGlyphAt: layout.glyphIndexForCharacter(at: location)).x
+        }
+        let after = lines.map { x(of: $0 + 6) }   // 상자 뒤 공백 다음 — "같은 글"의 첫 글자
+        XCTAssertEqual(after[1], after[0], accuracy: 0.01, "한 일 뒤의 글이 빈 칸 뒤의 글과 같은 자리")
+        XCTAssertEqual(after[2], after[0], accuracy: 0.01, "`[X]`도")
+        let boxes = tv.taskBoxes.map { box -> NSRect in
+            let glyphs = layout.glyphRange(forCharacterRange: box.range, actualCharacterRange: nil)
+            return layout.boundingRect(forGlyphRange: glyphs, in: tv.textContainer!)
+        }
+        XCTAssertEqual(boxes.count, 3)
+        XCTAssertEqual(boxes[1].width, boxes[0].width, accuracy: 0.01, "상자 자리의 폭이 같다 — 상자도 같은 크기")
+        XCTAssertEqual(boxes[2].width, boxes[0].width, accuracy: 0.01, "`[X]`는 줄여서 맞춘다")
+        XCTAssertEqual(boxes[1].minX, boxes[0].minX, accuracy: 0.01)
+        XCTAssertEqual(view.markdown, text, "문서는 그대로")
+
+        // 캐럿이 든 줄은 원문 — 간격을 주지 않는다.
+        let done = lines[1]
+        tv.setSelectedRange(NSRange(location: done + 4, length: 0))
+        XCTAssertNil(tv.textStorage?.attribute(.kern, at: done + 3, effectiveRange: nil))
+    }
 }

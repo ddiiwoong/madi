@@ -1376,6 +1376,7 @@ public final class MarkdownStyler {
         // 상자로 그리는 체크박스는 글자를 투명하게 한다 — 숨기면(폭 0) 상자를 그릴 자리가 없다.
         if drawsTaskBoxes, !onCaretLine, let box = Self.taskBoxRange(of: line), NSMaxRange(box) <= text.length {
             storage.addAttribute(.foregroundColor, value: NSColor.clear, range: box)
+            equalizeTaskBoxWidth(box, in: storage)
         }
 
         // 글머리와 구분선 — 그리는 쪽(`DecoratedTextView`)이 점과 선을 놓는다. 글자는 자리를 지키도록 투명하게.
@@ -1489,6 +1490,23 @@ public final class MarkdownStyler {
         // 모든 글자에 나눠 준다. 마지막 글자 하나에 몰면 줄일 때 그 글자의 폭(`]`는 5pt 안팎)보다 더 줄일 수 없어
         // 남는다(실측: `[!WARNING]`을 80pt로 맞추려다 82.7pt에서 멈췄다).
         storage.addAttribute(.kern, value: (wanted - natural) / CGFloat(range.length), range: range)
+    }
+
+    /// 체크박스 세 글자의 폭을 칸 안의 글자와 상관없이 같게 한다 — 가운데 글자 뒤에 글자 간격을 주어 `[x]`의 폭에 맞춘다
+    /// (`[ ]`는 늘리고 `[X]`는 줄인다 — 글자가 투명해 줄여도 겹쳐 보이지 않는다).
+    ///
+    /// 왜(사용자 — "체크박스 체크된것 안된것 비교하면 간격이 안맞아"): 글자는 투명하지만 자리는 그대로라, `x`가 공백보다
+    /// 넓은 만큼(시스템 글꼴 15pt에서 `[ ]` 15.0pt · `[x]` 18.6pt · `[X]` 20.9pt) 한 일의 상자 뒤 글이 오른쪽으로 밀렸고,
+    /// 상자도 세 글자의 가운데에 놓이므로 그 절반만큼 어긋났다(`DecoratedTextView.taskBoxFrame`). `[x]`에 맞추는 것은 가장 흔한 꼴이고,
+    /// `[X]`(20.9pt)에 맞추면 빈 칸 뒤가 6pt나 벌어지기 때문이다. 캐럿이 있는 줄은 원문이라 맞추지 않는다.
+    private func equalizeTaskBoxWidth(_ box: NSRange, in storage: NSTextStorage) {
+        guard box.length == 3, NSMaxRange(box) <= storage.length else { return }
+        let font = storage.attribute(.font, at: box.location, effectiveRange: nil) as? NSFont ?? theme.bodyFont
+        func width(_ glyphs: String) -> CGFloat { (glyphs as NSString).size(withAttributes: [.font: font]).width }
+        let pad = width("[x]") - width((storage.string as NSString).substring(with: box))
+        storage.removeAttribute(.kern, range: box)
+        guard abs(pad) > 0.01 else { return }
+        storage.addAttribute(.kern, value: pad, range: NSRange(location: box.location + 1, length: 1))
     }
 
     /// 체크박스 줄의 `[ ]` 범위. 줄 판정의 두 번째 마커다(`MarkdownSyntax`).
