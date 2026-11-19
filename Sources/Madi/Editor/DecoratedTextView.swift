@@ -75,6 +75,32 @@ public class DecoratedTextView: NSTextView {
         }
     }
 
+    /// 점으로 그릴 목록의 글머리. `MarkdownStyler`가 계산해 넘긴다(그 글자는 투명하게 칠해 두었다).
+    public var listBullets: [MarkdownStyler.ListBullet] = [] {
+        didSet {
+            guard listBullets != oldValue else { return }
+            listBulletRanges = listBullets.map(\.range)
+            needsDisplay = true
+        }
+    }
+    private var listBulletRanges: [NSRange] = []
+
+    /// 선으로 그릴 구분선 줄. `MarkdownStyler`가 계산해 넘긴다(그 글자는 투명하게 칠해 두었다).
+    public var thematicBreaks: [NSRange] = [] {
+        didSet {
+            guard thematicBreaks != oldValue else { return }
+            needsDisplay = true
+        }
+    }
+
+    /// 글머리의 색(본문 글자 색)과 구분선의 색. 편집기가 테마에서 넣는다.
+    public var listBulletColor: NSColor = .labelColor {
+        didSet { if listBulletColor != oldValue { needsDisplay = true } }
+    }
+    public var thematicBreakColor: NSColor = .separatorColor {
+        didSet { if thematicBreakColor != oldValue { needsDisplay = true } }
+    }
+
     /// 인용 막대. `MarkdownStyler`가 계산해 넘긴다(`>` 글자는 캐럿이 없는 줄에서 숨는다).
     public var quoteBars: [MarkdownStyler.QuoteBar] = [] {
         didSet {
@@ -136,6 +162,8 @@ public class DecoratedTextView: NSTextView {
         drawQuoteBars(in: rect, visible: visible)
         drawAlertTitles(in: rect, visible: visible)
         drawTaskBoxes(in: rect, visible: visible)
+        drawListBullets(in: rect, visible: visible)
+        drawThematicBreaks(in: rect, visible: visible)
         drawImages(in: rect, visible: visible)
     }
 
@@ -437,6 +465,96 @@ public class DecoratedTextView: NSTextView {
         mark.lineJoinStyle = .round
         NSColor.white.setStroke()
         mark.stroke()
+    }
+
+    // MARK: 글머리와 구분선
+
+    /// 글머리 점의 자리 — 투명하게 둔 글머리 글자의 가운데, 글자의 x높이 가운데. 점은 x높이의 0.62배(15pt 본문에서 5pt)다 —
+    /// 브라우저의 원판(disc)과 비슷한 크기이고, 글머리 글자 폭을 넘지 않는다.
+    ///
+    /// - Parameters:
+    ///   - glyph: 글머리 글자를 감싼 사각형(뷰 좌표).
+    ///   - baseline: 그 줄의 기준선(뷰 좌표, 아래로 갈수록 크다).
+    static func bulletFrame(glyph: NSRect, baseline: CGFloat, xHeight: CGFloat) -> NSRect {
+        let side = max(4, min((xHeight * 0.62).rounded(), max(4, glyph.width.rounded(.down))))
+        let centerY = baseline - xHeight / 2
+        return NSRect(x: (glyph.midX - side / 2).rounded(), y: (centerY - side / 2).rounded(), width: side, height: side)
+    }
+
+    /// 겹마다 다른 점 — 첫 겹은 채운 원, 둘째는 빈 원, 셋째부터는 채운 네모(브라우저의 disc · circle · square).
+    static func drawBullet(in frame: NSRect, depth: Int, color: NSColor) {
+        switch depth {
+        case ...1:
+            color.setFill()
+            NSBezierPath(ovalIn: frame).fill()
+        case 2:
+            color.setStroke()
+            let ring = NSBezierPath(ovalIn: frame.insetBy(dx: 0.6, dy: 0.6))
+            ring.lineWidth = 1.2
+            ring.stroke()
+        default:
+            color.setFill()
+            NSBezierPath(rect: frame.insetBy(dx: 0.5, dy: 0.5)).fill()
+        }
+    }
+
+    /// 글자 하나의 사각형(뷰 좌표)과 그 줄의 기준선, 그 글자의 글꼴.
+    private func glyphMetrics(at range: NSRange) -> (rect: NSRect, baseline: CGFloat, font: NSFont)? {
+        guard let layoutManager, let textContainer, let storage = textStorage,
+              range.length > 0, NSMaxRange(range) <= storage.length else { return nil }
+        let glyphs = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+        guard glyphs.length > 0 else { return nil }
+        let origin = textContainerOrigin
+        var rect = layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer)
+        rect.origin.x += origin.x
+        rect.origin.y += origin.y
+        let fragment = layoutManager.lineFragmentRect(forGlyphAt: glyphs.location, effectiveRange: nil)
+        let baseline = fragment.minY + layoutManager.location(forGlyphAt: glyphs.location).y + origin.y
+        let font = storage.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont
+            ?? NSFont.systemFont(ofSize: NSFont.systemFontSize)
+        return (rect, baseline, font)
+    }
+
+    /// 글머리 하나의 점 자리(뷰 좌표). 시험도 쓴다.
+    func bulletFrame(of bullet: MarkdownStyler.ListBullet) -> NSRect? {
+        glyphMetrics(at: bullet.range).map {
+            Self.bulletFrame(glyph: $0.rect, baseline: $0.baseline, xHeight: $0.font.xHeight)
+        }
+    }
+
+    private func drawListBullets(in rect: NSRect, visible: NSRange) {
+        guard !listBullets.isEmpty else { return }
+        let touching = Self.ranges(listBulletRanges, touching: visible)
+        for index in touching.indices {
+            let bullet = listBullets[index]
+            guard let frame = bulletFrame(of: bullet), frame.intersects(rect) else { continue }
+            Self.drawBullet(in: frame, depth: bullet.depth, color: listBulletColor)
+        }
+    }
+
+    /// 구분선 한 줄의 선 자리 — 글 칸의 폭, 투명하게 둔 표시 글자의 x높이 가운데(표시가 보이던 높이), 1pt.
+    static func thematicBreakFrame(columnLeft: CGFloat, columnWidth: CGFloat, baseline: CGFloat,
+                                   xHeight: CGFloat) -> NSRect {
+        NSRect(x: columnLeft, y: (baseline - xHeight / 2).rounded(.down), width: columnWidth, height: 1)
+    }
+
+    /// 구분선 한 줄의 선 자리(뷰 좌표). 시험도 쓴다.
+    func thematicBreakFrame(of line: NSRange) -> NSRect? {
+        guard let textContainer, let metrics = glyphMetrics(at: NSRange(location: line.location, length: 1)) else {
+            return nil
+        }
+        return Self.thematicBreakFrame(columnLeft: textContainerOrigin.x + textContainer.lineFragmentPadding,
+                                       columnWidth: textColumnWidth, baseline: metrics.baseline,
+                                       xHeight: metrics.font.xHeight)
+    }
+
+    private func drawThematicBreaks(in rect: NSRect, visible: NSRange) {
+        guard !thematicBreaks.isEmpty else { return }
+        thematicBreakColor.setFill()
+        for line in Self.ranges(thematicBreaks, touching: visible) {
+            guard let frame = thematicBreakFrame(of: line), frame.intersects(rect) else { continue }
+            frame.fill()
+        }
     }
 
     /// 비워 둔 줄 안에서 그림이 놓일 자리. 보통은 왼쪽 맞춤이고, `centered`면 **글 넓이**의

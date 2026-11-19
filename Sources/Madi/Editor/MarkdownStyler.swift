@@ -98,6 +98,25 @@ public final class MarkdownStyler {
     /// 그대로 있어 폭도 클릭도 같다. 기본 편집기만 켠다: 블록 편집기는 상자를 그리는 쪽을 잇지
     /// 않았으므로, 켜면 글자만 사라진다.
     public var drawsTaskBoxes = false
+
+    /// 목록의 글머리 하나 — 캐럿이 없는 줄의 `-` · `*` · `+` 한 글자와 그 목록의 겹(1부터).
+    public struct ListBullet: Equatable {
+        public let range: NSRange
+        public let depth: Int
+    }
+
+    /// 목록의 글머리와 구분선을 **그릴지**(사용자 — "목록, 구분선도 보여주는건 어색"). 켜면 캐럿이 없는 줄에서:
+    /// - 번호 없는 목록의 `-` · `*` · `+`를 투명하게 하고 그 자리에 점을 그린다(겹마다 ● ○ ■, 브라우저와 같다).
+    ///   체크박스 줄은 점 없이 상자만 — GitHub와 같다.
+    /// - 번호 목록의 `1.`은 글자 그대로 두되 흐리게 하지 않는다 — 그것이 그려진 모양이다.
+    /// - 구분선(`---` · `***` · `___`)의 글자를 투명하게 하고 글 칸 폭의 선을 그린다.
+    /// 글자는 문서에 그대로 있어 폭도 캐럿도 같다(`drawsTaskBoxes`와 같은 길). 캐럿이 있는 줄은 원문이다. 기본 편집기만
+    /// 켠다 — 블록 편집기는 그리는 쪽을 잇지 않았다.
+    public var drawsListMarks = false
+    /// 그릴 글머리(`drawsListMarks`). 위치 순.
+    public private(set) var listBullets: [ListBullet] = []
+    /// 선으로 그릴 구분선 줄(`drawsListMarks`). 위치 순.
+    public private(set) var thematicBreaks: [NSRange] = []
     /// 이번 패스에서 상자로 그릴 체크박스(위치 순).
     public private(set) var taskBoxes: [TaskBox] = []
 
@@ -269,6 +288,8 @@ public final class MarkdownStyler {
             codeRenderings = [:]
             imagePlacements = []
             taskBoxes = []
+            listBullets = []
+            thematicBreaks = []
             quoteBars = []
             alertTitles = []
             drawnTables = []
@@ -304,6 +325,9 @@ public final class MarkdownStyler {
 
         codeBlockRanges = codeBlocks(in: lines)
         taskBoxes = drawsTaskBoxes ? Self.taskBoxes(in: lines, caretLine: caretLine) : []
+        listBullets = drawsListMarks ? Self.listBullets(in: lines, caretLine: caretLine, text: text) : []
+        thematicBreaks = drawsListMarks
+            ? lines.filter { $0.kind == .thematicBreak && $0.lineNumber != caretLine }.map(\.range) : []
         definitions = LinkDefinitions(scanning: text, lines: lines)
         // `> [!NOTE]`로 시작하는 인용 덩이는 색이 있는 안내 상자다. 줄 하나만 보고는
         // 알 수 없어서(덩이의 첫 줄이 종류를 말한다) 미리 한 번 훑는다.
@@ -1353,6 +1377,80 @@ public final class MarkdownStyler {
         if drawsTaskBoxes, !onCaretLine, let box = Self.taskBoxRange(of: line), NSMaxRange(box) <= text.length {
             storage.addAttribute(.foregroundColor, value: NSColor.clear, range: box)
         }
+
+        // 글머리와 구분선 — 그리는 쪽(`DecoratedTextView`)이 점과 선을 놓는다. 글자는 자리를 지키도록 투명하게.
+        if drawsListMarks, !onCaretLine {
+            switch line.kind {
+            case let .listItem(ordered, _):
+                if ordered {
+                    if let number = Self.listNumberRange(of: line, in: text) {
+                        storage.addAttribute(.foregroundColor, value: theme.text, range: number)
+                    }
+                } else if let bullet = Self.bulletRange(of: line), NSMaxRange(bullet) <= text.length {
+                    storage.addAttribute(.foregroundColor, value: NSColor.clear, range: bullet)
+                }
+            case .thematicBreak where NSMaxRange(line.range) <= text.length:
+                storage.addAttribute(.foregroundColor, value: NSColor.clear, range: line.range)
+            default:
+                break
+            }
+        }
+    }
+
+    // MARK: 목록의 글머리
+
+    /// 번호 없는 목록 줄의 글머리 한 글자(`-` · `*` · `+`). 첫 마커는 들여쓰기와 글머리다(`MarkdownSyntax`).
+    static func bulletRange(of line: LineToken) -> NSRange? {
+        guard case .listItem(ordered: false, _) = line.kind, let marker = line.markerRanges.first,
+              marker.length > 0 else { return nil }
+        return NSRange(location: NSMaxRange(marker) - 1, length: 1)
+    }
+
+    /// 번호 목록 줄의 번호(`12.` · `3)`) — 첫 마커에서 앞의 들여쓰기를 뺀 것.
+    static func listNumberRange(of line: LineToken, in text: NSString) -> NSRange? {
+        guard case .listItem(ordered: true, _) = line.kind, let marker = line.markerRanges.first,
+              NSMaxRange(marker) <= text.length else { return nil }
+        var start = marker.location
+        while start < NSMaxRange(marker), [0x20, 0x09].contains(text.character(at: start)) { start += 1 }
+        return start < NSMaxRange(marker) ? NSRange(location: start, length: NSMaxRange(marker) - start) : nil
+    }
+
+    /// 줄 앞의 들여쓰기 폭(칸). 탭은 네 칸이다.
+    private static func indentColumns(of line: LineToken, in text: NSString) -> Int {
+        var columns = 0
+        var index = line.range.location
+        while index < NSMaxRange(line.range) {
+            switch text.character(at: index) {
+            case 0x20: columns += 1
+            case 0x09: columns += 4 - columns % 4
+            default: return columns
+            }
+            index += 1
+        }
+        return columns
+    }
+
+    /// 그릴 글머리 — 캐럿이 없는 번호 없는 목록 줄마다 하나, 그 목록의 겹과 함께. 체크박스 줄은 빠진다(상자만 그린다).
+    ///
+    /// 겹은 들여쓰기로 센다: 이어지는 목록 줄들의 들여쓰기를 쌓아 두고, 더 들어가면 한 겹 안, 같으면 같은 겹, 덜 들어가면
+    /// 그만큼 나온다. 번호 목록도 겹을 센다 — 번호 목록 안의 목록은 둘째 겹이다(브라우저의 `ol ul`). 빈 줄과 들여 쓴 이음 줄은
+    /// 목록을 끊지 않고, 들여쓰기 없는 다른 줄(문단 · 제목 · 펜스 등)이 끊는다.
+    static func listBullets(in lines: [LineToken], caretLine: Int?, text: NSString) -> [ListBullet] {
+        var bullets: [ListBullet] = []
+        var indents: [Int] = []
+        for line in lines {
+            guard case let .listItem(ordered, checked) = line.kind else {
+                if line.kind != .blank, indentColumns(of: line, in: text) == 0 { indents = [] }
+                continue
+            }
+            let indent = indentColumns(of: line, in: text)
+            while let last = indents.last, last > indent { indents.removeLast() }
+            if indents.last != indent { indents.append(indent) }
+            guard !ordered, checked == nil, line.lineNumber != caretLine,
+                  let bullet = bulletRange(of: line), NSMaxRange(bullet) <= text.length else { continue }
+            bullets.append(ListBullet(range: bullet, depth: indents.count))
+        }
+        return bullets
     }
 
     // MARK: 알림 머리

@@ -135,6 +135,7 @@ public final class MarkdownEditorView: NSView {
         styler.theme = theme
         styler.imageStore = imageStore
         styler.drawsTaskBoxes = true
+        styler.drawsListMarks = true
         styler.drawsTables = true
         styler.drawsAlertTitles = true
         // 긴 줄의 코드 블록 · 넓은 표는 줄을 바꾸지 않고 가로로 굴린다(`WidePlacementView`).
@@ -706,11 +707,42 @@ public final class MarkdownEditorView: NSView {
         textView.codeBlockRanges = styler.codeBlockRanges
         textView.imagePlacements = styler.imagePlacements
         textView.taskBoxes = styler.taskBoxes
+        textView.listBullets = styler.listBullets
+        textView.listBulletColor = theme.text
+        textView.thematicBreaks = styler.thematicBreaks
+        textView.thematicBreakColor = theme.rule
         textView.quoteBars = styler.quoteBars
         textView.quoteBarColor = { [theme] alert in theme.quoteBarColor(for: alert) }
         textView.alertTitles = styler.alertTitles
         // 상자가 옮겨졌을 수 있다 — 복사 단추를 마우스 자리로 다시 놓는다.
         if codeCopyButton?.isHidden == false, let point = codeCopyPoint { updateCodeCopyButton(at: point) }
+        // 줄이 제목이 되는 등 캐럿 자리의 글꼴이 바뀌었을 수 있다.
+        syncTypingFont()
+    }
+
+    // MARK: 캐럿의 글꼴
+
+    /// 캐럿 자리의 글꼴을 입력 속성(`typingAttributes`)에 둔다 — 캐럿의 높이와 새로 친 글자의 글꼴이 이것을 따른다.
+    ///
+    /// 왜(사용자 — "커서 크기가 폰트사이즈에 비례하지 않고 다 동일해"): 이 텍스트 뷰는 일반 글(`isRichText = false`)이라
+    /// 선택이 바뀌어도 입력 속성을 글에서 읽지 않는다. 그래서 입력 속성의 글꼴이 늘 시스템 기본 12pt였다(시험에서 봄: 27.75pt
+    /// 제목 줄에서도 12pt). 글자가 있는 자리의 캐럿은 줄 높이를 따라 괜찮았지만(확인용 사본에서 잼: 제목 41px · 본문 25px),
+    /// 문서 끝의 빈 줄에서는 글자 크기와 상관없이 12pt 크기(15px)였다. 한글을 조합하는 중에는 건드리지 않는다.
+    func syncTypingFont() {
+        let selection = textView.selectedRange()
+        guard storage.editedMask.isEmpty, !textView.hasMarkedText(), selection.length == 0 else { return }
+        let font = Self.typingFontIndex(caret: selection.location, in: storage.string as NSString)
+            .flatMap { storage.attribute(.font, at: $0, effectiveRange: nil) as? NSFont } ?? theme.bodyFont
+        guard (textView.typingAttributes[.font] as? NSFont) != font else { return }
+        textView.typingAttributes[.font] = font
+    }
+
+    /// 입력 속성을 읽을 글자 — 캐럿 앞 글자, 줄의 처음이면 캐럿 자리의 글자(빈 줄이면 그 줄바꿈). 문서 끝의 빈 줄이면 nil
+    /// (본문 글꼴을 쓴다).
+    static func typingFontIndex(caret: Int, in text: NSString) -> Int? {
+        guard text.length > 0, caret >= 0, caret <= text.length else { return nil }
+        if caret > 0, text.character(at: caret - 1) != 0x0A { return caret - 1 }
+        return caret < text.length ? caret : nil
     }
 
     // MARK: 코드 복사 단추
@@ -1392,6 +1424,8 @@ extension MarkdownEditorView: NSTextViewDelegate {
             }
         }
         lastCaretLine = new
+        // 같은 줄 안에서 옮겨도 글꼴은 바뀔 수 있다(제목의 `#` 앞 · 굵은 글자 둘레). 편집 중이면 `textDidChange`가 본다.
+        syncTypingFont()
         scheduleFormatBar()
     }
 

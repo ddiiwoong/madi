@@ -109,11 +109,14 @@ final class SampleDocumentTests: XCTestCase {
         XCTAssertFalse(hidden("5 * 3", offset: 2), "곱하기 별표는 글자")
     }
 
-    /// 목록 · 인용 · 알림 · 각주 — 할 일 상자 셋, 알림 머리 다섯, 인용 막대, 각주 참조 둘.
+    /// 목록 · 인용 · 알림 · 각주 — 할 일 상자 셋, 글머리 다섯과 구분선 셋, 알림 머리 다섯, 인용 막대, 각주 참조 둘.
     func testBlocksAndFootnotes() throws {
         let (_, controller, _) = try openSample()
         let view = controller.editor.textView
         XCTAssertEqual(view.taskBoxes.count, 3)
+        XCTAssertEqual(view.listBullets.map(\.depth), [1, 1, 1, 1, 1] + [1, 1, 2, 3, 1] + [1],
+                       "3절 다섯 · 4절 다섯(두 단계 들어감) · 코드 절 하나 — 번호 · 할 일 줄에는 점이 없다")
+        XCTAssertEqual(view.thematicBreaks.count, 3, "10절의 구분선 셋(`---` · `***` · `___`)")
         XCTAssertEqual(view.alertTitles.map(\.alert), [.note, .tip, .important, .warning, .caution])
         XCTAssertFalse(view.quoteBars.isEmpty)
         var references = 0
