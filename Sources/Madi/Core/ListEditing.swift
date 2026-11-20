@@ -25,9 +25,11 @@ public enum ListEditing {
         /// 체크박스 뒤의 공백.
         var taskGap: String
 
-        /// 앞머리 전체의 길이(UTF-16).
+        /// 앞머리 전체의 길이(UTF-16). 조각마다 따로 더한다 — 한 식으로 이어 붙이면 Swift 6.3.3(GitHub의 macOS
+        /// 러너)이 "적당한 시간 안에 형을 정하지 못한다"며 멈췄다(이 Mac의 컴파일러는 지나갔다).
         var length: Int {
-            (quote + indent + (bullet ?? "") + gap + (task ?? "") + taskGap as NSString).length
+            let parts: [String] = [quote, indent, bullet ?? "", gap, task ?? "", taskGap]
+            return parts.reduce(0) { $0 + ($1 as NSString).length }
         }
 
         /// 표지와 그 뒤 공백의 폭 — 이 항목의 글이 표지에서 몇 칸 뒤에 시작하는가.
