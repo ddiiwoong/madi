@@ -15,7 +15,8 @@ libs="$platform/Developer/usr/lib"
 
 candidates=()
 for file in Tests/MadiTests/*.swift; do
-    if grep -qE '^(@preconcurrency )?import (AppKit|Cocoa|WebKit|SwiftUI|Translation|UniformTypeIdentifiers|CoreText|Security|CryptoKit)' "$file"; then
+    # Apple에만 있는 틀. Compression은 Windows의 Foundation에 없다(다른 플랫폼 점검에서 봄, 2026-11-20).
+    if grep -qE '^(@preconcurrency )?import (AppKit|Cocoa|WebKit|SwiftUI|Translation|UniformTypeIdentifiers|CoreText|Security|CryptoKit|Compression|PDFKit)' "$file"; then
         continue
     fi
     candidates+=("$file")
