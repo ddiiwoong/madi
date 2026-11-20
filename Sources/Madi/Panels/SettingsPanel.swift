@@ -51,8 +51,17 @@ final class SettingsPanel: NSWindowController {
                                             target: nil, action: nil)
     private let updateCheck = NSButton(checkboxWithTitle: String(localized: "켤 때 새 판 확인(하루 한 번)"),
                                        target: nil, action: nil)
-    private let associationLabel = NSTextField(wrappingLabelWithString: "")
-    private let associationButton = NSButton(title: String(localized: "마디 사용"), target: nil, action: nil)
+    private let autoInstallCheck = NSButton(checkboxWithTitle: String(localized: "새 판을 자동으로 받아 끌 때 설치"),
+                                            target: nil, action: nil)
+    /// 파일 종류마다 상태 한 줄과 `마디 사용` 단추(설정 ▸ 일반 ▸ 파일 연결).
+    private let associationKinds = FileAssociation.Kind.allCases
+    private lazy var associationLabels = associationKinds.map { _ in NSTextField(wrappingLabelWithString: "") }
+    private lazy var associationButtons = associationKinds.map { _ in
+        NSButton(title: String(localized: "마디 사용"), target: nil, action: nil)
+    }
+    private let associations: FileAssociating
+    /// 알림을 띄우는 곳. 시험이 바꾼다 — `runModal`은 시험을 멈춘다.
+    var presentAlert: (NSAlert) -> Void = { _ = $0.runModal() }
     private let languagePicker = NSPopUpButton()
     /// 화면 언어는 편집기 설정이 아니라 앱 도메인의 `AppleLanguages`다(`InterfaceLanguage`).
     /// 테스트가 사용자의 실제 값을 건드리지 않도록 도메인을 주입받는다.
@@ -118,8 +127,10 @@ final class SettingsPanel: NSWindowController {
          llmDefaults: UserDefaults = .standard,
          openURL: @escaping (URL) -> Void = { NSWorkspace.shared.open($0) },
          fontFamilies: @escaping (Bool) -> [String] = { SettingsPanel.installedFamilies(fixedPitchOnly: $0) },
-         isFontUsable: @escaping (String, RecommendedFont.Use) -> Bool = { SettingsPanel.isUsable($0, for: $1) }) {
+         isFontUsable: @escaping (String, RecommendedFont.Use) -> Bool = { SettingsPanel.isUsable($0, for: $1) },
+         associations: FileAssociating = SystemFileAssociations()) {
         self.store = store
+        self.associations = associations
         self.openURL = openURL
         self.fontFamilies = fontFamilies
         self.isFontUsable = isFontUsable
@@ -475,11 +486,31 @@ final class SettingsPanel: NSWindowController {
         remoteImageCheck.action = #selector(changed)
         updateCheck.target = self
         updateCheck.action = #selector(changed)
-        associationButton.bezelStyle = .rounded
-        associationButton.target = self
-        associationButton.action = #selector(claimAssociation)
-        associationLabel.font = .systemFont(ofSize: 11)
-        associationLabel.textColor = .secondaryLabelColor
+        autoInstallCheck.target = self
+        autoInstallCheck.action = #selector(changed)
+        var associationRows: [NSView] = []
+        for (index, button) in associationButtons.enumerated() {
+            button.bezelStyle = .rounded
+            button.tag = index
+            button.target = self
+            button.action = #selector(claimAssociation(_:))
+            button.setContentHuggingPriority(.required, for: .horizontal)
+            button.setContentCompressionResistancePriority(.required, for: .horizontal)
+            let label = associationLabels[index]
+            label.font = .systemFont(ofSize: 11)
+            label.textColor = .secondaryLabelColor
+            label.setContentHuggingPriority(.defaultLow, for: .horizontal)
+            label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            // 설정 창 폭(500)에서 여백과 단추를 뺀 만큼 — 길면 줄을 바꾼다. 폭을 정해 두어 줄마다 단추가 같은 자리에 선다.
+            label.preferredMaxLayoutWidth = 340
+            label.translatesAutoresizingMaskIntoConstraints = false
+            label.widthAnchor.constraint(equalToConstant: 340).isActive = true
+            let line = NSStackView(views: [label, button])
+            line.orientation = .horizontal
+            line.alignment = .centerY
+            line.spacing = 10
+            associationRows.append(line)
+        }
         languagePicker.removeAllItems()
         for language in InterfaceLanguage.allCases {
             languagePicker.addItem(withTitle: language.label)
@@ -506,16 +537,21 @@ final class SettingsPanel: NSWindowController {
             spacer(),
             NSTextField(labelWithString: String(localized: "업데이트")),
             updateCheck,
+            autoInstallCheck,
             // 무엇이 나가는지 적는다 — 원격 그림 항목 바로 아래라, 말하지 않으면 같은 종류의 요청으로 읽힌다.
             note(String(localized: """
-            GitHub에 마디의 최신 판을 묻는 요청 하나를 보냅니다. 문서 내용은 보내지 않고, GitHub는 요청한 \
-            IP 주소와 마디의 판 번호를 봅니다. 꺼도 마디 메뉴의 ‘업데이트 확인…’으로 언제든 확인할 수 있습니다. \
-            직접 빌드한 마디는 켤 때 확인하지 않습니다.
+            켜 두면 하루 한 번 GitHub에 마디의 최신 판을 묻습니다. 문서 내용은 보내지 않고, GitHub는 요청한 \
+            IP 주소와 마디의 판 번호를 봅니다. 자동 설치를 켜 두면 새 판을 묻지 않고 받아 서명을 확인해 두었다가 \
+            마디를 끌 때 바꿔 넣고, 다음에 켤 때 알립니다. 꺼도 마디 메뉴의 ‘업데이트 확인…’으로 언제든 확인할 수 \
+            있습니다. 직접 빌드한 마디는 저절로 확인하지 않습니다.
             """)),
             spacer(),
             NSTextField(labelWithString: String(localized: "파일 연결")),
-            associationLabel,
-            associationButton,
+        ] + associationRows + [
+            note(String(localized: """
+            ‘마디 사용’을 누르면 그 확장자의 파일을 Finder에서 열 때 지금 켜진 이 마디가 엽니다. 시스템이 한 번 더 \
+            물을 수 있습니다. 다른 앱으로 돌리려면 Finder의 정보 가져오기 ▸ 다음으로 열기에서 고릅니다.
+            """)),
         ])
     }
 
@@ -704,7 +740,7 @@ final class SettingsPanel: NSWindowController {
         return column([
             name, version,
             spacer(),
-            note(String(localized: "자동 업데이트는 아직 없습니다. 판 번호는 문제를 신고할 때 쓰십시오.")),
+            note(String(localized: "판 번호는 문제를 신고할 때 쓰십시오. 업데이트는 설정 ▸ 일반에서 정합니다.")),
             spacer(),
             note(String(localized: "본문 글꼴 Pretendard(© Kil Hyung-jin)와 코드 글꼴 IBM Plex Mono(© IBM Corp.)가 앱에 들어 있습니다. 둘 다 SIL Open Font License 1.1입니다.")),
             licenses,
@@ -739,6 +775,8 @@ final class SettingsPanel: NSWindowController {
         codeViewCheck.state = preferences.openInCodeView ? .on : .off
         remoteImageCheck.state = preferences.loadsRemoteImages ? .on : .off
         updateCheck.state = preferences.checksForUpdates ? .on : .off
+        autoInstallCheck.state = preferences.installsUpdatesAutomatically ? .on : .off
+        autoInstallCheck.isEnabled = preferences.checksForUpdates
         select(preferences.appearance, in: appearancePicker)
         select(preferences.colorTheme, in: themePicker)
         select(preferences.lineSpacing, in: lineSpacingPicker)
@@ -770,8 +808,11 @@ final class SettingsPanel: NSWindowController {
     }
 
     private func refreshAssociation() {
-        associationLabel.stringValue = FileAssociation.statusLine
-        associationButton.isEnabled = !FileAssociation.isMadiDefault
+        for (index, kind) in associationKinds.enumerated() {
+            let handler = associations.handler(for: kind)
+            associationLabels[index].stringValue = FileAssociation.statusLine(kind, handler: handler)
+            associationButtons[index].isEnabled = handler != .thisApp
+        }
     }
 
     /// 바뀌는 즉시 저장하고 알린다. 확인 버튼을 두지 않은 이유는, 보기 설정은
@@ -795,25 +836,31 @@ final class SettingsPanel: NSWindowController {
             codeFontFamily: fontSelection(codeFontPicker),
             headingFont: headingSelection(),
             colorTheme: selection(themePicker, preferences.colorTheme),
-            checksForUpdates: updateCheck.state == .on
+            checksForUpdates: updateCheck.state == .on,
+            installsUpdatesAutomatically: autoInstallCheck.state == .on
         )
+        // 저절로 확인하지 않으면 자동 설치도 없다 — 칸은 남겨 두고(다시 켜면 그대로) 흐리게.
+        autoInstallCheck.isEnabled = updateCheck.state == .on
         updateSizeLabel()
         preview.apply(preferences)
         store.save(preferences)
         NotificationCenter.default.post(name: PreferenceStore.didChange, object: self)
     }
 
-    @objc private func claimAssociation() {
-        FileAssociation.makeMadiDefault { [weak self] error in
+    @objc private func claimAssociation(_ sender: NSButton) {
+        guard associationKinds.indices.contains(sender.tag) else { return }
+        let kind = associationKinds[sender.tag]
+        associations.makeDefault(kind) { [weak self] error in
             guard let self else { return }
             if let error {
-                AppLog.error(String(localized: "기본 앱으로 등록하지 못했습니다"), detail: error.localizedDescription)
+                AppLog.error(String(localized: "기본 앱으로 등록하지 못했습니다"),
+                             detail: kind.label + " — " + error.localizedDescription)
                 let alert = NSAlert()
                 alert.messageText = String(localized: "기본 앱으로 등록하지 못했습니다")
                 alert.informativeText = error.localizedDescription
-                alert.runModal()
+                self.presentAlert(alert)
             } else {
-                AppLog.info(String(localized: "Markdown 파일의 기본 앱이 마디로 바뀌었습니다"))
+                AppLog.info(String(localized: "기본 앱을 마디로 바꿨습니다"), detail: kind.label)
             }
             self.refreshAssociation()
         }

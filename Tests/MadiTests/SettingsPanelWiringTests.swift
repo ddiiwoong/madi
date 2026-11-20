@@ -48,6 +48,20 @@ final class SettingsPanelWiringTests: XCTestCase {
 
     /// '받기…'가 연 주소. 브라우저를 띄우지 않는다.
     private var opened: [URL] = []
+
+    /// 파일 연결 대역 — 사용자의 기본 앱을 읽지도 바꾸지도 않는다.
+    final class FakeAssociations: FileAssociating {
+        var handlers: [FileAssociation.Kind: FileAssociation.Handler] = [:]
+        var failure: Error?
+        private(set) var made: [FileAssociation.Kind] = []
+        func handler(for kind: FileAssociation.Kind) -> FileAssociation.Handler { handlers[kind] ?? .none }
+        func makeDefault(_ kind: FileAssociation.Kind, completion: @escaping @MainActor (Error?) -> Void) {
+            made.append(kind)
+            if failure == nil { handlers[kind] = .thisApp }
+            completion(failure)
+        }
+    }
+    private var associations = FakeAssociations()
     /// 이 Mac에 있는 글꼴을 흉내 낸다. nil이면 이 Mac의 실제 글꼴.
     private var fakeFonts: FakeFonts?
 
@@ -66,13 +80,13 @@ final class SettingsPanelWiringTests: XCTestCase {
         guard let fonts = fakeFonts else {
             return SettingsPanel(store: store, languageDefaults: languageDefaults, languageDomain: languageSuite,
                                  secrets: secrets, keyChecker: checker, llmDefaults: languageDefaults,
-                                 openURL: { [unowned self] in opened.append($0) })
+                                 openURL: { [unowned self] in opened.append($0) }, associations: associations)
         }
         return SettingsPanel(store: store, languageDefaults: languageDefaults, languageDomain: languageSuite,
                              secrets: secrets, keyChecker: checker, llmDefaults: languageDefaults,
                              openURL: { [unowned self] in opened.append($0) },
                              fontFamilies: { fonts.families(fixedPitchOnly: $0) },
-                             isFontUsable: { fonts.isUsable($0, $1) })
+                             isFontUsable: { fonts.isUsable($0, $1) }, associations: associations)
     }
 
     override func tearDown() {
@@ -211,6 +225,70 @@ final class SettingsPanelWiringTests: XCTestCase {
         check.state = .off
         fire(check)
         XCTAssertFalse(store.current.loadsRemoteImages)
+    }
+
+    /// 자동 설치 칸 — 저장소까지 가고, 확인을 끄면 흐려진다(값은 그대로).
+    func testAutoInstallCheckboxReachesTheStoreAndFollowsTheCheckSwitch() throws {
+        let auto = try XCTUnwrap(checkbox(String(localized: "새 판을 자동으로 받아 끌 때 설치")))
+        let check = try XCTUnwrap(checkbox(String(localized: "켤 때 새 판 확인(하루 한 번)")))
+        XCTAssertEqual(auto.state, .on, "기본은 켜짐")
+        XCTAssertTrue(auto.isEnabled)
+        auto.state = .off
+        fire(auto)
+        XCTAssertFalse(store.current.installsUpdatesAutomatically)
+        auto.state = .on
+        fire(auto)
+        XCTAssertTrue(store.current.installsUpdatesAutomatically)
+        check.state = .off
+        fire(check)
+        XCTAssertFalse(auto.isEnabled, "저절로 확인하지 않으면 자동 설치도 없다")
+        XCTAssertTrue(store.current.installsUpdatesAutomatically, "값은 남는다 — 다시 켜면 그대로")
+        check.state = .on
+        fire(check)
+        XCTAssertTrue(auto.isEnabled)
+    }
+
+    /// 파일 연결 — 종류마다 한 줄. 이 마디가 이미 기본이면 단추가 꺼지고, 누른 종류만 바꾼다.
+    private var associationButtons: [NSButton] {
+        allViews.compactMap { $0 as? NSButton }.filter { $0.title == String(localized: "마디 사용") }
+            .sorted { $0.tag < $1.tag }
+    }
+
+    private func label(showing text: String) -> NSTextField? {
+        allViews.compactMap { $0 as? NSTextField }.first { $0.stringValue == text }
+    }
+
+    func testAssociationRowsShowEachKindAndClaimOnlyTheChosenOne() throws {
+        let copy = URL(fileURLWithPath: "/Users/someone/repos/md/.build/Release/Madi.app")
+        associations.handlers = [.markdown: .otherCopy(copy), .plainText: .app(name: "TextEdit")]
+        panel = makePanel()
+        let buttons = associationButtons
+        XCTAssertEqual(buttons.count, FileAssociation.Kind.allCases.count)
+        XCTAssertNotNil(label(showing: FileAssociation.statusLine(.markdown, handler: .otherCopy(copy))),
+                        "다른 사본이면 그 자리를 말한다")
+        XCTAssertNotNil(label(showing: FileAssociation.statusLine(.plainText, handler: .app(name: "TextEdit"))))
+        XCTAssertTrue(buttons.allSatisfy(\.isEnabled), "다른 사본이 기본이어도 이 마디로 바꿀 수 있다")
+
+        fire(buttons[0])
+        XCTAssertEqual(associations.made, [.markdown], "누른 종류만")
+        XCTAssertFalse(buttons[0].isEnabled, "이제 이 마디가 기본")
+        XCTAssertTrue(buttons[1].isEnabled)
+        XCTAssertNotNil(label(showing: FileAssociation.statusLine(.markdown, handler: .thisApp)))
+        fire(buttons[1])
+        XCTAssertEqual(associations.made, [.markdown, .plainText])
+    }
+
+    /// 시스템이 거절하면(묻는 창에서 취소 등) 알리고, 상태는 그대로 보인다.
+    func testAssociationFailureIsShown() throws {
+        associations.handlers = [.markdown: .app(name: "Obsidian")]
+        associations.failure = NSError(domain: NSCocoaErrorDomain, code: NSUserCancelledError)
+        panel = makePanel()
+        var shown: [NSAlert] = []
+        panel.presentAlert = { shown.append($0) }
+        fire(try XCTUnwrap(associationButtons.first))
+        XCTAssertEqual(shown.map(\.messageText), [String(localized: "기본 앱으로 등록하지 못했습니다")])
+        XCTAssertTrue(try XCTUnwrap(associationButtons.first).isEnabled)
+        XCTAssertNotNil(label(showing: FileAssociation.statusLine(.markdown, handler: .app(name: "Obsidian"))))
     }
 
     func testEachPickerReachesTheStore() {

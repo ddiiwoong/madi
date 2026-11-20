@@ -17,7 +17,8 @@ import Foundation
 /// - `loadsRemoteImages` → `InlineImageStore`의 원격 받기
 /// - `printMargin` · `printOrientation` · `printPaper` → `NSPrintInfo`(프린트와 PDF 둘 다)
 /// - `bodyFontFamily` · `codeFontFamily` → `MarkdownTheme`의 본문·제목·코드 글꼴
-/// - `checksForUpdates` → 켤 때 하루 한 번 새 판 확인(`UpdateController.checkAtLaunchIfDue`)
+/// - `checksForUpdates` → 켤 때와 켜 둔 동안 하루 한 번 새 판 확인(`UpdateController.shouldCheckAtLaunch`)
+/// - `installsUpdatesAutomatically` → 찾은 새 판을 묻지 않고 받아 끌 때 바꿔 넣기(`UpdateController.check`)
 public struct EditorPreferences: Equatable, Sendable {
 
     /// 화면 모양. 마디의 색은 거의 다 의미색이라 시스템을 저절로 따르는데, 그래서
@@ -196,6 +197,9 @@ public struct EditorPreferences: Equatable, Sendable {
     /// 켤 때 하루 한 번 GitHub에 새 판이 있는지 묻는다. 기본은 켜짐(2026-11-09, 사용자가 골랐다) — 원격 그림과
     /// 달리 문서가 시킨 요청이 아니고, 보내는 것은 판을 묻는 GET 하나다. 설정 ▸ 일반에서 끈다.
     public var checksForUpdates: Bool
+    /// 확인(`checksForUpdates`)이 찾은 새 판을 **묻지 않고** 받아 두었다가 끌 때 바꿔 넣는다 — 다시 켜지는 않는다(사용자 —
+    /// "자동업데이트 기능"). 기본은 켜짐. 끄면 전처럼 묻는 창이 뜬다. 확인을 끄면 이것도 하지 않는다.
+    public var installsUpdatesAutomatically: Bool
     public var printMargin: PrintMargin
     public var printOrientation: PrintOrientation
     public var printPaper: PrintPaper
@@ -281,9 +285,11 @@ public struct EditorPreferences: Equatable, Sendable {
                 codeFontFamily: String? = nil,
                 headingFont: HeadingFont = .sameAsBody,
                 colorTheme: ColorTheme = .standard,
-                checksForUpdates: Bool = true) {
+                checksForUpdates: Bool = true,
+                installsUpdatesAutomatically: Bool = true) {
         self.bodyPointSize = Self.clamp(bodyPointSize)
         self.checksForUpdates = checksForUpdates
+        self.installsUpdatesAutomatically = installsUpdatesAutomatically
         self.colorTheme = colorTheme
         self.highlightCode = highlightCode
         self.alignTables = alignTables
@@ -365,12 +371,13 @@ public final class PreferenceStore {
         static let headingFontFamily = "editor.headingFontFamily"
         static let colorTheme = "editor.colorTheme"
         static let checksForUpdates = "update.checkAtLaunch"
+        static let installsUpdatesAutomatically = "update.installAutomatically"
 
         static let all = [bodyPointSize, highlightCode, alignTables, syntheticSlant,
                           openInCodeView, appearance, lineSpacing, documentWidth,
                           loadsRemoteImages, printMargin, printOrientation, printPaper,
                           translationTarget, bodyFontFamily, codeFontFamily, headingFontFamily,
-                          colorTheme, checksForUpdates]
+                          colorTheme, checksForUpdates, installsUpdatesAutomatically]
     }
 
     private let defaults: UserDefaults
@@ -418,7 +425,9 @@ public final class PreferenceStore {
             headingFont: headingFont(),
             colorTheme: value(Key.colorTheme, standard.colorTheme),
             checksForUpdates: defaults.object(forKey: Key.checksForUpdates) as? Bool
-                ?? standard.checksForUpdates
+                ?? standard.checksForUpdates,
+            installsUpdatesAutomatically: defaults.object(forKey: Key.installsUpdatesAutomatically) as? Bool
+                ?? standard.installsUpdatesAutomatically
         )
     }
 
@@ -447,6 +456,7 @@ public final class PreferenceStore {
         defaults.set(preferences.documentWidth.rawValue, forKey: Key.documentWidth)
         defaults.set(preferences.loadsRemoteImages, forKey: Key.loadsRemoteImages)
         defaults.set(preferences.checksForUpdates, forKey: Key.checksForUpdates)
+        defaults.set(preferences.installsUpdatesAutomatically, forKey: Key.installsUpdatesAutomatically)
         defaults.set(preferences.printMargin.rawValue, forKey: Key.printMargin)
         defaults.set(preferences.printOrientation.rawValue, forKey: Key.printOrientation)
         defaults.set(preferences.printPaper.rawValue, forKey: Key.printPaper)
@@ -515,4 +525,16 @@ public final class PreferenceStore {
     }
 
     static let updateInstallFailureKey = "update.installFailure"
+
+    /// 끌 때 저절로 바꿔 넣은 새 판의 판 번호. 다음에 켤 때 그 판이면 한 번 알리고 지운다 — 묻지 않고 바꿨으니 바뀐 것은
+    /// 말해야 한다.
+    public var installedUpdateNotice: String? {
+        get { defaults.string(forKey: Self.installedUpdateNoticeKey) }
+        set {
+            if let newValue { defaults.set(newValue, forKey: Self.installedUpdateNoticeKey) }
+            else { defaults.removeObject(forKey: Self.installedUpdateNoticeKey) }
+        }
+    }
+
+    static let installedUpdateNoticeKey = "update.installedNotice"
 }

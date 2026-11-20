@@ -72,7 +72,7 @@ The full list and every shortcut are in [docs/features.md](docs/features.md) (Ko
 | Navigation | Outline · recent documents · file browser sidebar (each toggles) |
 | Documents | YAML front matter card; `NSDocument` open, save, autosave and version restore |
 | Export | PDF, a single Markdown file with images embedded as `data:` URLs, print |
-| Updates | Checks once a day at launch (can be turned off); downloads the new version, checks its signature, replaces itself and relaunches — no Sparkle |
+| Updates | Checks once a day (can be turned off). Automatic updates (on by default) download the new version without asking, check its signature and install it when Madi quits; with them off Madi asks, then replaces itself and relaunches — no Sparkle |
 | Tools | Apple Translation (between Korean and more than 20 languages, markup preserved, source and translation side by side), activity log (`⌘⇧L`), settings (`⌘,`) |
 | Experimental | Block editor (`⌥⌘B`) — a second window that edits the document as an array of blocks. It is stage 1 of the design for grid tables; the default editor is unchanged |
 

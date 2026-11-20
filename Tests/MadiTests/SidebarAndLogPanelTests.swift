@@ -207,17 +207,46 @@ final class ActivityLogPanelTests: XCTestCase {
 @MainActor
 final class FileAssociationTests: XCTestCase {
 
-    func testStatusLineSaysWhichAppOpensMarkdown() {
-        XCTAssertEqual(FileAssociation.statusLine(isMadiDefault: true, handlerName: "마디"),
-                       String(localized: "Markdown 파일은 현재 마디에서 열립니다."))
-        XCTAssertEqual(FileAssociation.statusLine(isMadiDefault: false, handlerName: "Typora"),
-                       String(localized: "Markdown 파일은 현재 ‘Typora’에서 열립니다."))
-        XCTAssertEqual(FileAssociation.statusLine(isMadiDefault: false, handlerName: nil),
-                       String(localized: "Markdown 파일을 여는 기본 앱이 정해져 있지 않습니다."))
+    /// 상태 한 줄 — 종류와 확장자, 그리고 지금 여는 앱. 다른 자리의 마디 사본이면 그 자리를 말한다(전에는 식별자만 보아
+    /// '마디에서 열립니다'라 하고 단추를 껐다).
+    func testStatusLineSaysWhichAppOpensEachKind() {
+        let markdown = FileAssociation.Kind.markdown
+        XCTAssertEqual(FileAssociation.statusLine(markdown, handler: .thisApp),
+                       String(localized: "\(markdown.label)은 현재 마디에서 열립니다."))
+        XCTAssertTrue(markdown.label.contains(".md"), markdown.label)
+        XCTAssertTrue(markdown.label.contains(".markdown"), markdown.label)
+        XCTAssertEqual(FileAssociation.statusLine(markdown, handler: .app(name: "Typora")),
+                       String(localized: "\(markdown.label)은 현재 ‘Typora’에서 열립니다."))
+        XCTAssertEqual(FileAssociation.statusLine(markdown, handler: .none),
+                       String(localized: "\(markdown.label)을 여는 기본 앱이 정해져 있지 않습니다."))
+        let copy = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("repos/md/.build/Madi.app")
+        let line = FileAssociation.statusLine(markdown, handler: .otherCopy(copy))
+        XCTAssertTrue(line.hasSuffix("~/repos/md/.build/Madi.app"), line)
+        XCTAssertTrue(FileAssociation.Kind.plainText.label.contains(".txt"), FileAssociation.Kind.plainText.label)
+    }
+
+    /// 기본 앱은 자리로 가린다 — 같은 자리(심볼릭 링크 · 끝 빗금이 달라도)면 이 마디, 같은 식별자의 다른 자리면 다른 사본,
+    /// 아니면 그 앱의 이름.
+    func testHandlerIsComparedByLocation() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("madi-assoc-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let app = root.appendingPathComponent("Applications/Madi.app", isDirectory: true)
+        try FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
+        let link = root.appendingPathComponent("link.app")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: app)
+        func classify(_ url: URL, _ identifier: String?) -> FileAssociation.Handler {
+            FileAssociation.classify(url, identifier: identifier, appURL: app, ownIdentifier: "dev.jinwoong.md")
+        }
+        XCTAssertEqual(classify(URL(fileURLWithPath: app.path + "/"), "dev.jinwoong.md"), .thisApp)
+        XCTAssertEqual(classify(link, "dev.jinwoong.md"), .thisApp)
+        let other = root.appendingPathComponent(".build/Release/Madi.app")
+        XCTAssertEqual(classify(other, "dev.jinwoong.md"), .otherCopy(other))
+        XCTAssertEqual(classify(URL(fileURLWithPath: "/Applications/Obsidian.app"), "md.obsidian"),
+                       .app(name: FileManager.default.displayName(atPath: "/Applications/Obsidian.app")))
     }
 
     func testTheMarkdownTypeIsTheOneMdFilesHave() throws {
-        let type = try XCTUnwrap(FileAssociation.markdownType)
+        let type = try XCTUnwrap(FileAssociation.Kind.markdown.type)
         XCTAssertTrue(type.conforms(to: .text) || type.identifier == "net.daringfireball.markdown", type.identifier)
         XCTAssertEqual(type, UTType(filenameExtension: "md"))
     }

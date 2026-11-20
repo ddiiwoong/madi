@@ -15,10 +15,13 @@
 "지우기" = "Clear";
 
 /* AppEnvironment.swift */
-"Markdown 파일은 현재 마디에서 열립니다." = "Markdown files currently open in Madi.";
-"Markdown 파일은 현재 ‘%@’에서 열립니다." = "Markdown files currently open in “%@”.";
-"Markdown 파일을 여는 기본 앱이 정해져 있지 않습니다." = "No default app is set for Markdown files.";
-"이 기계에서 Markdown 파일 타입을 찾지 못했습니다." = "Couldn’t find the Markdown file type on this Mac.";
+"Markdown 파일%@" = "Markdown files%@";
+"텍스트 파일%@" = "Text files%@";
+"%@은 현재 마디에서 열립니다." = "%@ currently open in Madi.";
+"%@은 현재 다른 자리의 마디에서 열립니다: %@" = "%@ currently open in another copy of Madi: %@";
+"%@은 현재 ‘%@’에서 열립니다." = "%@ currently open in “%@”.";
+"%@을 여는 기본 앱이 정해져 있지 않습니다." = "No default app is set for %@.";
+"이 기계에서 그 파일 타입을 찾지 못했습니다." = "Couldn’t find that file type on this Mac.";
 
 /* AppMenu.swift */
 "새로 만들기" = "New";
@@ -348,12 +351,13 @@
 "마디 / Madi" = "Madi (마디)";
 "현재 버전: %@" = "Version %@";
 "글꼴 라이선스 보기" = "Show Font Licenses";
-"자동 업데이트는 아직 없습니다. 판 번호는 문제를 신고할 때 쓰십시오." = "There are no automatic updates yet. Include the version number when you report a problem.";
+"판 번호는 문제를 신고할 때 쓰십시오. 업데이트는 설정 ▸ 일반에서 정합니다." = "Include the version number when you report a problem. Update options are in Settings ▸ General.";
 "본문 글꼴 Pretendard(© Kil Hyung-jin)와 코드 글꼴 IBM Plex Mono(© IBM Corp.)가 앱에 들어 있습니다. 둘 다 SIL Open Font License 1.1입니다." = "The body font Pretendard (© Kil Hyung-jin) and the code font IBM Plex Mono (© IBM Corp.) are bundled with the app. Both use the SIL Open Font License 1.1.";
 "글꼴 라이선스 파일을 찾지 못했습니다" = "Couldn’t find the font license files";
 "화면 언어를 바꿨습니다 — 마디를 다시 열면 적용됩니다" = "Changed the interface language — it takes effect the next time you open Madi";
 "기본 앱으로 등록하지 못했습니다" = "Couldn’t make Madi the default app";
-"Markdown 파일의 기본 앱이 마디로 바뀌었습니다" = "Madi is now the default app for Markdown files";
+"기본 앱을 마디로 바꿨습니다" = "Madi is now the default app";
+"‘마디 사용’을 누르면 그 확장자의 파일을 Finder에서 열 때 지금 켜진 이 마디가 엽니다. 시스템이 한 번 더 물을 수 있습니다. 다른 앱으로 돌리려면 Finder의 정보 가져오기 ▸ 다음으로 열기에서 고릅니다." = "Click Use Madi to have this copy of Madi open those files from the Finder. macOS may ask you to confirm. To switch back, choose another app in the Finder’s Get Info ▸ Open with.";
 
 /* FontPickerMenu.swift */
 "본문과 같음" = "Same as Body";
@@ -444,7 +448,8 @@
 "업데이트 확인…" = "Check for Updates…";
 "업데이트" = "Updates";
 "켤 때 새 판 확인(하루 한 번)" = "Check for updates at launch (once a day)";
-"GitHub에 마디의 최신 판을 묻는 요청 하나를 보냅니다. 문서 내용은 보내지 않고, GitHub는 요청한 IP 주소와 마디의 판 번호를 봅니다. 꺼도 마디 메뉴의 ‘업데이트 확인…’으로 언제든 확인할 수 있습니다. 직접 빌드한 마디는 켤 때 확인하지 않습니다." = "Madi sends one request to GitHub asking for its latest version. It never sends your documents; GitHub sees your IP address and Madi’s version number. With this off you can still use Madi ▸ Check for Updates… at any time. Copies of Madi you built yourself don’t check at launch.";
+"새 판을 자동으로 받아 끌 때 설치" = "Automatically download updates and install them when Madi quits";
+"켜 두면 하루 한 번 GitHub에 마디의 최신 판을 묻습니다. 문서 내용은 보내지 않고, GitHub는 요청한 IP 주소와 마디의 판 번호를 봅니다. 자동 설치를 켜 두면 새 판을 묻지 않고 받아 서명을 확인해 두었다가 마디를 끌 때 바꿔 넣고, 다음에 켤 때 알립니다. 꺼도 마디 메뉴의 ‘업데이트 확인…’으로 언제든 확인할 수 있습니다. 직접 빌드한 마디는 저절로 확인하지 않습니다." = "Once a day Madi asks GitHub for its latest version. It never sends your documents; GitHub sees your IP address and Madi’s version number. With automatic install on, Madi downloads a new version without asking, checks its signature, installs it when Madi quits and tells you at the next launch. With these off you can still use Madi ▸ Check for Updates… at any time. Copies of Madi you built yourself never check on their own.";
 "확인" = "OK";
 "나중에" = "Later";
 "마디가 최신입니다" = "Madi is up to date";
@@ -458,6 +463,17 @@
 "새 판을 확인하지 못했습니다" = "Couldn’t check for updates";
 "업데이트하지 못했습니다" = "Couldn’t update";
 "업데이트를 그만뒀습니다" = "Update canceled";
+"새 판을 뒤에서 받습니다" = "Downloading the new version in the background";
+"새 판을 뒤에서 받지 못했습니다 — 내일 다시 해 봅니다" = "Couldn’t download the new version in the background — will try again tomorrow";
+"새 판을 받아 두었습니다 — 마디 %@" = "A new version is ready — Madi %@";
+"새 판을 받아 두었습니다" = "A new version is ready";
+"마디를 끌 때 바꿔 넣습니다. 지금 바꾸려면 다시 여십시오." = "It will be installed when Madi quits. Relaunch to install it now.";
+"지금 다시 열기" = "Relaunch Now";
+"새 판을 받는 중입니다 — 마디 %@" = "Downloading the new version — Madi %@";
+"다 받으면 마디를 끌 때 바꿔 넣습니다." = "Once it’s downloaded, it will be installed when Madi quits.";
+"새 판으로 바꿔 넣었습니다" = "Installed the new version";
+"마디를 업데이트했습니다 — %@" = "Madi was updated — %@";
+"지난번에 끌 때 새 판으로 바꿔 넣었습니다. 자동 업데이트는 설정 ▸ 일반에서 끌 수 있습니다." = "The new version was installed when Madi last quit. You can turn off automatic updates in Settings ▸ General.";
 "마디 %@ 받는 중…" = "Downloading Madi %@…";
 "새 판을 받아 서명을 확인했습니다 — 끌 때 바꿔 넣습니다" = "Downloaded the new version and checked its signature — it will be installed when Madi quits";
 "이 마디의 판 번호를 읽지 못해 새 판을 확인하지 않습니다" = "Not checking for updates: this copy of Madi has no readable version number";

@@ -432,7 +432,27 @@ final class UpdateControllerTests: XCTestCase {
         }
         controller.openURL = { [unowned self] in opened.append($0) }
         controller.terminate = { [unowned self] in terminated += 1 }
+        controller.schedulesPeriodicChecks = false
         return controller
+    }
+
+    /// 자동 업데이트를 끈다 — 묻는 창을 보는 시험들.
+    private func askBeforeUpdating() {
+        var preferences = store.current
+        preferences.installsUpdatesAutomatically = false
+        store.save(preferences)
+    }
+
+    /// 받아서 확인까지를 흉내 낸다 — 서명 없는 가짜 앱을 '받은' 것으로 돌려준다.
+    private func fakePrepare(_ updater: UpdateController, root: URL, version: String = "0.1.1",
+                             delay: Duration = .zero, failure: Error? = nil) {
+        updater.prepareUpdate = { _, _, _, _ in
+            if delay > .zero { try await Task.sleep(for: delay) }
+            if let failure { throw failure }
+            let staging = root.appendingPathComponent("staging-\(UUID().uuidString)")
+            let app = try FakeApp.make(in: staging, identifier: "dev.jinwoong.md", version: version)
+            return UpdateInstaller.Prepared(app: app, staging: staging)
+        }
     }
 
     func testLaunchChecksOnlyWhenOnSignedAndDue() {
@@ -478,6 +498,7 @@ final class UpdateControllerTests: XCTestCase {
     }
 
     func testNewerReleaseOffersUpdateNotesOrLater() async throws {
+        askBeforeUpdating()
         StubURLProtocol.reply = (200, ReleaseFeedTests.json(tag: "v0.1.1"))
         answers = [1]   // 바뀐 점 보기
         let parent = FileManager.default.temporaryDirectory
@@ -536,6 +557,151 @@ final class UpdateControllerTests: XCTestCase {
         controller().launched()
         XCTAssertEqual(alerts.map(\.messageText), [String(localized: "지난번 업데이트가 끝나지 못했습니다")])
         XCTAssertNil(store.updateInstallFailure, "한 번만 알린다")
+    }
+
+    // MARK: 자동 업데이트
+
+    func testAutomaticInstallPreferenceIsStoredAndResettable() {
+        XCTAssertTrue(store.current.installsUpdatesAutomatically, "기본은 켜짐")
+        askBeforeUpdating()
+        XCTAssertFalse(PreferenceStore(defaults: defaults).current.installsUpdatesAutomatically)
+        store.reset()
+        XCTAssertTrue(store.current.installsUpdatesAutomatically)
+    }
+
+    /// 저절로 한 확인이 새 판을 찾으면 묻지도, 받는 창을 띄우지도, 끄지도 않고 받아 둔다. 끌 때 바꿔 넣되 다시 켜지 않고,
+    /// 다음에 켤 때 그 판을 한 번 알린다 — 바뀐 점 보기는 그 판의 페이지.
+    func testAutomaticUpdateDownloadsQuietlyAndInstallsAtQuit() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("madi-auto-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let target = try FakeApp.make(in: root.appendingPathComponent("Applications"),
+                                      identifier: "dev.jinwoong.md", version: "0.1.0")
+        StubURLProtocol.reply = (200, ReleaseFeedTests.json(tag: "v0.1.1"))
+        let updater = controller(app: target)
+        fakePrepare(updater, root: root)
+        await updater.check(interactive: false)
+        await updater.waitForBackgroundDownload()
+        XCTAssertTrue(alerts.isEmpty, "묻지 않는다")
+        XCTAssertEqual(terminated, 0, "끄지 않는다")
+        let pending = try XCTUnwrap(updater.pending)
+        XCTAssertEqual(pending.version, ReleaseVersion("0.1.1"))
+        XCTAssertNil(updater.backgroundDownload)
+
+        var relaunched: [URL] = []
+        updater.installPendingUpdate { relaunched.append($0) }
+        XCTAssertEqual(Bundle(url: target)?.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String, "0.1.1")
+        XCTAssertTrue(relaunched.isEmpty, "사용자가 끄려고 끈 것이다 — 다시 켜지 않는다")
+        XCTAssertEqual(store.installedUpdateNotice, "0.1.1")
+
+        store.lastUpdateCheck = Date()      // 켤 때의 확인은 건너뛴다 — 알림 하나만 본다
+        answers = [0]                       // 바뀐 점 보기
+        controller(version: "0.1.1").launched()
+        XCTAssertEqual(alerts.map(\.messageText), [String(localized: "마디를 업데이트했습니다 — 0.1.1")])
+        XCTAssertEqual(opened.map(\.absoluteString), ["https://github.com/ddiiwoong/madi/releases/tag/v0.1.1"])
+        XCTAssertNil(store.installedUpdateNotice, "한 번만 알린다")
+    }
+
+    /// 바꿔 넣은 판이 아닌 판으로 켜졌으면(다른 사본, 되돌림) 알리지 않는다.
+    func testInstalledNoticeOnlyForThatVersion() {
+        store.installedUpdateNotice = "0.1.1"
+        store.lastUpdateCheck = Date()
+        controller(version: "0.1.0").launched()
+        XCTAssertTrue(alerts.isEmpty)
+        XCTAssertNil(store.installedUpdateNotice)
+    }
+
+    /// 뒤에서 받지 못하면 창을 띄우지 않는다 — 기록에만 남기고, 받아 둔 것도 없다.
+    func testAutomaticDownloadFailureStaysQuiet() async {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("madi-auto-\(UUID().uuidString)")
+        StubURLProtocol.reply = (200, ReleaseFeedTests.json(tag: "v0.1.1"))
+        let updater = controller()
+        fakePrepare(updater, root: root, failure: UpdateInstaller.Failure.download("504"))
+        await updater.check(interactive: false)
+        await updater.waitForBackgroundDownload()
+        XCTAssertTrue(alerts.isEmpty)
+        XCTAssertNil(updater.pending)
+        XCTAssertNil(updater.backgroundDownload)
+        XCTAssertNotNil(store.lastUpdateCheck, "확인은 했다 — 내일 다시 한다")
+    }
+
+    /// 바꿔 넣을 수 없는 마디(직접 빌드한 것)는 자동이어도 묻는 창으로 받는 페이지를 준다.
+    func testAutomaticModeStillAsksWhenItCannotInstall() async throws {
+        StubURLProtocol.reply = (200, ReleaseFeedTests.json(tag: "v0.1.1"))
+        let updater = controller(team: nil)
+        var prepared = 0
+        updater.prepareUpdate = { _, _, _, _ in
+            prepared += 1
+            throw UpdateInstaller.Failure.download("부르면 안 된다")
+        }
+        await updater.check(interactive: false)
+        XCTAssertEqual(prepared, 0)
+        XCTAssertEqual(try XCTUnwrap(alerts.first).buttons.map(\.title),
+                       [String(localized: "받는 페이지 열기"), String(localized: "나중에")])
+    }
+
+    /// 메뉴로 확인하면 자동이어도 묻는다 — 사용자가 지금 하려는 것이다.
+    func testMenuCheckAsksEvenWhenAutomatic() async throws {
+        StubURLProtocol.reply = (200, ReleaseFeedTests.json(tag: "v0.1.1"))
+        await controller(app: FileManager.default.temporaryDirectory.appendingPathComponent("Madi.app"))
+            .check(interactive: true)
+        XCTAssertEqual(try XCTUnwrap(alerts.first).buttons.first?.title, String(localized: "업데이트하고 다시 열기"))
+    }
+
+    /// 받아 둔 새 판이 있을 때 메뉴로 확인하면 묻지 않고(GitHub에 다시 묻지도 않고) 지금 다시 열지 고르게 한다. 고르면
+    /// 끄고, 끌 때 새 판으로 다시 연다.
+    func testMenuCheckWithADownloadedUpdateOffersRelaunch() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("madi-ready-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let target = try FakeApp.make(in: root.appendingPathComponent("Applications"),
+                                      identifier: "dev.jinwoong.md", version: "0.1.0")
+        let staged = try FakeApp.make(in: root.appendingPathComponent("staged"), identifier: "dev.jinwoong.md",
+                                      version: "0.1.1")
+        let updater = controller(app: target)
+        updater.setPendingForTesting(.init(newApp: staged, target: target, requestedAt: .distantPast,
+                                           version: ReleaseVersion("0.1.1")))
+        answers = [0]   // 지금 다시 열기
+        await updater.check(interactive: true)
+        XCTAssertEqual(alerts.map(\.messageText), [String(localized: "새 판을 받아 두었습니다 — 마디 0.1.1")])
+        XCTAssertEqual(terminated, 1)
+        XCTAssertTrue(StubURLProtocol.seen.isEmpty, "GitHub에 다시 묻지 않는다")
+        var relaunched: [URL] = []
+        updater.installPendingUpdate { relaunched.append($0) }
+        XCTAssertEqual(relaunched, [target], "누른 것이다 — 새 판으로 다시 연다")
+        XCTAssertNil(store.installedUpdateNotice)
+    }
+
+    /// 뒤에서 받는 동안 메뉴로 확인하면 받는 중이라고 알린다(아무 일도 없는 것처럼 보이지 않게).
+    func testMenuCheckDuringABackgroundDownloadSaysSo() async {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("madi-auto-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        StubURLProtocol.reply = (200, ReleaseFeedTests.json(tag: "v0.1.1"))
+        let updater = controller()
+        fakePrepare(updater, root: root, delay: .milliseconds(300))
+        await updater.check(interactive: false)
+        XCTAssertEqual(updater.backgroundDownload, ReleaseVersion("0.1.1"))
+        await updater.check(interactive: true)
+        XCTAssertEqual(alerts.map(\.messageText), [String(localized: "새 판을 받는 중입니다 — 마디 0.1.1")])
+        await updater.waitForBackgroundDownload()
+        XCTAssertNotNil(updater.pending)
+    }
+
+    /// 켜 둔 동안의 확인 — 하루가 지났고 받아 둔 것이 없을 때만.
+    func testPeriodicCheckRunsOnlyWhenDueAndIdle() async throws {
+        StubURLProtocol.reply = (200, ReleaseFeedTests.json(tag: "v0.1.0"))
+        let updater = controller()
+        let now = Date()
+        store.lastUpdateCheck = now.addingTimeInterval(-3600)
+        XCTAssertNil(updater.periodicCheck(now: now), "하루가 안 지났다")
+        store.lastUpdateCheck = now.addingTimeInterval(-ReleaseFeed.checkInterval - 1)
+        let task = try XCTUnwrap(updater.periodicCheck(now: now))
+        await task.value
+        XCTAssertEqual(StubURLProtocol.seen.count, 1)
+        XCTAssertTrue(alerts.isEmpty, "최신이면 말하지 않는다")
+
+        store.lastUpdateCheck = nil
+        updater.setPendingForTesting(.init(newApp: URL(fileURLWithPath: "/tmp/x.app"),
+                                           target: URL(fileURLWithPath: "/tmp/y.app"), requestedAt: .distantPast))
+        XCTAssertNil(updater.periodicCheck(now: now), "받아 둔 것이 있으면 묻지 않는다")
     }
 
     func testMenuItemReachesTheController() throws {
