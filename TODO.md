@@ -24,6 +24,17 @@
 
 ## 끝난 것
 
+- **0.1.3**(2026-11-20, 사용자 — "0.1.3 내줘, 0.1.3 내고 Applications에 설치해 줘"). 자동 업데이트 · 확장자별 기본 앱. `make release`
+  통과(시험 1007개, 커밋 `a782a9f`, 빌드 110), 공증 `Accepted`, 앱 · DMG 둘 다 `Notarized Developer ID`. 태그 `v0.1.3`, Release에 DMG(8.7MB) ·
+  ZIP(7.0MB) · `SHA256SUMS`. `releases/latest`가 v0.1.3이고, 로그인 없이 받은 DMG · ZIP이 200에 체크섬이 같다. 앱의 `ReleaseFeed`로
+  0.1.2 → `available(0.1.3)`, 0.1.3 → `upToDate`.
+  - **설치**: Release에서 받은 DMG의 앱을 `/Applications/Madi.app`에 넣었다(판 0.1.3 · 빌드 110 · `codesign --strict` · `spctl` 통과 ·
+    스테이플 확인 · arm64+x86_64). 그 자리에서 자동 업데이트가 막히지 않는지 — 이 셸(샌드박스)에서는 `access("/Applications", W_OK)`가
+    거짓으로 나와, 보통처럼 `open`으로 띄운 작은 앱에서 `FileManager.isWritableFile`을 읽었다: 참, 읽기 전용 볼륨 아님.
+  - `.md`의 기본 앱은 아직 `.build/release/DerivedData/…/Release/Madi.app`이다 — 사용자가 설치한 마디의 설정 ▸ 일반에서 `마디 사용`을
+    누르기로(사용자의 기본 앱을 바꾸는 일이라 하지 않았다).
+  - Homebrew 탭: `madi-0.1.3` 가지(`5331a86`, 이번 빌드의 `madi.rb` 그대로). PR은 토큰이 만들지 못해 사람이 연다.
+
 - **자동 업데이트 · 확장자별 기본 앱**(2026-11-20, 사용자 — "자동업데이트 기능, 확장자 기본프로그램 변경 기능").
   - 둘 다 반쯤 있었다: 업데이트는 켤 때 확인해 **묻는 창**을 띄웠고, 설정 ▸ 정보에는 '자동 업데이트는 아직 없습니다'가 남아
     있었다. 파일 연결은 `.md`만, 그리고 식별자로만 가려 이 Mac에서 `.md`를 여는 것이 `~/repos/md/.build/release/…/Release/Madi.app`
