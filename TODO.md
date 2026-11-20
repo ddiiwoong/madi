@@ -1593,12 +1593,13 @@ lipo -archs …/Madi.app/Contents/MacOS/Madi → x86_64 arm64
       Engine에 기대는 것이 보통이고 Intel Mac에는 그것이 없으므로 `.unsupported`가
       나올 가능성이 크다. 코드는 그 경로를 이미 처리하므로 **깨지지는 않고 기능만
       없다.** 실기에서 재야 확실해진다.
-- [ ] Intel 실기에서 실행 확인. 이 Mac(Apple 실리콘, macOS 27.0.1)에서는 x86_64 조각을 돌릴 수 없다 —
+- [x] Intel 실기에서 실행 확인(2026-11-20, GitHub Actions). 이 Mac(Apple 실리콘, macOS 27.0.1)에서는 x86_64 조각을 돌릴 수 없다 —
       `arch -x86_64`가 `/usr/bin/true`에도 `Bad CPU type`을 낸다(재 봄, 2026-11-09). Rosetta가 설치돼 있지 않고
       (`/Library/Apple/usr/libexec/oah`에 `RosettaLinux`뿐), dyld 공유 캐시도 arm64e뿐이다. 그래서
       `.github/workflows/platforms.yml`의 `intel-mac`이 GitHub의 Intel 러너(`macos-15-intel`, 2027년 8월까지)에서
-      **배포한 판**의 ZIP을 받아 체크섬 · 서명을 보고 20초 띄운다. **아직 한 번도 돌지 않았다** — 이 세션의 git
-      자격 증명(PAT)에 `workflow` 권한이 없어 그 파일이 든 가지(`ci/platforms`)를 올리지 못했다. 사람이 올린다.
+      **배포한 판**의 ZIP을 받아 체크섬 · 서명을 보고 20초 띄운다. **세 번 돌아 세 번 통과**: x86_64, macOS 15.7.9,
+      Intel Core i7-8700B에서 v0.1.3 ZIP의 체크섬이 맞고, `codesign --strict` · `spctl`(`Notarized Developer ID`) · 스테이플이
+      통과하고, x86_64 조각으로 20초 살아 있었다.
       그래도 남는 것: macOS 26의 Intel에서 Apple 번역(Intel 러너는 macOS 15라 번역 메뉴가 꺼져 있다).
 
 ### Windows — 빌드 설정이 아니라 **두 번째 앱**이다
@@ -1643,8 +1644,23 @@ Swift on Windows에서 그대로 컴파일될 것으로 **예상**된다(확인 
       Core는 42개 파일이다. `.github/workflows/platforms.yml`의 `windows-core`가 `windows-latest`에서 Swift 6.3.1로
       Core를 타입 검사하고, `scripts/core-tests.sh`가 고른 시험(Core만으로 서는 24개 파일)을 Core와 한 모듈로 묶어
       `swift test`를 돌린다. 이 Mac에서 같은 꾸러미로 돌리면 시험 376개가 통과한다 — 처음에는 꾸러미를 하위 폴더에
-      둬서 `#filePath`로 저장소 뿌리를 찾는 시험 8개가 실패했고, 꾸러미를 뿌리에 두어 고쳤다. **Windows에서는 아직
-      돌지 않았다**(위 Intel 항목과 같은 까닭 — `workflow` 권한). 결과가 나오면 여기에 적고 UI 길을 고른다.
+      둬서 `#filePath`로 저장소 뿌리를 찾는 시험 8개가 실패했고, 꾸러미를 뿌리에 두어 고쳤다.
+- [ ] **1단계 결과: Core는 Windows에서 아직 서지 않는다**(2026-11-20, `ci/platforms` 세 번째 실행, `windows-latest` ·
+      Swift 6.3.1). 막는 것 넷 — 모두 Foundation이 Apple 것과 다른 곳이다. 정규식 · 문자열 처리 쪽의 오류는 없었다.
+  - **`String(localized:)`가 없다** — Core에 60곳 남짓(BlockEdit · EditorPreferences · EpubBook · ImageEmbedder ·
+    InterfaceLanguage · MadiURL · RecommendedFonts · ReleaseUpdate · TranslationDirection · ZipArchive). 처음에는 BlockEdit의
+    기본 인자만 걸려 기본 인자 문제로 읽고 고쳤는데, 고치자 나머지 파일이 같은 까닭으로 걸렸다 — 컴파일러가 먼저 걸린 파일만
+    알린 것이었다(그 고침은 되돌렸다). 길: Darwin이 아닐 때만 `String(localized:defaultValue:bundle:comment:)`를 흉내 내는
+    확장 하나(한국어 원문을 돌려준다). macOS의 글자 뽑기(`make l10n-check`)에는 닿지 않는다.
+  - **`XMLDocument` · `XMLElement`는 `FoundationXML`**에 있다(EpubBook). `#if canImport(FoundationXML)`로 들인다.
+  - **`URLRequest`는 `FoundationNetworking`**에 있다(LLMService). 같은 식으로.
+  - **문장 단위 나누기(`enumerateSubstrings(…, .bySentences)`)가 없다**(TranslationChunker) — "isn't supported in
+    swift-corelibs-foundation". 번역 조각 나누기가 여기에 기댄다. 대체 규칙(마침표 · 물음표 · 느낌표 · 한국어 종결)이 필요하고
+    번역 품질에 닿으므로 따로 정한다.
+  - 시험 쪽: `Compression`(EpubBookTests · ZipArchiveTests)을 고르는 목록에서 뺐다(22개 파일). `LocalizationTests`는
+    `bundle:`을 넘기는 `String(localized:)`를 써서 위 흉내가 들어오면 다시 본다.
+  - 덤: GitHub의 macOS 러너(Swift 6.3.3)가 `ListEditing.Prefix.length`의 한 식을 "적당한 시간 안에 형을 정하지 못한다"며
+    멈췄다 — master에서 고쳤다(`a70e7b7`).
 
 ## 설계가 끝난 것 — 구현 대기
 
