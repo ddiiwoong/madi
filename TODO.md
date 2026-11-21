@@ -31,7 +31,11 @@
   - CHANGELOG: 0.1.4에서 새로 생긴 것(`새 줄 N개 ↓`, 따라 보기)을 고친 항목은 '고친 것'에서 빼 '더한 것'에 합쳤다 — 0.1.3을 쓰던
     사람에게는 고친 것이 아니다. `.txt`를 쓴 그대로 여는 것은 '바꾼 것'(전에는 마크다운으로 그렸다).
   - 탭: `ddiiwoong/homebrew-tap` 가지 `madi-0.1.4`에 `make release`가 만든 `madi.rb`를 그대로 옮기고 PR #4를 올렸다(이번에는 `gh pr
-    create`가 됐다). 머지는 아직.
+    create`가 됐다). 사용자 — "탭 PR 머지하고 brew에 등록해줘": 머지했다(`eea9b0b`, `brew info`가 0.1.4). 등록(`brew install --cask
+    --adopt`)은 이 셸에서 막혔다 — Homebrew 7이 DMG를 `sandbox-exec` 안에서 풀고, 이미 샌드박스 안인 셸은 그것을 못 건다
+    (`sandbox_apply: Operation not permitted`, 끄는 `HOMEBREW_NO_SANDBOX_CASK`는 없어졌다). 앱 · Caskroom은 그대로. 사용자의 터미널에서 돌린다.
+    `/Applications/Madi.app`은 brew가 설치하지 않아(0.1.3을 DMG에서 복사해 넣었다) `brew install`이 'already an App'으로 멈췄던 것 —
+    `--adopt`는 cask가 `auto_updates true`라 판을 견주지 않고 있는 앱을 그대로 받는다.
   - 못 한 것: 다른 Mac(또는 새 계정)에서 DMG를 받아 여는 확인. `/Applications/Madi.app`(0.1.3)은 건드리지 않았다 — 자동 업데이트가
     하루 안에 받아 두었다가 끌 때 바꿔 넣는다. master는 아직 올리지 않았다(태그는 올렸다).
 
