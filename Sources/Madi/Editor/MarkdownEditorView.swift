@@ -100,6 +100,9 @@ public final class MarkdownEditorView: NSView {
     private var pendingCaretTransition: PendingCaretTransition?
     private var isStyling = false
     private var pendingRestyle = false
+    /// 바깥에서 끝에 붙은 줄을 알리는 단추와, 아직 보지 않은 줄 수.
+    let newLinesButton = NSButton(title: "", target: nil, action: nil)
+    private(set) var unseenNewLines = 0
 
     public override init(frame frameRect: NSRect) {
         // An explicit TextKit 1 stack: glyph-level hiding is only reachable
@@ -197,6 +200,19 @@ public final class MarkdownEditorView: NSView {
             scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
 
+        // 바깥에서 끝에 붙은 줄이 있는데 위를 읽고 있으면 — 누르면 끝으로 간다(`applyExternalEdit`).
+        newLinesButton.bezelStyle = .rounded
+        newLinesButton.controlSize = .small
+        newLinesButton.font = .systemFont(ofSize: 11, weight: .medium)
+        newLinesButton.target = self
+        newLinesButton.action = #selector(showNewLines(_:))
+        newLinesButton.isHidden = true
+        newLinesButton.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(newLinesButton)
+        NSLayoutConstraint.activate([
+            newLinesButton.centerXAnchor.constraint(equalTo: centerXAnchor),
+            newLinesButton.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -14),
+        ])
         // 코드 블록의 복사 단추 — 마우스가 어디 있는지 따라간다. 굴리면 마우스 아래의 블록이 바뀐다. 앞에 있는 앱에서만
         // 따라간다(서식 막대처럼 편집하는 동안의 도구다). 뒤에 있는 창을 누르면 첫 클릭은 창을 앞으로 가져온다.
         textView.addTrackingArea(NSTrackingArea(
@@ -226,7 +242,70 @@ public final class MarkdownEditorView: NSView {
             clipView.scroll(to: clipView.constrainBoundsRect(NSRect(origin: origin, size: clipView.bounds.size)).origin)
             scrollView.reflectScrolledClipView(clipView)
             restyleAll()
+            hideNewLines()
         }
+    }
+
+    // MARK: 바깥에서 바뀐 글
+
+    /// 바깥(다른 앱, 로그를 쓰는 프로그램)에서 바뀐 글을 들인다 — 문서 전체가 아니라 `splice`의 자리만 갈아 끼우고 그 둘레만 다시
+    /// 칠한다. 편집기의 편집이 아니라 실행 취소에 싣지 않고, 편집기 대리자에게도 알리지 않는다(문서가 '편집됨'이 되면 안 된다).
+    ///
+    /// - 캐럿과 고른 것은 같은 글자에 남는다(`TextSplice.adjusted`). 읽던 자리(굴린 자리)도 그대로다.
+    /// - **맨 아래를 보고 있었으면 새 끝을 따라간다**(`tail -f`, 콘솔 앱). 위를 읽고 있었고 끝에 붙은 것이면 그 자리에 두고
+    ///   `새 줄 N개 ↓` 단추를 띄운다 — 읽던 곳이 밀려 내려가지 않게.
+    /// - `keepsUndo`가 false면 실행 취소 기록을 비운다. 가운데가 바뀌면 옛 기록의 자리가 틀린다. 끝에 붙은 것은 앞의 자리를 옮기지
+    ///   않으므로 남겨도 된다.
+    public func applyExternalEdit(_ splice: TextSplice, keepsUndo: Bool) {
+        guard NSMaxRange(splice.range) <= storage.length else { return }
+        let appendsAtEnd = splice.isAppend(toLength: storage.length)
+        let following = isShowingEnd
+        let selection = textView.selectedRange()
+        let origin = clipView.bounds.origin
+        storage.replaceCharacters(in: splice.range, with: splice.replacement)
+        let length = storage.length
+        let moved = splice.adjusted(selection)
+        let location = min(moved.location, length)
+        textView.setSelectedRange(NSRange(location: location, length: min(moved.length, length - location)))
+        if !keepsUndo { textView.undoManager?.removeAllActions() }
+        let start = min(splice.range.location, length)
+        restyle(dirty: NSRange(location: start, length: min((splice.replacement as NSString).length, length - start)))
+        if !searchState.ranges.isEmpty || !currentQuery.isEmpty { scheduleSearchRefresh() }
+        if following {
+            scrollToEnd()
+            return
+        }
+        clipView.scroll(to: clipView.constrainBoundsRect(NSRect(origin: origin, size: clipView.bounds.size)).origin)
+        scrollView.reflectScrolledClipView(clipView)
+        if appendsAtEnd {
+            unseenNewLines += max(1, splice.replacement.filter { $0 == "\n" || $0 == "\r\n" }.count)
+            newLinesButton.title = String(localized: "새 줄 \(unseenNewLines)개 ↓")
+            newLinesButton.isHidden = false
+        }
+    }
+
+    /// 보이는 칸의 아래가 글의 끝(두 줄 안)에 닿아 있는가. 글이 칸보다 짧아도 참이다.
+    public var isShowingEnd: Bool {
+        let visible = clipView.documentVisibleRect
+        return visible.maxY >= textView.frame.height - max(24, theme.bodyPointSize * 2)
+    }
+
+    /// 글의 끝으로 굴린다 — 아래 여백까지.
+    public func scrollToEnd() {
+        textView.scrollRangeToVisible(NSRange(location: storage.length, length: 0))
+        let bottom = max(0, textView.frame.height - clipView.bounds.height)
+        clipView.scroll(to: NSPoint(x: clipView.bounds.origin.x, y: bottom))
+        scrollView.reflectScrolledClipView(clipView)
+        hideNewLines()
+    }
+
+    @objc private func showNewLines(_ sender: Any?) {
+        scrollToEnd()
+    }
+
+    private func hideNewLines() {
+        unseenNewLines = 0
+        newLinesButton.isHidden = true
     }
 
     public var outline: [OutlineEntry] {
@@ -759,6 +838,8 @@ public final class MarkdownEditorView: NSView {
     @objc private func clipBoundsDidChange(_ note: Notification) {
         // 보이는 칸에 들어온 넓은 블록에 가로 보기를 놓는다.
         textView.updateWideViews()
+        // 손으로 끝까지 굴렸으면 새 줄을 다 본 것이다.
+        if !newLinesButton.isHidden, isShowingEnd { hideNewLines() }
         // 굴리는 동안 마우스는 그대로다 — 창에서 지금 마우스 자리를 다시 읽는다.
         guard codeCopyPoint != nil, let window else { return }
         updateCodeCopyButton(at: textView.convert(window.mouseLocationOutsideOfEventStream, from: nil))

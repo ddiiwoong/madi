@@ -13,6 +13,9 @@ final class DocumentWindowController: NSWindowController {
     private let matchLabel = NSTextField(labelWithString: "")
     private let searchField = NSSearchField()
     private let statusOverlay = StatusOverlayView(frame: .zero)
+    /// 파일이 바깥에서 바뀌었는데 여기서 고친 것이 있을 때의 띠와, 그 둘레의 여백. 시험이 단추를 누른다.
+    let fileChangedBand = FileChangedBandView()
+    private let fileChangedHolder = NSView()
 
     private var splitController: NSSplitViewController!
     private var sidebarItem: NSSplitViewItem!
@@ -178,10 +181,25 @@ final class DocumentWindowController: NSWindowController {
 
         // 카드는 문서의 머리다 — 편집기 **안의** 맨 위에 두어 글과 함께 굴러간다(`headerView`).
         // 전에는 편집기 위에 따로 두어 굴려도 남았고, 항목이 많으면 읽을 자리를 먹었다.
-        let documentArea = NSStackView(views: [editor])
+        let documentArea = NSStackView(views: [fileChangedHolder, editor])
         documentArea.orientation = .vertical
         documentArea.alignment = .leading
         documentArea.spacing = 0
+        documentArea.detachesHiddenViews = true
+        // 파일이 바깥에서 바뀌었는데 여기서 고친 것이 있으면 위에 띠를 띄운다(`MarkdownDocument.reconcileWithDisk`).
+        fileChangedHolder.translatesAutoresizingMaskIntoConstraints = false
+        fileChangedHolder.addSubview(fileChangedBand)
+        fileChangedHolder.isHidden = true
+        fileChangedBand.onReload = { [weak self] in self?.markdownDocument?.reloadFromDisk() }
+        fileChangedBand.onKeepMine = { [weak self] in self?.markdownDocument?.keepMineOverDisk() }
+        NSLayoutConstraint.activate([
+            fileChangedHolder.leadingAnchor.constraint(equalTo: documentArea.leadingAnchor),
+            fileChangedHolder.trailingAnchor.constraint(equalTo: documentArea.trailingAnchor),
+            fileChangedBand.leadingAnchor.constraint(equalTo: fileChangedHolder.leadingAnchor, constant: 12),
+            fileChangedBand.trailingAnchor.constraint(equalTo: fileChangedHolder.trailingAnchor, constant: -12),
+            fileChangedBand.topAnchor.constraint(equalTo: fileChangedHolder.topAnchor, constant: 8),
+            fileChangedBand.bottomAnchor.constraint(equalTo: fileChangedHolder.bottomAnchor, constant: -4),
+        ])
         frontMatterCard.isHidden = true
         // 접어 둔 사람은 다음 문서도 접힌 채 본다(`collapsesFrontMatter`).
         frontMatterCard.setCollapsed(preferences.collapsesFrontMatter)
@@ -371,6 +389,49 @@ final class DocumentWindowController: NSWindowController {
         guard let text = markdownDocument?.markdown, text != composedMarkdown() else { return }
         load(markdown: text)
     }
+
+    // MARK: 바깥에서 바뀐 파일 (`MarkdownDocument.reconcileWithDisk`가 부른다)
+
+    /// 디스크에서 다시 읽은 글(`text`, 파일 전체)을 들인다. `appended`가 있으면 그것이 끝에 붙은 것이다. 끝에 붙은 것은 편집기
+    /// 끝에 붙이고, 그 밖에는 앞머리(front matter)가 그대로면 본문의 다른 곳만 갈아 끼운다. 앞머리가 바뀌었으면 전처럼 통째로
+    /// 싣는다(카드도 다시 그린다). 부르는 쪽이 그다음에 문서의 글을 `text`로 맞춘다 — 그때 다시 싣지 않도록 먼저 편집기를 맞춘다.
+    func applyDiskText(_ text: String, appended: String?) {
+        if let appended, Self.canAppendInPlace(appended, toBody: editor.markdown, document: composedMarkdown(),
+                                               frontMatter: frontMatter) {
+            let end = (editor.markdown as NSString).length
+            editor.applyExternalEdit(TextSplice(range: NSRange(location: end, length: 0), replacement: appended),
+                                     keepsUndo: true)
+        } else {
+            let parsed = FrontMatter.parse(text)
+            guard parsed?.raw == frontMatter?.raw, parsed?.hadBlankSeparator == frontMatter?.hadBlankSeparator else {
+                load(markdown: text)
+                return
+            }
+            guard let splice = TextSplice.between(editor.markdown, parsed?.body ?? text) else { return }
+            editor.applyExternalEdit(splice, keepsUndo: false)
+        }
+        refreshOutline()
+        sideBySide?.sourceTextDidChange()
+    }
+
+    /// 끝에 붙은 글을 본문 끝에 그대로 붙여도 되는가 — 다시 읽어 가른 것과 같은가.
+    ///
+    /// 닫힌 앞머리는 끝에 붙는 글로 바뀌지 않는다. 다만 본문이 비었으면 붙는 빈 줄이 '앞머리 뒤를 빈 줄로 띄웠는가'를 바꾸고, CRLF는
+    /// 앞머리를 가를 때 LF로 바뀐다(`FrontMatter.parse`). 앞머리가 없으면 `---`로 시작하지 않는 글에는 붙여도 생기지 않는다 — `---`로
+    /// 시작하는데 닫히지 않은 글(또는 그 앞 조각)은 붙는 줄이 닫을 수 있다.
+    static func canAppendInPlace(_ appended: String, toBody body: String, document: String,
+                                 frontMatter: FrontMatter?) -> Bool {
+        if frontMatter != nil { return !body.isEmpty && !appended.contains("\r") }
+        return !document.hasPrefix("---") && !"---".hasPrefix(document)
+    }
+
+    /// 여기서 고친 것이 있는데 파일이 바깥에서 바뀌었다 — 띠를 보이거나 거둔다.
+    func showFileChangedElsewhere(_ shown: Bool) {
+        fileChangedHolder.isHidden = !shown
+    }
+
+    /// 띠가 보이는가. 시험이 쓴다.
+    var isShowingFileChangedElsewhere: Bool { !fileChangedHolder.isHidden }
 
     /// The full document: the preserved front matter block plus the edited body.
     private func composedMarkdown() -> String {

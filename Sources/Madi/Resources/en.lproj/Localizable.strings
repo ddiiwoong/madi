@@ -498,3 +498,15 @@
 "기준이 될 서명 정보가 맞지 않습니다" = "The signing information to compare against is malformed";
 "서명을 읽지 못했습니다" = "Couldn’t read the signature";
 "서명 조건을 만들지 못했습니다" = "Couldn’t build the signature requirement";
+
+/* 바깥에서 바뀐 파일 — MarkdownDocument.swift · FileChangedBandView.swift · MarkdownEditorView.swift */
+"새 줄 %lld개 ↓" = "New lines: %lld ↓";
+"이 파일이 다른 곳에서 바뀌었습니다. 여기서 고친 것은 아직 저장하지 않았습니다. ‘다시 읽기’는 여기서 고친 것을 버리고, ‘내 것 지키기’는 다른 곳에서 바뀐 것을 덮어씁니다." = "This file was changed elsewhere, and your changes here aren’t saved yet. Reload discards your changes here; Keep Mine overwrites the changes made elsewhere.";
+"다시 읽기" = "Reload";
+"내 것 지키기" = "Keep Mine";
+"바뀐 파일을 읽지 못했습니다" = "Couldn’t read the changed file";
+"다른 곳에서 바뀐 파일을 다시 읽었습니다" = "Reloaded the file that was changed elsewhere";
+"여기서 고친 것이 있는데 파일이 다른 곳에서 바뀌었습니다 — 고를 때까지 자동 저장을 멈춥니다" = "The file was changed elsewhere while you had unsaved changes — autosave is paused until you choose";
+"여기서 고친 것을 버리고 파일을 다시 읽었습니다" = "Discarded your changes and reloaded the file";
+"여기서 고친 것을 저장하지 못했습니다" = "Couldn’t save your changes";
+"다른 곳에서 바뀐 것을 덮어쓰고 여기서 고친 것을 저장했습니다" = "Saved your changes over the ones made elsewhere";
