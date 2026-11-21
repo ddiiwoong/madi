@@ -5,7 +5,8 @@ final class DocumentWindowController: NSWindowController {
 
     /// 나란히 보기(`SideBySideTranslation`)가 두 창의 편집기를 잇는 데 쓰므로 비공개가 아니다.
     let editor = MarkdownEditorView(frame: NSRect(x: 0, y: 0, width: 760, height: 620))
-    private let frontMatterCard = FrontMatterCardView(frame: .zero)
+    /// 문서 메타데이터 카드. 시험이 본다(글 파일은 앞머리를 가르지 않아 숨는다).
+    let frontMatterCard = FrontMatterCardView(frame: .zero)
     private let outlinePanel = OutlinePanelView(frame: .zero)
     private let browserPanel = FileBrowserPanelView(frame: .zero)
     private let recentPanel = RecentDocumentsPanelView(frame: .zero)
@@ -351,7 +352,10 @@ final class DocumentWindowController: NSWindowController {
     // MARK: Document content
 
     func load(markdown: String) {
-        let parsed = FrontMatter.parse(markdown)
+        let firstLoad = !hasAdoptedFileKind
+        adoptFileKind()
+        // 글 파일(`.txt` · `.log`)은 앞머리를 가르지 않는다 — `---`로 시작하는 글이 카드로 빠지면 안 된다(`TextFileKind`).
+        let parsed = fileKind.rendersMarkdown ? FrontMatter.parse(markdown) : nil
         frontMatter = parsed
         frontMatterCard.update(with: parsed)
         editor.headerDidChange()
@@ -361,7 +365,12 @@ final class DocumentWindowController: NSWindowController {
             editor.markdown = parsed?.body ?? markdown
             editor.documentURL = markdownDocument?.fileURL
             editor.apply(preferences.current)
+            // 글 파일은 원본 보기로 연다 — 처음 열 때 한 번만. 다시 읽을 때(바깥 변경, 되돌리기)는 사용자가 고른 보기를 둔다.
+            if firstLoad, !fileKind.rendersMarkdown { editor.isCodeView = true }
         }
+        // 로그는 따라 보기로 연다 — 글을 실은 뒤에 끝으로 간다.
+        if firstLoad, fileKind.followsByDefault { setFollowing(true) }
+        if firstLoad { syncCodeViewState() }
         refreshOutline()
         browserPanel.show(folderOf: markdownDocument?.fileURL)
         recentPanel.reload()
@@ -379,6 +388,9 @@ final class DocumentWindowController: NSWindowController {
     func documentFileURLDidChange(from old: URL?) {
         let new = markdownDocument?.fileURL
         editor.documentURL = new
+        // 다른 이름으로 저장해 종류가 바뀌면(`.md` → `.txt`) 표식 흐리기 · 목차를 따른다. 보기(원본 보기 · 따라 보기)는 그대로 둔다 —
+        // 저장했을 뿐인데 화면이 바뀌면 안 된다.
+        if hasAdoptedFileKind { adoptFileKind() }
         guard old == nil, new != nil else { return }
         DispatchQueue.main.async { [weak self] in
             self?.editor.adoptStagedImages()
@@ -390,6 +402,34 @@ final class DocumentWindowController: NSWindowController {
         load(markdown: text)
     }
 
+    // MARK: 글 파일 · 따라 보기
+
+    /// 이 창의 파일이 마크다운인가 글(`.txt`)인가 로그(`.log`)인가 — 확장자로(`TextFileKind`). 글과 로그는 앞머리를 가르지 않고
+    /// 원본 보기로 열며, 로그는 따라 보기로 연다.
+    private(set) var fileKind: TextFileKind = .markdown
+    private var hasAdoptedFileKind = false
+
+    private func adoptFileKind() {
+        hasAdoptedFileKind = true
+        let kind = TextFileKind(url: markdownDocument?.fileURL)
+        guard kind != fileKind else { return }
+        fileKind = kind
+        editor.isPlainText = !kind.rendersMarkdown
+        refreshOutline()
+        syncCodeViewState()
+    }
+
+    /// 따라 보기(보기 ▸ 따라 보기 ⌥⌘L) — 고칠 수 없게 하고 끝을 따라간다(`MarkdownEditorView.isFollowing`). 메뉴의 체크와 창
+    /// 부제가 따라온다.
+    @objc func toggleFollowAction(_ sender: Any?) {
+        setFollowing(!editor.isFollowing)
+    }
+
+    func setFollowing(_ on: Bool) {
+        editor.isFollowing = on
+        syncCodeViewState()
+    }
+
     // MARK: 바깥에서 바뀐 파일 (`MarkdownDocument.reconcileWithDisk`가 부른다)
 
     /// 디스크에서 다시 읽은 글(`text`, 파일 전체)을 들인다. `appended`가 있으면 그것이 끝에 붙은 것이다. 끝에 붙은 것은 편집기
@@ -397,12 +437,13 @@ final class DocumentWindowController: NSWindowController {
     /// 싣는다(카드도 다시 그린다). 부르는 쪽이 그다음에 문서의 글을 `text`로 맞춘다 — 그때 다시 싣지 않도록 먼저 편집기를 맞춘다.
     func applyDiskText(_ text: String, appended: String?) {
         if let appended, Self.canAppendInPlace(appended, toBody: editor.markdown, document: composedMarkdown(),
-                                               frontMatter: frontMatter) {
+                                               frontMatter: frontMatter,
+                                               parsesFrontMatter: fileKind.rendersMarkdown) {
             let end = (editor.markdown as NSString).length
             editor.applyExternalEdit(TextSplice(range: NSRange(location: end, length: 0), replacement: appended),
                                      keepsUndo: true)
         } else {
-            let parsed = FrontMatter.parse(text)
+            let parsed = fileKind.rendersMarkdown ? FrontMatter.parse(text) : nil
             guard parsed?.raw == frontMatter?.raw, parsed?.hadBlankSeparator == frontMatter?.hadBlankSeparator else {
                 load(markdown: text)
                 return
@@ -418,9 +459,10 @@ final class DocumentWindowController: NSWindowController {
     ///
     /// 닫힌 앞머리는 끝에 붙는 글로 바뀌지 않는다. 다만 본문이 비었으면 붙는 빈 줄이 '앞머리 뒤를 빈 줄로 띄웠는가'를 바꾸고, CRLF는
     /// 앞머리를 가를 때 LF로 바뀐다(`FrontMatter.parse`). 앞머리가 없으면 `---`로 시작하지 않는 글에는 붙여도 생기지 않는다 — `---`로
-    /// 시작하는데 닫히지 않은 글(또는 그 앞 조각)은 붙는 줄이 닫을 수 있다.
+    /// 시작하는데 닫히지 않은 글(또는 그 앞 조각)은 붙는 줄이 닫을 수 있다. 앞머리를 가르지 않는 글 파일(`.txt` · `.log`)은 늘 된다.
     static func canAppendInPlace(_ appended: String, toBody body: String, document: String,
-                                 frontMatter: FrontMatter?) -> Bool {
+                                 frontMatter: FrontMatter?, parsesFrontMatter: Bool = true) -> Bool {
+        guard parsesFrontMatter else { return true }
         if frontMatter != nil { return !body.isEmpty && !appended.contains("\r") }
         return !document.hasPrefix("---") && !"---".hasPrefix(document)
     }
@@ -480,6 +522,9 @@ final class DocumentWindowController: NSWindowController {
         report(String(localized: "링크로 받은 글을 끝에 더했습니다 — ⌘Z로 되돌립니다"))
         return true
     }
+
+    /// 목차 칸에 보이는 것. 시험이 본다.
+    var outlineEntries: [OutlineEntry] { outlinePanel.entries }
 
     private func refreshOutline() {
         outlinePanel.update(entries: editor.outline)
@@ -633,15 +678,27 @@ final class DocumentWindowController: NSWindowController {
     @objc func toggleCodeViewAction(_ sender: Any?) {
         editor.isCodeView.toggle()
         syncCodeViewState()
+        // 글 파일은 원본 보기에서 목차가 비고, 마크다운으로 보면 찬다(`MarkdownEditorView.outline`).
+        if !fileKind.rendersMarkdown { refreshOutline() }
     }
 
-    /// 지금 보기를 모든 표면에 싣는다.
+    /// 지금 보기를 모든 표면에 싣는다 — 원본 보기와 따라 보기.
+    ///
+    /// 부제는 문서의 보통과 다른 것만 적는다. 마크다운 문서는 원본 보기일 때 `원본 보기`, 글 파일(`.txt` · `.log`)은 원본 보기가
+    /// 보통이라 마크다운으로 그릴 때 `마크다운으로 보기`. 따라 보기면 `따라 보기`를 더한다.
     private func syncCodeViewState() {
         let isOn = editor.isCodeView
-        window?.subtitle = isOn ? String(localized: "원본 보기") : ""
+        var subtitle: [String] = []
+        if fileKind.rendersMarkdown, isOn { subtitle.append(String(localized: "원본 보기")) }
+        if !fileKind.rendersMarkdown, !isOn { subtitle.append(String(localized: "마크다운으로 보기")) }
+        if editor.isFollowing { subtitle.append(String(localized: "따라 보기")) }
+        window?.subtitle = subtitle.joined(separator: " · ")
         viewGroup?.setSelected(isOn, at: 0)
         viewGroup?.subitems.first?.toolTip = Self.codeViewTip(isOn: isOn)
-        if let main = NSApp.mainMenu { Self.markCodeView(in: main, isOn: isOn) }
+        if let main = NSApp.mainMenu {
+            Self.markCodeView(in: main, isOn: isOn)
+            Self.mark(#selector(toggleFollowAction(_:)), in: main, isOn: editor.isFollowing)
+        }
     }
 
     /// 메뉴 항목에 체크 표시를 단다 — 토글의 macOS 관례다.

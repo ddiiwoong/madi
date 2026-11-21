@@ -101,7 +101,7 @@ public final class MarkdownEditorView: NSView {
     private var isStyling = false
     private var pendingRestyle = false
     /// 바깥에서 끝에 붙은 줄을 알리는 단추와, 아직 보지 않은 줄 수.
-    let newLinesButton = NSButton(title: "", target: nil, action: nil)
+    let newLinesButton = PillButton()
     private(set) var unseenNewLines = 0
 
     public override init(frame frameRect: NSRect) {
@@ -201,9 +201,6 @@ public final class MarkdownEditorView: NSView {
         ])
 
         // 바깥에서 끝에 붙은 줄이 있는데 위를 읽고 있으면 — 누르면 끝으로 간다(`applyExternalEdit`).
-        newLinesButton.bezelStyle = .rounded
-        newLinesButton.controlSize = .small
-        newLinesButton.font = .systemFont(ofSize: 11, weight: .medium)
         newLinesButton.target = self
         newLinesButton.action = #selector(showNewLines(_:))
         newLinesButton.isHidden = true
@@ -309,7 +306,8 @@ public final class MarkdownEditorView: NSView {
     }
 
     public var outline: [OutlineEntry] {
-        Outline.entries(lines: currentLines(), in: storage.string as NSString)
+        if isPlainText, isCodeView { return [] }
+        return Outline.entries(lines: currentLines(), in: storage.string as NSString)
     }
 
     // MARK: Batching
@@ -383,6 +381,35 @@ public final class MarkdownEditorView: NSView {
             guard styler.codeView != newValue else { return }
             styler.codeView = newValue
             restyleAll()
+        }
+    }
+
+    /// 글 파일(`.txt` · `.log`)인가. 원본 보기에서 마크다운 표식을 흐리게 하지 않고(`MarkdownStyler.plainText`), 목차를 비운다 —
+    /// 로그의 `# 주석` 줄은 제목이 아니다. 원본 보기를 끄면(마크다운으로 보기) 마크다운 문서처럼 목차도 낸다.
+    public var isPlainText: Bool {
+        get { styler.plainText }
+        set {
+            guard styler.plainText != newValue else { return }
+            styler.plainText = newValue
+            restyleAll()
+        }
+    }
+
+    /// 따라 보기 — 고칠 수 없게 하고 글의 끝으로 간다(사용자 — "따라 보기 모드까지 만들어줘"). 끝을 보고 있는 동안은 바깥에서
+    /// 붙는 줄을 따라 내려가고, 위로 굴려 읽는 동안은 그 자리에 두고 `새 줄 N개 ↓`를 띄운다(`applyExternalEdit` — 따라 보기가
+    /// 아닐 때와 같다). 고칠 수 없으니 여기서 고친 것과 바깥 변경이 부딪치지 않고(띠가 뜨지 않는다), 로그를 잘못 건드려 자동
+    /// 저장이 쓰는 일도 없다.
+    ///
+    /// 고칠 수 없게 하는 것은 텍스트 뷰의 `isEditable` 하나다. 서식 · 줄 편집 · 체크박스 · 표 칸은 모두 `perform`을 지나고 그것이
+    /// `shouldChangeText`에 묻는데, 고칠 수 없는 텍스트 뷰는 거기서 거절한다. 그림 붙여넣기 · 끌어 놓기도 `isEditable`을 본다.
+    /// 고르기와 복사는 된다.
+    public var isFollowing = false {
+        didSet {
+            guard isFollowing != oldValue else { return }
+            textView.isEditable = !isFollowing
+            guard isFollowing else { return }
+            hideFormatBar()
+            scrollToEnd()
         }
     }
 
@@ -1179,7 +1206,8 @@ extension MarkdownEditorView {
     private func scheduleFormatBar() {
         formatBarWork?.cancel()
         formatBarWork = nil
-        guard textView.selectedRange().length > 0, !textView.hasMarkedText(), !isRenderingForOutput else {
+        guard textView.selectedRange().length > 0, !textView.hasMarkedText(), !isRenderingForOutput,
+              textView.isEditable else {
             hideFormatBar()
             return
         }
@@ -1441,7 +1469,8 @@ extension MarkdownEditorView {
     }
 
     private func runLineEdit(_ rule: (NSString, NSRange) -> TextEdit?, name: String) {
-        guard !textView.hasMarkedText(),
+        // 따라 보기(`isFollowing`)에서는 고칠 수 없다 — `perform`도 거절하지만 말없이 지나가므로 여기서 알린다.
+        guard textView.isEditable, !textView.hasMarkedText(),
               let edit = rule(storage.string as NSString, textView.selectedRange()) else {
             NSSound.beep()
             return

@@ -16,8 +16,8 @@ public enum MadiURL {
 
     public static let scheme = "madi"
 
-    /// 마디가 여는 파일 — 마크다운과 글.
-    public static let supportedExtensions: Set<String> = ["md", "markdown", "mdown", "mkd", "mkdn", "txt", "text"]
+    /// 마디가 여는 파일 — 마크다운, 글, 로그(`TextFileKind.openableExtensions`).
+    public static let supportedExtensions: Set<String> = TextFileKind.openableExtensions
 
     public enum Command: Equatable, Sendable {
         /// 파일을 연다. `line`은 파일의 줄 번호(1부터, front matter 포함), `search`는 찾을 낱말.
@@ -52,7 +52,7 @@ public enum MadiURL {
             case .relativePath(let path):
                 return String(localized: "경로는 /로 시작하는 절대 경로나 ~/로 적습니다: \(path)")
             case .unsupportedFile(let path):
-                return String(localized: "마크다운 · 글 파일(.md · .markdown · .txt 등)만 엽니다: \(path)")
+                return String(localized: "마크다운 · 글 파일(.md · .markdown · .txt · .log 등)만 엽니다: \(path)")
             case .badLine(let value):
                 return String(localized: "줄 번호는 1 이상의 정수입니다: \(value)")
             }

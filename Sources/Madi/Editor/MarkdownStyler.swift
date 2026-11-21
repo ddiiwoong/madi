@@ -29,6 +29,9 @@ public final class MarkdownStyler {
     /// either way, so this is purely how it is drawn.
     public var codeView = false
 
+    /// 글 파일(`.txt` · `.log`) — 코드 보기에서 마크다운 표식(`#` · `-` · `**`)을 흐리게 하지 않는다. 마크다운이 아닌 글에서
+    /// 그것들은 표식이 아니라 내용이다(로그의 `# 주석`, `- ` 줄). 코드 보기를 끄면(마크다운으로 보기) 상관이 없다.
+    public var plainText = false
     /// 코드 블록의 범위(여는 펜스부터 닫는 펜스까지).
     ///
     /// 배경을 **그리는 쪽**이 읽는다. 글자마다 배경색을 주면 글자가 있는 만큼만
@@ -304,7 +307,7 @@ public final class MarkdownStyler {
             // range, hiding included; this makes that reliance explicit so a
             // later switch to `addAttributes` cannot leave markers invisible.
             storage.removeAttribute(.mdHiddenMarker, range: writeRange)
-            for line in lines {
+            for line in lines where !plainText {
                 guard NSIntersectionRange(line.range, writeRange).length > 0 else { continue }
                 for marker in line.markerRanges where marker.length > 0 {
                     storage.addAttribute(.foregroundColor, value: theme.dim, range: marker)

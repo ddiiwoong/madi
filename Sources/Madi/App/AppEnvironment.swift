@@ -17,6 +17,9 @@ enum FileAssociation {
     enum Kind: CaseIterable {
         case markdown
         case plainText
+        /// 로그(`.log`). 시스템의 기본은 콘솔 앱이다. 마디는 글 파일을 연다고 선언했고 로그는 글 파일의 한 갈래라(`com.apple.log`
+        /// → `public.plain-text`) 따로 선언하지 않아도 '다음으로 열기'에 나온다(`urlsForApplications(toOpen:)`로 확인).
+        case log
 
         /// 그 종류의 타입. `.md`는 확장자가 가리키는 것을 시스템에 묻는다 — `net.daringfireball.markdown`을 글자로
         /// 박아 두면, 시스템이 그 식별자를 바꾸거나 사용자 기계에 그 타입이 없을 때 조용히 틀린다.
@@ -24,10 +27,11 @@ enum FileAssociation {
             switch self {
             case .markdown: UTType(filenameExtension: "md") ?? UTType("net.daringfireball.markdown")
             case .plainText: .plainText
+            case .log: UTType(filenameExtension: "log") ?? UTType("com.apple.log")
             }
         }
 
-        /// 그 타입의 확장자(시스템이 둔 것). `.md · .markdown`, `.txt · .text`.
+        /// 그 타입의 확장자(시스템이 둔 것). `.md · .markdown`, `.txt · .text`, `.log`.
         var extensions: [String] { type?.tags[.filenameExtension] ?? [] }
 
         /// 사람이 읽을 이름 — 종류와 확장자. 끝이 '파일'이라 뒤에 붙는 조사가 늘 같다.
@@ -36,6 +40,7 @@ enum FileAssociation {
             switch self {
             case .markdown: return String(localized: "Markdown 파일\(suffix)")
             case .plainText: return String(localized: "텍스트 파일\(suffix)")
+            case .log: return String(localized: "로그 파일\(suffix)")
             }
         }
     }

@@ -278,6 +278,24 @@ final class SettingsPanelWiringTests: XCTestCase {
         XCTAssertEqual(associations.made, [.markdown, .plainText])
     }
 
+    /// 일반 탭이 창 안에 다 든다 — 파일 연결 줄이 셋(Markdown · 텍스트 · 로그)이 되어도. 탭의 글은 위에만 붙어 있어
+    /// (`SettingsPanel.tab(_:_:view:)`) 넘치면 아래가 말없이 잘린다. 로그 줄을 더하자 620pt 창에서 남는 자리가 2pt였다 — 영어 글이
+    /// 한 줄 더 감기면 잘린다. 한 줄(16pt)은 남긴다.
+    func testGeneralTabFitsInTheWindow() throws {
+        panel.selectTab("general")
+        let window = try XCTUnwrap(panel.window)
+        window.layoutIfNeeded()
+        let holder = try XCTUnwrap(tabView?.selectedTabViewItem?.view)
+        XCTAssertEqual(tabView?.selectedTabViewItem?.identifier as? String, "general")
+        let column = try XCTUnwrap(holder.subviews.first)
+        let frame = column.convert(column.bounds, to: holder)
+        XCTAssertGreaterThan(frame.height, 100, "시험의 전제 — 탭의 글이 놓였다")
+        XCTAssertGreaterThanOrEqual(min(frame.minY, holder.bounds.height - frame.maxY), 16,
+                                    "잘리지 않고 한 줄은 남는다: \(frame) / \(holder.bounds)")
+        let last = try XCTUnwrap(associationButtons.last)
+        XCTAssertTrue(holder.bounds.contains(last.convert(last.bounds, to: holder)), "로그 줄의 단추가 보인다")
+    }
+
     /// 시스템이 거절하면(묻는 창에서 취소 등) 알리고, 상태는 그대로 보인다.
     func testAssociationFailureIsShown() throws {
         associations.handlers = [.markdown: .app(name: "Obsidian")]

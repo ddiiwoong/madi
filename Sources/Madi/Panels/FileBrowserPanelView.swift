@@ -20,8 +20,9 @@ final class FileBrowserPanelView: NSView {
     var currentRoot: URL? { rootURL }
     private var children: [URL: [URL]] = [:]
 
-    /// 빠른 열기가 다른 스레드에서 읽는다 — 값이라 격리가 필요 없다.
-    nonisolated static let markdownExtensions: Set<String> = ["md", "markdown", "mdown", "mkd", "mdx", "txt"]
+    /// 보이는 파일 — 마크다운, 글, 로그(`TextFileKind.openableExtensions`). 빠른 열기가 다른 스레드에서 읽는다 — 값이라 격리가
+    /// 필요 없다.
+    nonisolated static let openableExtensions: Set<String> = TextFileKind.openableExtensions
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -138,7 +139,7 @@ final class FileBrowserPanelView: NSView {
 
         let filtered = contents.filter { candidate in
             if isDirectory(candidate) { return true }
-            return Self.markdownExtensions.contains(candidate.pathExtension.lowercased())
+            return Self.openableExtensions.contains(candidate.pathExtension.lowercased())
         }.sorted { lhs, rhs in
             let lhsDir = isDirectory(lhs), rhsDir = isDirectory(rhs)
             if lhsDir != rhsDir { return lhsDir }

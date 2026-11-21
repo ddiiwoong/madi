@@ -137,6 +137,10 @@ enum AppMenu {
                     [.command, .shift]),
             Command(String(localized: "마크다운 원본 보기"), #selector(DocumentWindowController.toggleCodeViewAction(_:)), "e",
                     .command),
+            // 고칠 수 없게 하고 끝을 따라간다 — 로그(`.log`)는 켜고 연다. ⌥⌘L: 비어 있고, 기록 보기(⇧⌘L)와 같은 글자라 '로그'로 묶여
+            // 기억된다. ⌥⌘F는 다른 편집기들이 '찾아 바꾸기'에 쓴다.
+            Command(String(localized: "따라 보기"), #selector(DocumentWindowController.toggleFollowAction(_:)), "l",
+                    [.command, .option]),
             // 설계 단계 1. 기본 편집기를 갈지 않고 평가할 수 있는 두 번째 창이다.
             Command(String(localized: "블록 편집기 (실험)"),
                     #selector(DocumentWindowController.showBlockEditor(_:)), "b",

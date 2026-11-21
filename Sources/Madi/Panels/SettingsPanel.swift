@@ -92,7 +92,9 @@ final class SettingsPanel: NSWindowController {
     private let orientationPicker = NSPopUpButton()
     private let marginPicker = NSPopUpButton()
 
-    private static let panelSize = NSSize(width: 500, height: 620)
+    /// 높이는 가장 긴 탭(일반)이 드는 만큼. 파일 연결에 로그 줄을 더하자 620에서 남는 자리가 2pt였다
+    /// (`testGeneralTabFitsInTheWindow` — 탭의 글은 위에만 붙어 있어 넘치면 아래가 말없이 잘린다). 영어 글이 한 줄 더 감겨도 들게 늘렸다.
+    private static let panelSize = NSSize(width: 500, height: 660)
 
     /// 글꼴 고르개의 '시스템' 항목에 다는 값. 패밀리 이름이 빈 문자열일 수는 없으므로
     /// 겹치지 않는다.

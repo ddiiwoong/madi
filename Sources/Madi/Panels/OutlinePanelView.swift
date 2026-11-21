@@ -14,7 +14,8 @@ final class OutlinePanelView: NSView {
     private let tableView = NSTableView()
     private let scrollView = NSScrollView()
     private let emptyLabel = NSTextField(labelWithString: String(localized: "제목이 없습니다"))
-    private var entries: [OutlineEntry] = []
+    /// 보이는 목차. 시험이 본다.
+    private(set) var entries: [OutlineEntry] = []
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)

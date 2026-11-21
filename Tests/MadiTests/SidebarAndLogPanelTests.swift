@@ -74,7 +74,7 @@ final class FileBrowserPanelTests: XCTestCase {
         folder = FileManager.default.temporaryDirectory
             .appendingPathComponent("madi-browser-\(UUID().uuidString)", isDirectory: true)
         let fm = FileManager.default
-        for path in ["나중.md", "가.markdown", "메모.txt", "그림.png", ".숨김.md", "하위/안쪽.md", "하위/표.csv"] {
+        for path in ["나중.md", "가.markdown", "메모.txt", "서버.log", "그림.png", ".숨김.md", "하위/안쪽.md", "하위/표.csv"] {
             let url = folder.appendingPathComponent(path)
             try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try Data("x".utf8).write(to: url)
@@ -95,8 +95,8 @@ final class FileBrowserPanelTests: XCTestCase {
         let panel = FileBrowserPanelView(frame: NSRect(x: 0, y: 0, width: 220, height: 400))
         panel.show(folderOf: folder.appendingPathComponent("나중.md"))
         XCTAssertEqual(panel.currentRoot?.standardizedFileURL, folder.standardizedFileURL)
-        XCTAssertEqual(names(panel), ["하위", "가.markdown", "나중.md", "메모.txt"],
-                       "폴더가 먼저, 그다음 이름 순. 그림과 숨은 파일은 빠진다")
+        XCTAssertEqual(names(panel), ["하위", "가.markdown", "나중.md", "메모.txt", "서버.log"],
+                       "폴더가 먼저, 그다음 이름 순. 글 · 로그 파일도 보인다. 그림과 숨은 파일은 빠진다")
         XCTAssertEqual(panel.pathButton.title, folder.lastPathComponent)
     }
 
@@ -117,12 +117,12 @@ final class FileBrowserPanelTests: XCTestCase {
         panel.delegate = opener
         panel.setRoot(folder)
         panel.doubleClick(row: 0)
-        XCTAssertEqual(names(panel), ["하위", "안쪽.md", "가.markdown", "나중.md", "메모.txt"],
+        XCTAssertEqual(names(panel), ["하위", "안쪽.md", "가.markdown", "나중.md", "메모.txt", "서버.log"],
                        "펼친 폴더 안의 마크다운만 보인다(표.csv는 빠진다)")
         panel.doubleClick(row: 1)
         XCTAssertEqual(opener.opened.map(\.lastPathComponent), ["안쪽.md"])
         panel.doubleClick(row: 0)
-        XCTAssertEqual(names(panel).count, 4, "다시 두 번 누르면 접힌다")
+        XCTAssertEqual(names(panel).count, 5, "다시 두 번 누르면 접힌다")
     }
 
     func testAnUnsavedDocumentLeavesTheBrowserAlone() {
@@ -223,6 +223,8 @@ final class FileAssociationTests: XCTestCase {
         let line = FileAssociation.statusLine(markdown, handler: .otherCopy(copy))
         XCTAssertTrue(line.hasSuffix("~/repos/md/.build/Madi.app"), line)
         XCTAssertTrue(FileAssociation.Kind.plainText.label.contains(".txt"), FileAssociation.Kind.plainText.label)
+        XCTAssertEqual(FileAssociation.Kind.log.type?.identifier, "com.apple.log")
+        XCTAssertTrue(FileAssociation.Kind.log.label.contains(".log"), FileAssociation.Kind.log.label)
     }
 
     /// 기본 앱은 자리로 가린다 — 같은 자리(심볼릭 링크 · 끝 빗금이 달라도)면 이 마디, 같은 식별자의 다른 자리면 다른 사본,

@@ -98,7 +98,7 @@ enum QuickOpenSource {
                 if skippedFolders.contains(name) || name.hasSuffix(".assets") { walker.skipDescendants() }
                 continue
             }
-            if FileBrowserPanelView.markdownExtensions.contains(url.pathExtension.lowercased()) {
+            if FileBrowserPanelView.openableExtensions.contains(url.pathExtension.lowercased()) {
                 found.append(url)
             }
         }
