@@ -379,8 +379,11 @@ public final class MarkdownEditorView: NSView {
         get { styler.codeView }
         set {
             guard styler.codeView != newValue else { return }
-            styler.codeView = newValue
-            restyleAll()
+            keepingEnd {
+                styler.codeView = newValue
+                updateTextInsets()
+                restyleAll()
+            }
         }
     }
 
@@ -390,10 +393,27 @@ public final class MarkdownEditorView: NSView {
         get { styler.plainText }
         set {
             guard styler.plainText != newValue else { return }
-            styler.plainText = newValue
-            restyleAll()
+            keepingEnd {
+                styler.plainText = newValue
+                updateTextInsets()
+                restyleAll()
+            }
         }
     }
+
+    /// 따라 보기에서 끝을 보고 있었으면 `change` 뒤에도 끝에 둔다 — 글자 크기 · 보기 · 글 폭이 바뀌면 글의 길이가 바뀌어 끝이
+    /// 밀려난다(재 보니 원본 보기를 끄자 끝을 벗어났다). 끝은 바꾸기 **전에** 잰다 — 여백을 바꾼 뒤에는 글이 아직 다시 놓이지 않아
+    /// 높이가 어림이다.
+    private func keepingEnd(_ change: () -> Void) {
+        let keeps = isFollowing && isShowingEnd
+        change()
+        if keeps { scrollToEnd() }
+    }
+
+    /// 글을 창 폭에 맞추는가 — 글 파일을 쓴 그대로 볼 때(사용자 — "텍스트 로그 일때 사이즈 조정이 되도록"). 마크다운 문서는 읽기 좋은
+    /// 폭(설정 ▸ 보기의 문서 폭, 보통은 본문 크기의 56배 — 15pt에서 840pt)에서 줄을 바꾸고 남는 자리를 양옆에 둔다. 로그는 줄이 길어
+    /// 그 폭에서 감기면 넓은 창을 두고도 읽기 어렵다 — 창을 넓히면 줄도 길어져야 한다. 글 파일을 마크다운으로 볼 때는 문서처럼 둔다.
+    var fitsTextToWindow: Bool { isPlainText && isCodeView }
 
     /// 따라 보기 — 고칠 수 없게 하고 글의 끝으로 간다(사용자 — "따라 보기 모드까지 만들어줘"). 끝을 보고 있는 동안은 바깥에서
     /// 붙는 줄을 따라 내려가고, 위로 굴려 읽는 동안은 그 자리에 두고 `새 줄 N개 ↓`를 띄운다(`applyExternalEdit` — 따라 보기가
@@ -636,6 +656,10 @@ public final class MarkdownEditorView: NSView {
 
     /// 설정을 싣는다. 설정 화면의 각 항목이 여기서 실제 코드 경로로 이어진다.
     public func apply(_ preferences: EditorPreferences) {
+        keepingEnd { applyNow(preferences) }
+    }
+
+    private func applyNow(_ preferences: EditorPreferences) {
         theme.bodyPointSize = preferences.bodyPointSize      // didSet이 스타일러에 넘긴다
         theme.lineSpacingScale = preferences.lineSpacing.scale
         theme.documentWidthMultiple = preferences.documentWidth.multipleOfBodySize
@@ -670,7 +694,7 @@ public final class MarkdownEditorView: NSView {
     /// 알림 안에서 부를 때 — 그 안에서 다시 놓으면 놓는 중에 또 놓는다).
     private func updateTextInsets(viewWidth: CGFloat? = nil, layoutHeader: Bool = true) {
         let width = viewWidth ?? bounds.width
-        let insets = theme.textInsets(forViewWidth: width)
+        let insets = fitsTextToWindow ? theme.textInsets : theme.textInsets(forViewWidth: width)
         if let header = headerConstraints {
             // 코드 블록 상자와 같은 가장자리 — 글 칸보다 상자 여백만큼 바깥이다.
             let side = insets.width + container.lineFragmentPadding - textView.codeBlockPadding.left
@@ -751,6 +775,8 @@ public final class MarkdownEditorView: NSView {
     /// 한 번 칠하는 데 0.16초라 끄는 동안 매 단계 칠하면 창이 초당 여섯 번밖에 못 움직였다
     /// (실측). 그동안 그림은 끌기 전의 폭으로 그려진다 — 놓으면 맞춰진다.
     public override func setFrameSize(_ newSize: NSSize) {
+        // 따라 보기에서 끝을 보고 있었으면 놓인 뒤에도 끝에 둔다. 좁히면 줄이 더 감겨 글이 길어지고 끝이 밀려난다.
+        if isFollowing, isShowingEnd { scheduleKeepingEnd() }
         super.setFrameSize(newSize)
         // 가로 여백이 바뀔 때만 다시 칠한다 — 그림과 표가 읽는 것은 글 넓이다. 머리 높이만 바뀐 것은
         // 글을 내릴 뿐이다.
@@ -767,6 +793,20 @@ public final class MarkdownEditorView: NSView {
     private var isLiveResizing = false
     private var restyleAfterLiveResize = false
     private var columnRestyleScheduled = false
+    /// 크기가 바뀌기 전에 따라 보기가 끝을 보고 있었다 — 안의 뷰가 놓인 다음 차례에 끝으로 간다. (`layout()`을 덮어쓰지 않는 까닭:
+    /// 레이아웃 관리자를 담은 속성 이름이 `layout`이다.)
+    private var keepsEndAfterLayout = false
+
+    private func scheduleKeepingEnd() {
+        guard !keepsEndAfterLayout else { return }
+        keepsEndAfterLayout = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.keepsEndAfterLayout = false
+            self.layoutSubtreeIfNeeded()
+            self.scrollToEnd()
+        }
+    }
 
     /// 글 칸의 폭이 바뀌었다(텍스트 뷰가 알린다). 여백이 그대로인 좁은 창에서는 위의 `setFrameSize`가 다시 칠하지 않는데,
     /// 코드 줄이 넘치는지와 표 열은 글 칸 폭으로 잰다 — 칠한 폭과 다르면 다시 칠한다. 레이아웃 도중이라 다음 차례에.

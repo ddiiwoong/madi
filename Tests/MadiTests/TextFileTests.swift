@@ -224,6 +224,78 @@ final class TextFileWindowTests: XCTestCase {
         XCTAssertEqual(controller.window?.subtitle, String(localized: "마크다운으로 보기"))
     }
 
+    /// 글 파일은 창 폭을 다 쓴다 — 창을 넓히면 줄도 길어진다. 마크다운 문서는 읽기 좋은 폭(보통 840pt)에서 멈춘다. 글 파일을
+    /// 마크다운으로 보면 문서처럼 멈춘다.
+    func testTextFilesUseTheWindowWidth() throws {
+        let line = "2026-11-21 10:00:00 INFO  [main] " + String(repeating: "긴 로그 내용 abc ", count: 20)
+        let (_, log, _) = try open((1 ... 50).map { "\($0) \(line)" }.joined(separator: "\n") + "\n", name: "긴.log")
+        let (_, markdown, _) = try open("# 제목\n\n" + line + "\n", name: "글.md", type: "net.daringfireball.markdown")
+        func column(_ controller: DocumentWindowController, at width: CGFloat) throws -> CGFloat {
+            let window = try XCTUnwrap(controller.window)
+            window.setContentSize(NSSize(width: width, height: 700))
+            window.layoutIfNeeded()
+            settle()
+            return controller.editor.textView.textColumnWidth
+        }
+        XCTAssertGreaterThan(try column(log, at: 1800), 1650, "넓은 창을 다 쓴다")
+        XCTAssertGreaterThan(try column(log, at: 1200), 1080)
+        XCTAssertLessThan(try column(log, at: 1200), 1200)
+        XCTAssertLessThan(try column(markdown, at: 1800), 900, "마크다운 문서는 읽기 좋은 폭에서 멈춘다")
+
+        log.toggleCodeViewAction(nil)
+        XCTAssertLessThan(try column(log, at: 1800), 900, "마크다운으로 보면 문서처럼")
+        log.toggleCodeViewAction(nil)
+        XCTAssertGreaterThan(try column(log, at: 1800), 1650)
+
+        // 다른 이름으로 저장해 마크다운이 되면 문서처럼 멈춘다(보기는 원본 보기 그대로).
+        let (document, text, _) = try open(line + "\n", name: "메모.txt")
+        XCTAssertGreaterThan(try column(text, at: 1800), 1650)
+        document.fileURL = folder.appendingPathComponent("메모.md")
+        XCTAssertTrue(text.editor.isCodeView)
+        XCTAssertLessThan(try column(text, at: 1800), 900)
+    }
+
+    /// 따라 보기에서 끝을 보고 있으면 창 크기 · 글자 크기 · 보기를 바꿔도 끝에 남는다 — 좁히면 줄이 더 감겨 글이 길어진다. 위를
+    /// 읽는 중이면 끌어 내리지 않는다.
+    func testFollowingStaysAtTheEndWhenTheSizeChanges() throws {
+        let line = "2026-11-21 10:00:00 INFO  [main] " + String(repeating: "긴 로그 내용 abc ", count: 20)
+        let (_, controller, _) = try open((1 ... 300).map { "\($0) \(line)" }.joined(separator: "\n") + "\n",
+                                          name: "긴.log")
+        let editor = controller.editor
+        let window = try XCTUnwrap(controller.window)
+        func resize(_ width: CGFloat) {
+            window.setContentSize(NSSize(width: width, height: 700))
+            window.layoutIfNeeded()
+            settle()
+        }
+        resize(1600)
+        editor.scrollToEnd()
+        XCTAssertTrue(editor.isShowingEnd, "시험의 전제")
+        let tall = editor.textView.frame.height
+        resize(900)
+        XCTAssertGreaterThan(editor.textView.frame.height, tall, "시험의 전제 — 좁히면 글이 길어진다")
+        XCTAssertTrue(editor.isShowingEnd, "좁혀도 끝")
+        resize(1400)
+        XCTAssertTrue(editor.isShowingEnd, "넓혀도 끝")
+        controller.makeTextLargerAction(nil)
+        controller.makeTextLargerAction(nil)
+        settle()
+        XCTAssertTrue(editor.isShowingEnd, "글자를 키워도 끝")
+        controller.toggleCodeViewAction(nil)
+        settle()
+        XCTAssertTrue(editor.isShowingEnd, "보기를 바꿔도 끝")
+        controller.toggleCodeViewAction(nil)
+        settle()
+
+        editor.clipView.scroll(to: NSPoint(x: 0, y: 200))
+        XCTAssertFalse(editor.isShowingEnd)
+        resize(1000)
+        XCTAssertFalse(editor.isShowingEnd, "위를 읽는 중이면 그 자리에")
+        controller.makeTextSmallerAction(nil)
+        settle()
+        XCTAssertFalse(editor.isShowingEnd)
+    }
+
     /// 마크다운 문서는 전과 같다 — 앞머리는 카드로, 마크다운으로 그리고, 고칠 수 있다. 따라 보기를 켜면 끝으로 가고 고칠 수
     /// 없고(치기 · 서식 · 서식 막대), 끄면 다시 고칠 수 있다. 메뉴의 체크와 창 부제가 따라온다.
     func testFollowModeIsReadOnlyUntilTurnedOff() throws {
