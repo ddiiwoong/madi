@@ -6,8 +6,47 @@
 @font-face { font-family: "IBM Plex Mono"; src: url("fonts/IBMPlexMono-Italic.otf") format("opentype"); font-weight: 400; font-style: italic; }
 @font-face { font-family: "IBM Plex Mono"; src: url("fonts/IBMPlexMono-BoldItalic.otf") format("opentype"); font-weight: 700; font-style: italic; }
 
-:root { color-scheme: light dark; }
+/* 어두운 테마는 2단계(테마). 지금은 밝게만 — CodeMirror의 기본 캐럿 · 칠이 밝은 바탕을 전제한다. */
+:root { color-scheme: light; font-family: "Pretendard", "Malgun Gothic", sans-serif; }
 html, body { height: 100%; margin: 0; }
-body { background: Canvas; color: CanvasText; }
-#editor { height: 100%; }
-/* 편집기의 글꼴 · 글 폭은 src/main.ts의 `layout` 테마에 있다 — 여기 적으면 CodeMirror의 기본 테마에 밀린다. */
+body { background: Canvas; color: CanvasText; overflow: hidden; }
+
+/* 편집기의 글꼴 · 글 폭 · 꾸밈은 src/editor/setup.ts의 `look` 테마에 있다 — 여기 적으면 CodeMirror의 기본 테마에 밀린다. */
+#app { display: flex; flex-direction: column; height: 100%; position: relative; }
+#body { flex: 1; min-height: 0; display: flex; }
+#editor { flex: 1; min-width: 0; }
+
+.band {
+  display: flex; align-items: center; gap: 8px; margin: 8px 12px 4px; padding: 6px 10px;
+  border: 1px solid #f0a040; border-radius: 6px; background: #fff7ec; font-size: 12px;
+}
+.band[hidden], .pill[hidden], #outline[hidden] { display: none; }
+.band-text { flex: 1; }
+.band button { font: inherit; padding: 3px 10px; white-space: nowrap; }
+
+#outline {
+  width: 220px; flex: none; overflow: auto; border-right: 1px solid #e5e5e5; padding: 12px 0; font-size: 13px;
+}
+#outline h2 { font-size: 12px; font-weight: 700; color: #777; margin: 0 12px 8px; }
+#outline ol { list-style: none; margin: 0; padding: 0; }
+#outline button {
+  display: block; width: 100%; text-align: left; border: 0; background: none; font: inherit; color: inherit;
+  padding-block: 3px; padding-inline-end: 8px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+#outline button:hover { background: #f0f0f0; }
+#outline .empty { color: #999; margin: 0 12px; }
+#outline .empty[hidden] { display: none; }
+
+#status {
+  display: flex; gap: 12px; justify-content: space-between; padding: 3px 12px; font-size: 12px; color: #666;
+  border-top: 1px solid #ececec; background: #fafafa; white-space: nowrap;
+}
+#status .error { color: #c62828; }
+
+/* 위를 읽는 동안 끝에 붙은 줄 — 강조색으로 꽉 칠한다(반투명하면 빽빽한 로그 위에서 읽을 수 없다 — macOS판에서 겪었다). */
+.pill {
+  position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%); z-index: 5;
+  border: 0; border-radius: 999px; padding: 4px 14px;
+  background: #0067c0; color: #fff; background: AccentColor; color: AccentColorText; /* 앞의 둘은 AccentColor를 모르는 엔진용 */
+  font: 600 12px "Pretendard", "Malgun Gothic", sans-serif; cursor: pointer; box-shadow: 0 1px 4px rgb(0 0 0 / 25%);
+}

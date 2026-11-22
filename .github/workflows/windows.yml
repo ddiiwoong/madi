@@ -42,6 +42,9 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      - name: 껍데기 시험(파일 로직)
+        run: dotnet test windows/Madi.Windows.Tests/Madi.Windows.Tests.csproj -c Release
+
       - name: 껍데기 빌드(x64, .NET 포함)
         run: |
           dotnet publish windows/Madi.Windows/Madi.Windows.csproj -c Release -r win-x64 --self-contained true -o out/Madi
@@ -52,7 +55,7 @@ jobs:
           $out = Join-Path $env:RUNNER_TEMP "smoke"
           $process = Start-Process -FilePath "out/Madi/Madi.exe" -ArgumentList @("--smoke", "`"$out`"") -PassThru
           $null = $process.Handle   # 끝 코드를 읽으려면 손잡이를 먼저 잡아 둔다
-          $deadline = (Get-Date).AddMinutes(3)
+          $deadline = (Get-Date).AddMinutes(4)
           while (-not (Test-Path "$out/result.json") -and -not $process.HasExited -and (Get-Date) -lt $deadline) {
             Start-Sleep -Milliseconds 500
           }

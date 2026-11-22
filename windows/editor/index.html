@@ -10,6 +10,23 @@
 <script type="module" src="main.js"></script>
 </head>
 <body>
-<div id="editor"></div>
+<div id="app">
+  <div id="band" class="band" role="alert" hidden>
+    <span class="band-text">이 파일이 다른 곳에서 바뀌었습니다. 여기서 고친 것은 아직 저장하지 않았습니다. ‘다시 읽기’는 여기서 고친 것을 버리고,
+      ‘내 것 지키기’는 다른 곳에서 바뀐 것을 덮어씁니다.</span>
+    <button id="band-reload" type="button">다시 읽기</button>
+    <button id="band-keep" type="button">내 것 지키기</button>
+  </div>
+  <div id="body">
+    <nav id="outline" aria-label="목차" hidden>
+      <h2>목차</h2>
+      <ol></ol>
+      <p class="empty">제목이 없습니다</p>
+    </nav>
+    <div id="editor"></div>
+  </div>
+  <footer id="status"><span id="status-message" aria-live="polite"></span><span id="status-info"></span></footer>
+  <button id="newlines" class="pill" type="button" hidden></button>
+</div>
 </body>
 </html>
