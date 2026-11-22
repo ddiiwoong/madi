@@ -24,6 +24,21 @@
 
 ## 끝난 것
 
+- **Windows판 1단계**(2026-11-22, 사용자 — "1단계 진행해줘"). 가지 `windows/stage-1`(0단계 위), 자세한 것은 `windows/README.md`.
+  - 편집기: 라이브 프리뷰(구문 트리 → `core/marks.ts` → CodeMirror 장식, 캐럿 줄은 원문), 원본 보기 · 따라 보기 · 목차 · 찾기(한국어 문구),
+    상태 줄, 고친 상태(`Text.eq`) · 자동 저장 1.5초, 끌어다 놓기, Ctrl+클릭 링크. 바깥 변경은 `TextStream`이 이어 읽고(덜 쓴 UTF-8 · UTF-16
+    끝은 기다리고, EUC-KR은 브라우저의 이어 읽기), 다르게 바뀌면 다른 가운데만(`docSplice`). 고친 것이 있으면 띠 · 자동 저장 멈춤.
+  - 껍데기: 메뉴 · 열기 · 저장 창, 창 여럿(WebView2 환경 하나), `DiskBaseline`(끝 4KB · 이어 세는 SHA-256) · `FileWatcher`(첫 신호에서 0.3초) ·
+    `AtomicFile`(임시 파일 → `File.Replace`). 쓴 바이트를 그 자리에서 기준으로 삼는다. 닫기: 이름 있는 문서는 저장하고 닫고, 아니면 묻는다.
+  - 시험: Node 24개(Core를 스물다섯 군데 망가뜨려 보니 스물다섯 다 빨개졌다), xunit 7개(CI). 확인 실행 다섯 가지 모두 통과(실행
+    45028999359) — 바이트 그대로 · 저장(BOM · CRLF 그대로, 내가 쓴 것을 바깥 변경으로 안 읽음) · 로그(따라감, 나눠 쓴 한 글자) ·
+    부딪침(띠, 자동 저장 멈춤, 내 것 지키기) · 화면.
+  - 고치며 안 것: (1) CodeMirror는 줄 끝을 한 자리로 센다 — CRLF 문서에서 글자 수로 센 바꿔 끼우기 자리를 그대로 쓰면 줄마다 한 자리씩
+    어긋난다. `docSplice`가 옮긴다(시험이 붙잡는다). (2) Node의 글 꼴 시험은 매개변수 속성(`constructor(readonly x)`)을 못 읽는다 —
+    풀어 썼다. (3) .NET 10의 `dotnet test`는 xunit v3의 VSTest 길을 받지 않는다 — 시험 프로젝트를 `dotnet run`으로 돌린다. (4) CI 화면에서
+    제목에 밑줄이 있었다 — CodeMirror 기본 색이 제목에 밑줄을 긋는다. 그 한 줄만 뺀 색을 쓴다.
+  - 못 본 것: 한글 조합 입력과 단축키가 WebView2 안에서 실제 키보드로 닿는지, 메뉴의 Alt 단축키(편집기에 초점이 있을 때), 고배율 화면 —
+    사용자의 Windows PC에서. 표 · 체크박스 · 그림 · 다이어그램 · 앞머리 카드 · 어두운 테마는 2단계.
 - **Windows판 0단계**(2026-11-22, 사용자 — "윈도우 버전 만들어줘 기능 동일하고", 고른 것: "번역 빼고 C안으로 0단계부터 시작해줘",
   Windows PC 있음). 가지 `windows/stage-0`, 자세한 것은 `windows/README.md`.
   - 구조(C안): 껍데기 C# · WPF(.NET 10) + WebView2, 편집기 · 로직 TypeScript + CodeMirror 6(`windows/editor`). macOS판의 Swift Core는

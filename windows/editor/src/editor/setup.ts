@@ -2,6 +2,7 @@
 
 import { Compartment, EditorState, type Extension, type StateEffect } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import { defaultHighlightStyle, HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import type { FileKind } from "../core/kind.ts";
 import type { LineSeparator } from "../core/lines.ts";
@@ -94,6 +95,15 @@ export const look = EditorView.theme({
   ".cm-panels": { background: "Canvas", color: "CanvasText" },
   ".cm-panels-top": { borderBottom: `1px solid ${tint}` },
 });
+
+/**
+ * 문법 색 — CodeMirror의 기본 색에서 제목의 밑줄만 뺐다(macOS판의 제목에는 밑줄이 없다. 1단계 CI 화면에서 밑줄이 보였다).
+ * 코드 블록 안의 색은 기본 그대로다.
+ */
+export const highlighting = syntaxHighlighting(HighlightStyle.define(
+  defaultHighlightStyle.specs.map((spec) =>
+    spec.textDecoration === "underline" && spec.fontWeight === "bold" ? { ...spec, textDecoration: "none" } : spec),
+));
 
 /** CodeMirror 찾기 · 바꾸기 칸의 한국어. */
 export const koreanPhrases = EditorState.phrases.of({

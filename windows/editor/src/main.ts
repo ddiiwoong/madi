@@ -3,7 +3,6 @@
 import { Annotation, EditorSelection, EditorState, Prec, type Text, Transaction } from "@codemirror/state";
 import { EditorView, drawSelection, highlightSpecialChars, keymap, placeholder } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, redo, selectAll, undo } from "@codemirror/commands";
-import { defaultHighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { openSearchPanel, search, searchKeymap } from "@codemirror/search";
 import { base64ToBytes, bytesForSave, bytesToBase64, documentBytes, openDocument, sha256Hex } from "./core/document.ts";
 import { lineSeparatorName } from "./core/lines.ts";
@@ -12,7 +11,7 @@ import { appendSplice, countNewLines, docSplice } from "./core/splice.ts";
 import { fileKind, type FileKind } from "./core/kind.ts";
 import { outline } from "./core/outline.ts";
 import { hasHost, onHostMessage, post, postDroppedFiles, type HostMessage } from "./bridge.ts";
-import { koreanPhrases, look, modeExtensions, reconfigure, type Mode } from "./editor/setup.ts";
+import { highlighting, koreanPhrases, look, modeExtensions, reconfigure, type Mode } from "./editor/setup.ts";
 import { linkAt, livePreview } from "./editor/preview.ts";
 import { ConflictBand, NewLinesPill, OutlinePanel, StatusBar } from "./editor/ui.ts";
 
@@ -89,7 +88,7 @@ function baseExtensions() {
     EditorView.lineWrapping,
     search({ top: true }),
     keymap.of([...searchKeymap, ...defaultKeymap, ...historyKeymap]),
-    syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+    highlighting,
     placeholder("여기에 쓰기 시작합니다"),
     koreanPhrases,
     look,
