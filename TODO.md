@@ -18,11 +18,28 @@
   끌기 선택의 굴러가는 속도 · 2026-11-06~07 기능의 앱 확인(검증하지 못한 것) · Notion · Confluence · Obsidian 테마를
   그 앱과 나란히 놓고 견주기(색은 공개 자료로 맞췄다).
 - **결정이 필요한 것**: 문서를 바깥 LLM으로 보낼지(교정) · `web-prototype/`
-  남길지 · Windows · EPUB이 이 앱의 일인지 · 문서 변환 가져오기 · 코드 블록 주석 번역.
+  남길지 · EPUB이 이 앱의 일인지 · 문서 변환 가져오기 · 코드 블록 주석 번역. (Windows는 정했다 — 아래 '끝난 것'의 Windows판 0단계.)
 - **이 Mac에서는 잴 수 없는 것**: 언어 팩 받기(모든 쌍이 설치돼 있다) · Intel 실기 · 스크린샷 4~5번
   (2배율 화면이 필요하다).
 
 ## 끝난 것
+
+- **Windows판 0단계**(2026-11-22, 사용자 — "윈도우 버전 만들어줘 기능 동일하고", 고른 것: "번역 빼고 C안으로 0단계부터 시작해줘",
+  Windows PC 있음). 가지 `windows/stage-0`, 자세한 것은 `windows/README.md`.
+  - 구조(C안): 껍데기 C# · WPF(.NET 10) + WebView2, 편집기 · 로직 TypeScript + CodeMirror 6(`windows/editor`). macOS판의 Swift Core는
+    쓰지 않는다 — 그래서 전에 0단계에 적었던 'Core의 Windows 막힘 고치기'는 이 구조에 필요 없어 하지 않았다.
+  - 파일은 바이트로 넘기고 편집기가 읽는다. 줄 끝을 파일마다 골라(`EditorState.lineSeparator`) CRLF가 열기만 해도 LF가 되지 않게 했다 —
+    CodeMirror의 기본은 CRLF를 LF로 잇는다(시험이 그 사실도 붙잡는다). 인코딩은 UTF-8(BOM) · UTF-16(BOM) · EUC-KR · windows-1252 —
+    macOS판의 Latin-1 대신 EUC-KR을 먼저 본다(한국어 Windows의 옛 파일).
+  - 시험: Node 9개(이 Mac · CI 둘 다). Core를 열한 군데 망가뜨려 보니 열하나 다 빨개졌다. CI(`windows.yml`, `windows-latest`,
+    WebView2 157)의 확인 실행이 시험 문서 다섯(CP949 · UTF-16LE BOM · 섞인 줄 끝 · UTF-8 BOM CRLF · UTF-8 LF)을 열어 넷은 SHA-256이
+    파일과 같고 CP949는 `converted`. 실행 45026604256.
+  - 처음 빌드: WPF 꾸러미가 `System.IO`를 저절로 들이지 않아 실패(`Path` · `File` 없음) — 파일마다 적었다. 둘째: 통과했지만 CI 화면에서
+    편집기가 고정폭 기본 글꼴 · 여백 없음이었다. `style.css`의 `.cm-scroller`가 CodeMirror 기본 테마(클래스 둘)에 밀렸다 — 글꼴 · 글 폭을
+    `EditorView.theme`으로 옮기고, 확인 실행이 계산된 글꼴(`Pretendard, …`)까지 보게 했다. 셋째: Pretendard, 왼쪽 여백 43px, 통과.
+  - 이 Mac에서 편집기를 headless Chrome으로 찍으려 했으나 Chrome이 자기 샌드박스를 이 셸 안에서 열지 못했다 — CI의 WebView2 화면으로 봤다.
+    npm은 Node가 이 셸에서 인증서를 찾지 못해 `NODE_EXTRA_CA_CERTS=/etc/ssl/cert.pem`으로 돌렸다(설정 파일은 건드리지 않음).
+  - 못 본 것: 한글 조합 입력(CI에는 키보드가 없다 — 사용자가 Windows PC에서), 고배율 화면, Windows on ARM(x64만 빌드).
 
 - **0.1.4**(2026-11-21, 사용자 — "0.1.4 내줘"). 바깥 변경 다시 읽기 · 따라 보기 · 글 파일(`.txt` · `.log`). `make release` 3분 남짓
   (시험 1037개, 커밋 `53eeacb`, 빌드 116), 공증 `Accepted`, 앱 · DMG 둘 다 `Notarized Developer ID`. 태그 `v0.1.4`, Release에

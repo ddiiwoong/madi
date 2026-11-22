@@ -52,7 +52,9 @@ dotnet run --project Madi.Windows -- 문서.md
 
 `windows/**` 가지에 올리거나 `windows/`를 고친 PR에서 `windows-latest`가 편집기 시험 · 형 검사 · 묶기, 껍데기 빌드(x64, .NET 포함),
 확인 실행(`Madi.exe --smoke <폴더>`)을 돈다. 확인 실행은 시험 문서 다섯(CP949 · UTF-16LE BOM · 섞인 줄 끝 · UTF-8 BOM CRLF · UTF-8 LF)을
-열어 견주고 `editor.png` · `screen.png` · `result.json`을 남긴다. 받을 것: `Madi-windows-x64`(풀어서 `Madi.exe`), `smoke`.
+열어 견주고, 앱에 든 글꼴이 실렸고 편집기 글에 **실제로 쓰이는지**(계산된 CSS)도 본다 — 처음 빌드는 글꼴이 실렸는데 `style.css`의 규칙이
+CodeMirror 기본 테마에 밀려 쓰이지 않았다. 그래서 편집기의 글꼴 · 글 폭은 `src/main.ts`의 `EditorView.theme`에 둔다.
+`editor.png` · `screen.png` · `result.json`을 남긴다. 받을 것: `Madi-windows-x64`(풀어서 `Madi.exe`), `smoke`.
 
 서명하지 않은 exe라 처음 열면 SmartScreen이 막는다 — `추가 정보` ▸ `실행`. 받은 zip은 속성에서 `차단 해제`를 먼저 누르면 편하다.
 
