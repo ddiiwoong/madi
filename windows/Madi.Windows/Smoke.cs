@@ -1,5 +1,7 @@
+using System.Diagnostics;
 using System.IO;
 using System.Security.Cryptography;
+using System.Text.RegularExpressions;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -21,7 +23,10 @@ namespace Madi;
 /// <item>블록 그림 — 앞머리 카드 · 표 · Mermaid · KaTeX · 그림이 모두 그려지는지, 할 일 상자를 누르면 파일이 바뀌는지(<c>blocks.png</c> ·
 /// <c>blocks-end.png</c>)</item>
 /// <item>명령 팔레트 · 빠른 열기가 거르는지(<c>palette.png</c> · <c>quickopen.png</c>)</item>
-/// <item>설정 — 테마 · 다크 · 글자 크기가 편집기에 쓰이고 <c>settings.json</c>에 남는지(<c>blocks-dark.png</c>, 마지막 화면)</item>
+/// <item>한 번만 켜기 · <c>madi://</c> — 두 번째로 켠 마디가 넘기고 끝나는지, open(줄) · append(묻고) · new(제목 · 경로) ·
+/// 네트워크 경로 거절</item>
+/// <item>설정 — 테마 · 다크 · 글자 크기가 편집기에 쓰이고 <c>settings.json</c>에 남는지(<c>blocks-dark.png</c>)</item>
+/// <item>PDF — 다크에서 내보내도 흰 종이 · 문서 전체(쪽 수), 끝나면 다크로 돌아오는지(<c>output.png</c> · <c>export.pdf</c>, 마지막 화면)</item>
 /// </list>
 /// CI(<c>.github/workflows/windows.yml</c>)가 이것을 돌린다. 처음 다섯 문서는 <c>windows/editor/test/cases.ts</c>와 같은 바이트다.
 /// </summary>
@@ -186,6 +191,54 @@ internal sealed class SmokeRun(MainWindow window, string directory)
             await Task.Delay(400);
         }
     }
+
+    private readonly Channel<(MainWindow Window, JsonElement Message)> others = Channel.CreateUnbounded<(MainWindow, JsonElement)>();
+
+    /// <summary>링크로 연 다른 창의 답.</summary>
+    private async Task<JsonElement> WaitForOther(MainWindow from, string type, Func<JsonElement, bool>? match = null, double seconds = 20)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(seconds));
+        try
+        {
+            while (true)
+            {
+                var (sender, message) = await others.Reader.ReadAsync(timeout.Token);
+                if (sender == from && Field(message, "type") == type && (match?.Invoke(message) ?? true)) return message;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw new TimeoutException($"{seconds}초 안에 다른 창의 '{type}'이 오지 않았다");
+        }
+    }
+
+    /// <summary>지난 답을 버린다 — 다음에 기다리는 답이 이번 일의 것이게.</summary>
+    private void DrainOthers()
+    {
+        while (others.Reader.TryRead(out _)) { }
+    }
+
+    private static async Task<T?> Until<T>(Func<T?> probe, double seconds) where T : class
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(seconds);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (probe() is { } found) return found;
+            await Task.Delay(200);
+        }
+        return probe();
+    }
+
+    /// <summary>두 번째 마디를 켠다 — 확인 실행의 이름(<c>smoke</c>)으로 넘기게. 끝 코드(넘겼으면 0, 곧 끝난다).</summary>
+    private static async Task<int> Second(params string[] arguments)
+    {
+        using var process = Process.Start(Environment.ProcessPath!, ["--instance", "smoke", .. arguments])!;
+        await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(30));
+        return process.ExitCode;
+    }
+
+    private static string Link(string action, params (string Name, string Value)[] values) =>
+        $"madi://{action}?" + string.Join("&", values.Select(value => $"{value.Name}={Uri.EscapeDataString(value.Value)}"));
 
     private async Task Capture(string name)
     {
@@ -353,6 +406,12 @@ internal sealed class SmokeRun(MainWindow window, string directory)
             window.Post(new { type = "smoke", action = "digest" });
             var digest = await WaitFor("digest");
             Check("화면 — 라이브 프리뷰가 장식을 단다", Number(digest, "previewDecorations") > 10, Number(digest, "previewDecorations"));
+            // 언어 꾸러미는 처음 보일 때 싣는다 — 실릴 때까지 다시 잰다.
+            var colored = await DigestUntil(message => Field(message, "codeKeyword") is { } color
+                && color != Field(Child(message, "colors"), "text"), seconds: 15);
+            Check("화면 — 코드 블록에 문법 색(Swift의 let이 본문과 다른 색)",
+                Field(colored, "codeKeyword") is { } keyword && keyword != Field(Child(colored, "colors"), "text"),
+                new { keyword = Field(colored, "codeKeyword"), text = Field(Child(colored, "colors"), "text") });
             await Capture("editor.png");
             window.Run("toggleOutline");
             await WaitFor("state", message => !Flag(message, "outline"));
@@ -421,7 +480,91 @@ internal sealed class SmokeRun(MainWindow window, string directory)
                 Number(Child(loaded, "picker"), "items") >= 5 && first == "showcase.md", new { items = Number(Child(loaded, "picker"), "items"), quick });
         });
 
-        // 8. 설정 — 테마 · 다크 · 글자 크기. 편집기가 정한 값을 껍데기가 저장한다. 마지막 화면(CI가 창째 한 장 더 찍는다).
+        // 8. 한 번만 켜기 · madi:// — 두 번째로 켠 마디(같은 exe)가 넘기고, 켜진 마디(이 확인 실행)가 연다.
+        await Scenario("링크", async () =>
+        {
+            var folder = Path.Combine(directory, "links");
+            Directory.CreateDirectory(folder);
+            var linked = Path.Combine(folder, "linked.md");
+            await File.WriteAllBytesAsync(linked, Utf8("# 링크\n\n- 하나\n- 둘\n"));
+            var prompts = new List<string>();
+            MainWindow.Observer = (from, message) =>
+            {
+                if (from != window) others.Writer.TryWrite((from, message));
+            };
+            MainWindow.ConfirmAppendOverride = (_, text) =>
+            {
+                prompts.Add(text);
+                return true;
+            };
+            try
+            {
+                var code = await Second(linked);
+                var target = await Until(() => MainWindow.FindWindow(linked) is { State.Path: not null } found ? found : null, 20);
+                Check("한 번만 켜기 — 두 번째 마디는 넘기고 끝나고(0), 켜진 마디가 새 창에 연다", code == 0 && target is not null, code);
+                if (target is null) return;
+
+                DrainOthers();
+                await Second(Link("open", ("path", linked), ("line", "3")));
+                target.Post(new { type = "smoke", action = "digest" });
+                var atLine = await WaitForOther(target, "digest");
+                // 이미 연 창이라 바로 간다 — 한 번 더 재어 늦게 온 것도 본다.
+                if (Number(atLine, "caretLine") != 3)
+                {
+                    await Task.Delay(500);
+                    target.Post(new { type = "smoke", action = "digest" });
+                    atLine = await WaitForOther(target, "digest");
+                }
+                Check("madi://open — 열린 창으로 가서 3번째 줄", Number(atLine, "caretLine") == 3, Number(atLine, "caretLine"));
+
+                DrainOthers();
+                await Second(Link("append", ("path", linked), ("text", "- 셋")));
+                await WaitForOther(target, "state", message => !Flag(message, "dirty") && prompts.Count == 1, seconds: 15);
+                await Task.Delay(300);
+                var appended = Encoding.UTF8.GetString(await File.ReadAllBytesAsync(linked));
+                Check("madi://append — 묻고(한 번), 목록 끝에 빈 줄 없이 잇고, 자동 저장",
+                    prompts.Count == 1 && appended == "# 링크\n\n- 하나\n- 둘\n- 셋\n", new { prompts, appended });
+
+                DrainOthers();
+                var before = MainWindow.OpenWindows.ToList();
+                await Second(Link("new", ("title", "회의"), ("text", "안건 #1 + 100%")));
+                var composed = await Until(() => MainWindow.OpenWindows.Except(before).FirstOrDefault(), 20);
+                JsonElement draft = default;
+                if (composed is not null)
+                {
+                    await WaitForOther(composed, "state", message => Flag(message, "dirty"), seconds: 20);
+                    composed.Post(new { type = "smoke", action = "digest" });
+                    draft = await WaitForOther(composed, "digest");
+                }
+                Check("madi://new — 제목과 글로 새 창(고친 상태, `#` · `+` · `%`는 글 그대로)",
+                    Field(draft, "text") == "# 회의\n\n안건 #1 + 100%", Field(draft, "text"));
+
+                var created = Path.Combine(folder, "created.md");
+                await Second(Link("new", ("path", created), ("text", "새 글")));
+                var createdWindow = await Until(() => MainWindow.FindWindow(created), 20);
+                Check("madi://new?path — 새 파일을 만들어 연다(줄바꿈으로 맺음)",
+                    createdWindow is not null && File.Exists(created) && await File.ReadAllTextAsync(created) == "새 글\n");
+                var exists = await Second(Link("new", ("path", created), ("text", "덮어쓰기")));
+                await Task.Delay(800);
+                Check("madi://new?path — 있는 파일은 덮지 않는다",
+                    await File.ReadAllTextAsync(created) == "새 글\n" && MainWindow.SmokeNotes.Any(note => note.Contains("덮어쓰지 않습니다")), exists);
+
+                var notesBefore = MainWindow.SmokeNotes.Count;
+                await Second(Link("open", ("path", @"\\madi-smoke-host\share\a.md")));
+                await Task.Delay(800);
+                var refused = MainWindow.SmokeNotes.Skip(notesBefore).ToList();
+                Check("madi:// — 네트워크 경로는 열지 않는다(자격 증명이 나가지 않게)",
+                    refused.Any(note => note.Contains("네트워크 경로")), refused);
+            }
+            finally
+            {
+                MainWindow.Observer = null;
+                MainWindow.ConfirmAppendOverride = null;
+                foreach (var extra in MainWindow.OpenWindows.Where(other => other != window).ToList()) extra.Close();
+            }
+        });
+
+        // 9. 설정 — 테마 · 다크 · 글자 크기. 편집기가 정한 값을 껍데기가 저장한다. 마지막 화면(CI가 창째 한 장 더 찍는다).
         await Scenario("설정", async () =>
         {
             Drain();
@@ -447,6 +590,46 @@ internal sealed class SmokeRun(MainWindow window, string directory)
             await Capture("blocks-dark.png");
         });
 
+        // 10. PDF — 다크에서 내보내도 흰 종이 · 문서 전체. 끝나면 다크로 돌아온다. 마지막 화면.
+        await Scenario("PDF", async () =>
+        {
+            var path = Path.Combine(directory, "long.md");
+            var longer = BlocksDocument + string.Concat(Enumerable.Range(1, 160).Select(line => $"\n줄 {line} — 쪽을 넘기는 글"));
+            await File.WriteAllBytesAsync(path, Utf8(longer + "\n"));
+            await window.LoadFileAsync(path);
+            window.Post(new { type = "smoke", action = "caret", at = 0 }); // 캐럿이 메타데이터 안 — 내보낼 때는 상관없어야 한다
+            await DigestUntil(message => Counts(Child(Child(message, "blocks"), "states")).GetValueOrDefault("pending") == 0, seconds: 20);
+
+            Drain();
+            window.Post(new { type = "output", action = "begin", id = 900 });
+            var ready = await WaitFor("outputReady", seconds: 60);
+            var output = await Digest();
+            await Capture("output.png");
+            window.Post(new { type = "output", action = "end" });
+            var colors = Child(output, "colors");
+            var blocks = Counts(Child(Child(output, "blocks"), "kinds"));
+            Check("PDF — 내보내는 동안 흰 종이 · 기본 색 · 문서 전체 · 메타데이터 없음",
+                Flag(output, "output") && Field(colors, "background") == "rgb(255, 255, 255)"
+                // 블록 그림이 갈아 끼운 줄(메타데이터 4 · 표 4 · 다이어그램 4 · 수식 6 · 그림 1)만 빠진다 — 보이는 화면만 그렸다면 수십 줄이다.
+                && Number(output, "renderedLines") >= Number(ready, "lines") - 30
+                && !blocks.ContainsKey("frontmatter") && blocks.GetValueOrDefault("mermaid") == 1,
+                new { lines = Number(ready, "lines"), rendered = Number(output, "renderedLines"), colors, blocks });
+
+            var pdf = Path.Combine(directory, "export.pdf");
+            var written = await window.ExportPdfToAsync(pdf);
+            var bytes = written && File.Exists(pdf) ? await File.ReadAllBytesAsync(pdf) : [];
+            var text = Encoding.Latin1.GetString(bytes);
+            var pages = Regex.Matches(text, @"/Type\s*/Page(?![a-zA-Z])").Count;
+            Check("PDF — 파일을 쓰고, 보이는 화면이 아니라 문서 전체가 여러 쪽", written && text.StartsWith("%PDF-", StringComparison.Ordinal) && pages >= 3,
+                new { written, bytes = bytes.Length, pages });
+
+            await Task.Delay(500);
+            var after = await DigestUntil(message => !Flag(message, "output"), seconds: 10);
+            Check("PDF — 끝나면 다크(GitHub)로 돌아온다", Field(Child(after, "colors"), "background") == "rgb(13, 17, 23)",
+                Child(after, "colors"));
+            await DigestUntil(message => Counts(Child(Child(message, "blocks"), "states")).GetValueOrDefault("pending") == 0, seconds: 20);
+        });
+
         var fonts = ready.TryGetProperty("fonts", out var fontsValue) ? fontsValue : default;
         var fontsLoaded = fonts.ValueKind == JsonValueKind.Object && Flag(fonts, "pretendard") && Flag(fonts, "plexMono");
         // 실렸어도 다른 규칙에 밀리면 쓰이지 않는다 — 0단계의 처음 빌드가 그랬다(고정폭 기본 글꼴, 여백 없음).
@@ -466,6 +649,7 @@ internal sealed class SmokeRun(MainWindow window, string directory)
             cases,
             scenarios,
             notes,
+            smokeNotes = MainWindow.SmokeNotes,
         });
         window.Finish(ok ? 0 : 1, TimeSpan.FromSeconds(5));
     }

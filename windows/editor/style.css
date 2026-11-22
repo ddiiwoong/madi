@@ -126,3 +126,20 @@ pre.md-block-error {
 #picker .hint { margin-left: auto; color: var(--md-dim); font-size: 12px; }
 #picker .empty { margin: 8px 12px 10px; color: var(--md-dim); }
 #picker .empty[hidden] { display: none; }
+
+/*
+ * MARK: 내보내기(PDF · 프린트) — 편집기만, 쪽을 따라 길게. 색 · 캐럿 줄 · 메타데이터는 편집기가 맡는다(`enterOutput`, 흰 종이에 기본
+ * 테마). 여백 · 용지는 `@page`(`src/core/output.ts`)와 껍데기의 프린트 설정 — 글은 여백 안을 다 쓴다(macOS판처럼 쪽 폭에 맞춘다).
+ */
+@media print {
+  :root { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  html, body { height: auto !important; overflow: visible !important; background: #fff; }
+  #app, #body { display: block !important; height: auto !important; }
+  #band, #outline, #status, #picker, .pill { display: none !important; }
+  #editor .cm-editor { height: auto !important; }
+  #editor .cm-scroller { overflow: visible !important; height: auto !important; }
+  #editor .cm-content { padding: 0 !important; }
+  .cm-cursorLayer, .cm-selectionLayer, .cm-panels, .cm-gutters { display: none !important; }
+  .md-block { break-inside: avoid; }
+  .md-table-scroll { overflow: visible !important; }
+}

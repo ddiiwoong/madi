@@ -17,10 +17,15 @@ export interface BlockEnv {
   dark: boolean;
   loadsRemoteImages: boolean;
   collapsesFrontMatter: boolean;
+  /**
+   * PDF · 프린트로 내보내는 중 — 캐럿이 어디 있든 모두 그림으로(캐럿 줄의 표식도 숨긴다), 메타데이터는 내보내지 않는다(macOS판
+   * `isRenderingForOutput`과 같다). 색은 그동안 흰 종이의 기본 테마다(`main.ts`).
+   */
+  output: boolean;
 }
 
 export const blockEnv = Facet.define<BlockEnv, BlockEnv>({
-  combine: (values) => values[0] ?? { dark: false, loadsRemoteImages: false, collapsesFrontMatter: false },
+  combine: (values) => values[0] ?? { dark: false, loadsRemoteImages: false, collapsesFrontMatter: false, output: false },
 });
 
 /** 편집기 밖의 일 — 링크 열기, 로컬 그림 읽기(껍데기가 한다). main.ts가 채운다. */
@@ -237,9 +242,12 @@ class DiagramWidget extends WidgetType {
 
 /** 로컬 그림은 껍데기가 읽어 `data:` 주소로 준다. 같은 경로는 한 번만(문서를 새로 열면 비운다). */
 const images = new Map<string, Promise<string>>();
+/** 받아 둔 것 — 위젯을 다시 만들 때(내보내기에서 문서 전체를 그릴 때) 기다리지 않고 바로 채운다. */
+const loadedImages = new Map<string, string>();
 
 export function forgetImages(): void {
   images.clear();
+  loadedImages.clear();
 }
 
 class ImageWidget extends WidgetType {
@@ -285,12 +293,14 @@ class ImageWidget extends WidgetType {
     else if (source.kind === "remote") {
       if (this.remote) show(source.url);
       else note("원격 그림은 받지 않습니다(명령 팔레트 › 원격 그림 받기)", "blocked");
+    } else if (loadedImages.has(source.path)) {
+      show(loadedImages.get(source.path)!);
     } else {
       let pending = images.get(source.path);
       if (!pending) {
         pending = blockServices.loadImage(source.path);
         images.set(source.path, pending);
-        pending.catch(() => images.delete(source.path));
+        pending.then((url) => loadedImages.set(source.path, url), () => images.delete(source.path));
       }
       pending.then(show, (error: unknown) => note(error instanceof Error ? error.message : String(error), "error"));
     }
@@ -328,10 +338,18 @@ interface BlockState {
   collapsed: boolean;
 }
 
+const hiddenBlock = Decoration.replace({ block: true });
+
 function decorate(state: EditorState, blocks: RenderedBlock[], collapsed: boolean): DecorationSet {
   const env = state.facet(blockEnv);
   const ranges: Range<Decoration>[] = [];
   for (const block of blocks) {
+    if (env.output) {
+      ranges.push(block.kind === "frontmatter"
+        ? hiddenBlock.range(block.from, block.to)
+        : Decoration.replace({ widget: widgetFor(block, env, collapsed), block: true }).range(block.from, block.to));
+      continue;
+    }
     if (touches(state, block)) continue;
     ranges.push(Decoration.replace({ widget: widgetFor(block, env, collapsed), block: true }).range(block.from, block.to));
   }

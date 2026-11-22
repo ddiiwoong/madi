@@ -24,7 +24,7 @@ public sealed record DocumentState(string Name, string? Path, bool Dirty, bool C
 /// 이 창이 하는 일: 파일을 읽고 쓰기(같은 폴더의 임시 파일을 거쳐), 파일 지켜보기(<see cref="FileWatcher"/> ·
 /// <see cref="DiskBaseline"/>), 열기 · 저장 창, 닫을 때 묻기. 글로 읽는 일 · 고친 상태 · 자동 저장은 편집기가 한다.
 /// </summary>
-public sealed class MainWindow : Window
+public sealed partial class MainWindow : Window
 {
     internal const string AppHost = "app.madi";
     private static readonly List<MainWindow> Windows = [];
@@ -42,7 +42,7 @@ public sealed class MainWindow : Window
 
     /// <summary>메뉴의 ✓ — 설정의 어느 값이 이 항목인가. 설정이 바뀌면 다시 단다.</summary>
     private readonly List<(MenuItem Item, string Field, string Value, string Default)> choiceItems = [];
-    private readonly List<(MenuItem Item, string Field)> flagItems = [];
+    private readonly List<(MenuItem Item, string Field, bool Fallback)> flagItems = [];
     private readonly MenuItem recentMenu;
 
     private readonly WebView2 webView = new();
@@ -88,7 +88,7 @@ public sealed class MainWindow : Window
         var file = Heading("파일(_F)");
         file.Items.Add(Item("새로 만들기(_N)", "Ctrl+N", () => OpenWindow(null)));
         file.Items.Add(Item("열기(_O)…", "Ctrl+O", ShowOpenDialog));
-        file.Items.Add(Item("빠른 열기(_Q)…", "Ctrl+P", () => Run("quickOpen")));
+        file.Items.Add(Item("빠른 열기(_Q)…", "Ctrl+Alt+O", () => Run("quickOpen")));
         recentMenu = Heading("최근 문서(_R)");
         recentMenu.Items.Add(new MenuItem { Header = "(없음)", IsEnabled = false });
         recentMenu.SubmenuOpened += (_, _) => FillRecentMenu();
@@ -96,6 +96,25 @@ public sealed class MainWindow : Window
         file.Items.Add(new Separator());
         file.Items.Add(Item("저장(_S)", "Ctrl+S", () => Run("save")));
         file.Items.Add(Item("다른 이름으로 저장(_A)…", "Ctrl+Shift+S", () => Run("saveAs")));
+        file.Items.Add(new Separator());
+        file.Items.Add(Item("PDF 내보내기(_E)…", "", () => _ = ExportPdfAsync()));
+        file.Items.Add(Item("프린트하기(_P)…", "Ctrl+P", () => Run("print")));
+        var printMenu = Heading("프린트 설정(_T)");
+        var marginMenu = Heading("여백(_M)");
+        marginMenu.Items.Add(Choice("좁게", "setPrintMargin", "printMargin", "narrow", "normal"));
+        marginMenu.Items.Add(Choice("보통", "setPrintMargin", "printMargin", "normal", "normal"));
+        marginMenu.Items.Add(Choice("넓게", "setPrintMargin", "printMargin", "wide", "normal"));
+        var orientationMenu = Heading("방향(_O)");
+        orientationMenu.Items.Add(Choice("세로", "setPrintOrientation", "printOrientation", "portrait", "portrait"));
+        orientationMenu.Items.Add(Choice("가로", "setPrintOrientation", "printOrientation", "landscape", "portrait"));
+        var paperMenu = Heading("용지(_P)");
+        paperMenu.Items.Add(Choice("시스템 기본", "setPrintPaper", "printPaper", "system", "system"));
+        paperMenu.Items.Add(Choice("A4", "setPrintPaper", "printPaper", "a4", "system"));
+        paperMenu.Items.Add(Choice("Letter", "setPrintPaper", "printPaper", "letter", "system"));
+        printMenu.Items.Add(marginMenu);
+        printMenu.Items.Add(orientationMenu);
+        printMenu.Items.Add(paperMenu);
+        file.Items.Add(printMenu);
         file.Items.Add(new Separator());
         file.Items.Add(Item("닫기(_C)", "Ctrl+W", Close));
         var edit = Heading("편집(_E)");
@@ -143,10 +162,20 @@ public sealed class MainWindow : Window
         viewMenu.Items.Add(new Separator());
         viewMenu.Items.Add(Flag("원격 그림 받기(_R)", "toggleRemoteImages", "loadsRemoteImages"));
         viewMenu.Items.Add(Flag("문서 메타데이터 접어 두기(_H)", "toggleFrontMatter", "collapsesFrontMatter"));
+        var tools = Heading("도구(_T)");
+        tools.Items.Add(Item("LLM 키(_K)…", "", () => new LlmKeysWindow(this).ShowDialog()));
+        tools.Items.Add(Item("기본 앱 설정 열기(_D)…", "", OpenDefaultAppsSettings));
+        var help = Heading("도움말(_H)");
+        help.Items.Add(Item("업데이트 확인(_U)…", "", () => _ = Updates.CheckAsync(this, interactive: true)));
+        help.Items.Add(Flag("하루 한 번 새 판 확인(_D)", "toggleUpdateChecks", "checksForUpdates", fallback: true));
+        help.Items.Add(new Separator());
+        help.Items.Add(Item("마디 정보(_A)", "", ShowAbout));
         UpdateSettingsMenu();
         menu.Items.Add(file);
         menu.Items.Add(edit);
         menu.Items.Add(viewMenu);
+        menu.Items.Add(tools);
+        menu.Items.Add(help);
 
         var dock = new DockPanel();
         DockPanel.SetDock(menu, Dock.Top);
@@ -173,10 +202,10 @@ public sealed class MainWindow : Window
             choiceItems.Add((item, field, value, fallback));
             return item;
         }
-        MenuItem Flag(string header, string command, string field)
+        MenuItem Flag(string header, string command, string field, bool fallback = false)
         {
             var item = Item(header, "", () => Run(command));
-            flagItems.Add((item, field));
+            flagItems.Add((item, field, fallback));
             return item;
         }
         MenuItem Item(string header, string gesture, Action action)
@@ -250,7 +279,8 @@ public sealed class MainWindow : Window
         Core.WebMessageReceived += OnWebMessage;
         // 첫 그림부터 설정의 테마로 — 밝게 그렸다가 어둡게 바뀌지 않게. 값은 JSON 그대로(문자열은 이스케이프된다).
         await Core.AddScriptToExecuteOnDocumentCreatedAsync($"window.madiSettings = {Store.Settings.ToJsonString()};");
-        var query = smoke is not null ? "?smoke=1&autosave=1500" : "";
+        // 확인 실행 중에는 링크로 연 창도 확인 메시지를 받는다(`SmokeMode`).
+        var query = smoke is not null || SmokeMode ? "?smoke=1&autosave=1500" : "";
         Core.Navigate($"https://{AppHost}/index.html{query}");
     }
 
@@ -270,12 +300,18 @@ public sealed class MainWindow : Window
             var message = document.RootElement.Clone();
             var type = Field(message, "type");
             smoke?.Receive(message);
+            Observer?.Invoke(this, message);
             switch (type)
             {
                 case "ready":
                     editorReady = true;
-                    if (smoke is not null) await smoke.RunAsync(message);
-                    else if (options.FilePath is { } file) await LoadFileAsync(file);
+                    if (smoke is not null)
+                    {
+                        await smoke.RunAsync(message);
+                        break;
+                    }
+                    if (options.FilePath is { } file) await LoadFileAsync(file);
+                    await ReadyAsync();
                     break;
                 case "opened":
                 case "error":
@@ -304,7 +340,13 @@ public sealed class MainWindow : Window
                         case "new": OpenWindow(null); break;
                         case "open": ShowOpenDialog(); break;
                         case "close": Close(); break;
+                        case "exportPdf": _ = ExportPdfAsync(); break;
+                        case "llmKeys": new LlmKeysWindow(this).ShowDialog(); break;
+                        case "checkForUpdates": _ = Updates.CheckAsync(this, interactive: true); break;
                     }
+                    break;
+                case "outputReady":
+                    pendingOutput?.TrySetResult(message);
                     break;
                 case "openUrl":
                     OpenUrl(Field(message, "url"));
@@ -383,7 +425,7 @@ public sealed class MainWindow : Window
     private void UpdateSettingsMenu()
     {
         foreach (var (item, field, value, fallback) in choiceItems) item.IsChecked = (Store.Text(field) ?? fallback) == value;
-        foreach (var (item, field) in flagItems) item.IsChecked = Store.Flag(field);
+        foreach (var (item, field, fallback) in flagItems) item.IsChecked = Store.FlagOr(field, fallback);
     }
 
     private void FillRecentMenu()
@@ -521,20 +563,39 @@ public sealed class MainWindow : Window
         return pending.Task;
     }
 
-    /// <summary>열기 창 · 끌어다 놓기 · 두 번째 실행. 이미 연 파일이면 그 창을, 이 창이 비었으면 여기에, 아니면 새 창에.</summary>
-    internal void OpenPath(string file)
+    /// <summary>
+    /// 열기 창 · 끌어다 놓기 · 두 번째 실행 · 링크. 이미 연 파일이면 그 창을, 이 창이 비었으면 여기에, 아니면 새 창에.
+    /// <paramref name="then"/>은 그 창에 파일이 실린 뒤에(링크의 줄로 가기 · 찾기 · 끝에 더하기).
+    /// </summary>
+    internal void OpenPath(string file, Action<MainWindow>? then = null)
     {
         var full = Path.GetFullPath(file);
-        if (Windows.FirstOrDefault(window => string.Equals(window.path, full, StringComparison.OrdinalIgnoreCase)) is { } open)
+        if (FindWindow(full) is { } open)
         {
-            open.Activate();
+            Bring(open);
+            if (then is not null) open.WhenLoaded(then);
             return;
         }
-        if (path is null && !State.Dirty && editorReady) _ = LoadFileAsync(full);
-        else OpenWindow(full);
+        if (path is null && !State.Dirty && editorReady)
+        {
+            _ = LoadAndThenAsync(full, then);
+            return;
+        }
+        OpenWindow(full, then);
     }
 
-    private static void OpenWindow(string? file) => new MainWindow(new LaunchOptions(file, null)).Show();
+    private async Task LoadAndThenAsync(string file, Action<MainWindow>? then)
+    {
+        var reply = await LoadFileAsync(file);
+        if (then is not null && reply is { } opened && Field(opened, "type") == "opened") then(this);
+    }
+
+    private static void OpenWindow(string? file, Action<MainWindow>? then = null)
+    {
+        var window = new MainWindow(new LaunchOptions(file, null));
+        if (then is not null) window.afterLoad.Add(then);
+        window.Show();
+    }
 
     private void ShowOpenDialog()
     {
@@ -666,7 +727,7 @@ public sealed class MainWindow : Window
 
     private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
-        if (closeConfirmed || smoke is not null || !State.Dirty) return;
+        if (closeConfirmed || smoke is not null || SmokeMode || !State.Dirty) return;
         e.Cancel = true;
         _ = ConfirmCloseAsync();
     }
@@ -721,9 +782,10 @@ public sealed class MainWindow : Window
 
     private void ShowError(string message)
     {
-        if (smoke is not null)
+        if (smoke is not null || SmokeMode)
         {
-            smoke.Note(message);
+            SmokeNotes.Add(message);
+            smoke?.Note(message);
             return;
         }
         // 편집기의 메시지를 받는 중일 수 있다 — 그 안에서 모달 창을 띄우지 않고 다음 차례에(WebView2가 권하는 방식).

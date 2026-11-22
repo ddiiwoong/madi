@@ -4,6 +4,7 @@ import type { Range } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate, WidgetType } from "@codemirror/view";
 import { syntaxTree } from "@codemirror/language";
 import { caretLines, previewMarks, taskToggle, type AlertKind } from "../core/marks.ts";
+import { blockEnv } from "./blocks.ts";
 
 const bulletGlyphs = ["●", "○", "■"];
 
@@ -91,7 +92,9 @@ const rule = Decoration.replace({ widget: new RuleWidget() });
 
 function decorations(view: EditorView): DecorationSet {
   const ranges: Range<Decoration>[] = [];
-  for (const mark of previewMarks(view.state, view.visibleRanges, caretLines(view.state))) {
+  // 내보내는 중에는 캐럿 줄도 꾸민 대로(종이에 `#` · `**`가 찍히지 않게).
+  const caret = view.state.facet(blockEnv).output ? new Set<number>() : caretLines(view.state);
+  for (const mark of previewMarks(view.state, view.visibleRanges, caret)) {
     switch (mark.type) {
       case "hide":
         ranges.push(hidden.range(mark.from, mark.to));
@@ -131,6 +134,7 @@ export const livePreview = ViewPlugin.fromClass(
       if (
         update.docChanged || update.viewportChanged || update.selectionSet
         || syntaxTree(update.startState) !== syntaxTree(update.state)
+        || update.startState.facet(blockEnv) !== update.state.facet(blockEnv)
       ) {
         this.decorations = decorations(update.view);
         this.count = this.decorations.size;

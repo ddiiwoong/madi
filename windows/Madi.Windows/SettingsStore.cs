@@ -27,11 +27,13 @@ public sealed class SettingsStore(string folder)
 
     private JsonObject? settings;
     private List<string>? recent;
+    private JsonObject? host;
 
     public string Folder => folder;
 
     private string SettingsPath => Path.Combine(folder, "settings.json");
     private string RecentPath => Path.Combine(folder, "recent.json");
+    private string HostPath => Path.Combine(folder, "host.json");
 
     public static string DefaultFolder =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Madi");
@@ -51,8 +53,24 @@ public sealed class SettingsStore(string folder)
     public string? Text(string name) =>
         Settings.TryGetPropertyValue(name, out var node) && node is JsonValue value && value.TryGetValue<string>(out var text) ? text : null;
 
-    public bool Flag(string name) =>
-        Settings.TryGetPropertyValue(name, out var node) && node is JsonValue value && value.TryGetValue<bool>(out var flag) && flag;
+    public bool Flag(string name) => FlagOr(name, false);
+
+    /// <summary>설정의 참 · 거짓. 없거나 다른 꼴이면 <paramref name="fallback"/>(편집기의 기본과 같게 — 새 판 확인은 기본이 켜짐).</summary>
+    public bool FlagOr(string name, bool fallback) =>
+        Settings.TryGetPropertyValue(name, out var node) && node is JsonValue value && value.TryGetValue<bool>(out var flag) ? flag : fallback;
+
+    /// <summary>껍데기만 쓰는 값(<c>host.json</c>) — 지난 새 판 확인 시각, Bedrock 리전. 편집기는 모른다.</summary>
+    private JsonObject Host => host ??= Read(HostPath) as JsonObject ?? new JsonObject();
+
+    public string? HostText(string name) =>
+        Host.TryGetPropertyValue(name, out var node) && node is JsonValue value && value.TryGetValue<string>(out var text) ? text : null;
+
+    public void SetHostText(string name, string? value)
+    {
+        if (value is null) Host.Remove(name);
+        else Host[name] = value;
+        Write(HostPath, Host.ToJsonString(Options));
+    }
 
     /// <summary>최근 파일 — 새것이 앞. 지금 없는 파일도 남긴다(USB · 네트워크 위치는 다시 붙는다). 빠른 열기가 거른다.</summary>
     public IReadOnlyList<string> Recent => recent ??= ReadRecent();

@@ -9,6 +9,7 @@ import type { FileKind } from "../core/kind.ts";
 import type { LineSeparator } from "../core/lines.ts";
 import { livePreview } from "./preview.ts";
 import { blockEnv, renderedBlockField, type BlockEnv } from "./blocks.ts";
+import { codeLanguageFor } from "./codelang.ts";
 
 export interface Mode {
   kind: FileKind;
@@ -45,7 +46,8 @@ function parts(mode: Mode) {
   const usesMarkdown = mode.kind === "markdown" || !mode.source;
   return {
     separator: EditorState.lineSeparator.of(mode.separator),
-    language: usesMarkdown ? markdown({ base: markdownLanguage }) : [],
+    // 코드 블록 안은 그 언어로 다시 읽는다(문법 색 — 꾸러미는 처음 보일 때 싣는다).
+    language: usesMarkdown ? markdown({ base: markdownLanguage, codeLanguages: codeLanguageFor }) : [],
     // 블록 그림(표 · 다이어그램 · 수식 · 그림 · 앞머리)도 라이브 프리뷰의 일이다 — 원본 보기에서는 쓴 그대로.
     preview: mode.source ? [] : [livePreview, renderedBlockField],
     readOnly: [EditorState.readOnly.of(mode.follow), EditorView.editable.of(!mode.follow)],

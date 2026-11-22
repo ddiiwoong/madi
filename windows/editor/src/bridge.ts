@@ -17,6 +17,11 @@ export type HostMessage =
   | { type: "run"; command: string; arg?: string }
   /** 설정(모든 창이 함께) — 띄울 때, 그리고 어느 창에서든 바뀌면. 껍데기는 내용을 고치지 않고 저장 · 전달만 한다. */
   | { type: "settings"; settings: unknown }
+  /** PDF 내보내기 — `begin`이면 흰 종이 · 문서 전체로 그리고 `outputReady`로 답한다. 껍데기가 PDF를 쓴 뒤 `end`. */
+  | { type: "output"; action: "begin"; id: number }
+  | { type: "output"; action: "end" }
+  /** `madi://new`(경로 없이) — 이 글로 새 문서(고친 상태). */
+  | { type: "compose"; text: string }
   | Reply
   /** 확인 실행만(`?smoke=1`). */
   | { type: "smoke"; action: "type"; at: number; text: string }
@@ -84,7 +89,8 @@ export type EditorMessage =
   | { type: "save"; bytes: string; autosave: boolean }
   /** 저장하지 않은 문서 · 다른 이름으로 — 호스트가 저장 창을 띄운다. */
   | { type: "saveAs"; bytes: string; suggestedName: string }
-  | { type: "command"; name: "new" | "open" | "close" }
+  | { type: "command"; name: "new" | "open" | "close" | "exportPdf" | "llmKeys" | "checkForUpdates" }
+  | { type: "outputReady"; id: number; lines: number }
   | { type: "openUrl"; url: string }
   /** 파일을 디스크에서 다시 읽어 `open`으로 보내 달라(띠의 '다시 읽기'). */
   | { type: "reload" }
@@ -103,6 +109,11 @@ export type EditorMessage =
       /** 편집기 바탕 · 글자의 계산된 색 — 테마가 실제로 쓰였는가. */
       colors: { background: string; text: string; scheme: string };
       fontSize: string;
+      caretLine: number;
+      output: boolean;
+      /** 지금 DOM에 그려진 줄 — 내보내는 동안은 문서 전체여야 한다. */
+      renderedLines: number;
+      codeKeyword: string | null;
     }
   | { type: "settings"; settings: unknown }
   | { type: "openPath"; path: string }

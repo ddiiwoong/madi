@@ -189,11 +189,11 @@ test("명령 목록 — 설정에 ✓, 설정 명령은 값을 바꾸고 범위�
 
 test("블록 장식 — 캐럿이 닿은 블록만 원문, 앞머리 접기는 설정을 따르고 머리 줄로 바뀐다", async () => {
   const { blockEnv, renderedBlockField, setFrontMatterCollapsed } = await import("../src/editor/blocks.ts");
-  const env = { dark: false, loadsRemoteImages: false, collapsesFrontMatter: true };
-  const make = (caret: number) => {
+  const env = { dark: false, loadsRemoteImages: false, collapsesFrontMatter: true, output: false };
+  const make = (caret: number, output = false) => {
     const state = EditorState.create({
       doc, selection: EditorSelection.cursor(caret),
-      extensions: [markdown({ base: markdownLanguage }), blockEnv.of(env), renderedBlockField],
+      extensions: [markdown({ base: markdownLanguage }), blockEnv.of({ ...env, output }), renderedBlockField],
     });
     ensureSyntaxTree(state, doc.length, 5000);
     // 트리가 다 읽힌 뒤의 상태 — 빈 바꿈 하나로 필드를 다시 계산하게 한다.
@@ -220,4 +220,12 @@ test("블록 장식 — 캐럿이 닿은 블록만 원문, 앞머리 접기는 �
   assert.equal(opened.field(renderedBlockField).collapsed, false);
   const typed = opened.update({ changes: { from: doc.length, insert: "x" } }).state;
   assert.equal(typed.field(renderedBlockField).collapsed, false, "사람이 편 것은 고쳐도 남는다");
+  // 내보내기 — 캐럿이 표 안에 있어도 그림으로, 메타데이터는 위젯 없이 숨긴다(종이에 내지 않는다).
+  const output = make(table.from, true);
+  const all: { name: string | null }[] = [];
+  output.field(renderedBlockField).decorations.between(0, output.doc.length, (_from, _to, value) => {
+    all.push({ name: value.spec.widget ? (value.spec.widget as object).constructor.name : null });
+  });
+  assert.deepEqual(all.map((item) => item.name),
+    [null, "TableWidget", "DiagramWidget", "DiagramWidget", "DiagramWidget", "DiagramWidget", "ImageWidget"]);
 });

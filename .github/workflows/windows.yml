@@ -79,6 +79,55 @@ jobs:
           Write-Host "끝 코드: $($process.ExitCode)"
           if ($process.ExitCode -ne 0) { throw "확인 실패 — 끝 코드 $($process.ExitCode)" }
 
+      # 설치 파일 — 사용자별(관리자 권한 없이), 서명 없음. Inno Setup이 러너에 없으면 Chocolatey로 받는다.
+      - name: 설치 파일 만들기
+        run: |
+          $iscc = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
+          if (-not (Test-Path $iscc)) { throw "Inno Setup이 없다: $iscc" }
+          $version = (Select-Xml -Path windows/Madi.Windows/Madi.Windows.csproj -XPath "//Version").Node.InnerText
+          & $iscc "/DAppVersion=$version" "/DSourceDir=$PWD\out\Madi" "/DOutputDir=$PWD\out\installer" windows/installer/Madi.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC 실패 — $LASTEXITCODE" }
+          Get-ChildItem out/installer | Select-Object Name, Length | Format-Table -AutoSize
+
+      # 깐 대로 놓였는지(파일 · madi:// · 연결 프로그램 · 기본 앱 목록) 보고, 지우면 그 항목이 다 없어지는지 본다.
+      - name: 설치 · 지우기 확인
+        run: |
+          $setup = (Get-ChildItem out/installer/*-setup.exe | Select-Object -First 1).FullName
+          $installed = Start-Process -FilePath $setup -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -PassThru -Wait
+          if ($installed.ExitCode -ne 0) { throw "설치 실패 — $($installed.ExitCode)" }
+          $app = Join-Path $env:LOCALAPPDATA "Programs\Madi\Madi.exe"
+          $checks = [ordered]@{
+            "Madi.exe" = Test-Path $app
+            "편집기" = Test-Path (Join-Path $env:LOCALAPPDATA "Programs\Madi\editor\index.html")
+            "madi://" = ((Get-ItemProperty "HKCU:\Software\Classes\madi\shell\open\command" -ErrorAction SilentlyContinue)."(default)" -like "*Madi.exe*%1*")
+            ".md 연결 프로그램" = $null -ne (Get-ItemProperty "HKCU:\Software\Classes\.md\OpenWithProgids" -Name "Madi.Markdown" -ErrorAction SilentlyContinue)
+            ".log 연결 프로그램" = $null -ne (Get-ItemProperty "HKCU:\Software\Classes\.log\OpenWithProgids" -Name "Madi.Text" -ErrorAction SilentlyContinue)
+            "기본 앱 목록" = ((Get-ItemProperty "HKCU:\Software\RegisteredApplications" -ErrorAction SilentlyContinue).Madi -eq "Software\Madi\Capabilities")
+          }
+          $checks | Format-Table -AutoSize
+          if ($checks.Values -contains $false) { throw "설치가 빠뜨린 것이 있다" }
+          $uninstaller = Join-Path $env:LOCALAPPDATA "Programs\Madi\unins000.exe"
+          Start-Process -FilePath $uninstaller -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
+          # 지우기는 자기 사본을 임시 폴더에서 돌려 곧 돌아온다 — 다 지울 때까지 기다린다.
+          $deadline = (Get-Date).AddSeconds(90)
+          while ((Test-Path $app) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
+          Start-Sleep -Seconds 2
+          $left = [ordered]@{
+            "Madi.exe" = Test-Path $app
+            "madi://" = Test-Path "HKCU:\Software\Classes\madi"
+            ".md 연결 프로그램" = $null -ne (Get-ItemProperty "HKCU:\Software\Classes\.md\OpenWithProgids" -Name "Madi.Markdown" -ErrorAction SilentlyContinue)
+            "기본 앱 목록" = $null -ne (Get-ItemProperty "HKCU:\Software\RegisteredApplications" -Name "Madi" -ErrorAction SilentlyContinue)
+            "Software\Madi" = Test-Path "HKCU:\Software\Madi"
+          }
+          $left | Format-Table -AutoSize
+          if ($left.Values -contains $true) { throw "지우고도 남은 것이 있다" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Madi-windows-x64-setup
+          path: out/installer/*.exe
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -89,7 +138,9 @@ jobs:
             ${{ runner.temp }}/smoke/*.md
             ${{ runner.temp }}/smoke/*.txt
             ${{ runner.temp }}/smoke/*.log
+            ${{ runner.temp }}/smoke/*.pdf
             ${{ runner.temp }}/smoke/blocks/*.md
+            ${{ runner.temp }}/smoke/links/*.md
             ${{ runner.temp }}/smoke/settings/*.json
           if-no-files-found: warn
 

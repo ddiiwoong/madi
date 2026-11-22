@@ -6,6 +6,10 @@ import { palettes, paletteFields, themeIds, type ThemeId } from "./palette.ts";
 export type Appearance = "system" | "light" | "dark";
 export type LineSpacing = "tight" | "normal" | "loose";
 export type DocumentWidth = "narrow" | "normal" | "wide" | "full";
+export type PrintMargin = "narrow" | "normal" | "wide";
+export type PrintOrientation = "portrait" | "landscape";
+/** `system`은 Windows의 기본 프린터 용지(없으면 지역에 맞춰 A4 · Letter). */
+export type PrintPaper = "system" | "a4" | "letter";
 
 export interface Settings {
   theme: ThemeId;
@@ -20,6 +24,12 @@ export interface Settings {
   /** 원격 그림(`https://…`)을 받는가. 기본 꺼짐 — 문서를 연 것만으로 바깥에 요청이 나가지 않게(macOS판과 같다). */
   loadsRemoteImages: boolean;
   collapsesFrontMatter: boolean;
+  /** PDF 내보내기 · 프린트(둘이 같은 설정 — macOS판과 같다). */
+  printMargin: PrintMargin;
+  printOrientation: PrintOrientation;
+  printPaper: PrintPaper;
+  /** 켤 때 하루 한 번 GitHub에 새 판을 묻는다. 기본 켜짐(macOS판 — 2026-11-09 사용자가 골랐다). 보내는 것은 판을 묻는 GET 하나. */
+  checksForUpdates: boolean;
 }
 
 export const sizeRange = { min: 10, max: 28 } as const;
@@ -34,7 +44,14 @@ export const defaultSettings: Settings = {
   documentWidth: "normal",
   loadsRemoteImages: false,
   collapsesFrontMatter: false,
+  printMargin: "normal",
+  printOrientation: "portrait",
+  printPaper: "system",
+  checksForUpdates: true,
 };
+
+/** 여백(pt) — macOS판 `PrintMargin.points`. */
+export const printMarginPoints: Record<PrintMargin, number> = { narrow: 24, normal: 48, wide: 84 };
 
 const lineSpacingScale: Record<LineSpacing, number> = { tight: 0.22, normal: 0.42, loose: 0.7 };
 const widthMultiple: Record<DocumentWidth, number | null> = { narrow: 42, normal: 56, wide: 76, full: null };
@@ -60,6 +77,11 @@ export function normalizeSettings(raw: unknown): Settings {
     documentWidth: pick("documentWidth", ["narrow", "normal", "wide", "full"] as const, defaultSettings.documentWidth),
     loadsRemoteImages: value.loadsRemoteImages === true,
     collapsesFrontMatter: value.collapsesFrontMatter === true,
+    printMargin: pick("printMargin", ["narrow", "normal", "wide"] as const, defaultSettings.printMargin),
+    printOrientation: pick("printOrientation", ["portrait", "landscape"] as const, defaultSettings.printOrientation),
+    printPaper: pick("printPaper", ["system", "a4", "letter"] as const, defaultSettings.printPaper),
+    // 끄는 것만 받는다 — 깨진 값이 확인을 끄지 않게(기본이 켜짐).
+    checksForUpdates: value.checksForUpdates !== false,
   };
 }
 

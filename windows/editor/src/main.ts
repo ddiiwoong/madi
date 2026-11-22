@@ -3,7 +3,7 @@
 import { Annotation, EditorSelection, EditorState, Prec, type Text, Transaction } from "@codemirror/state";
 import { EditorView, drawSelection, highlightSpecialChars, keymap, placeholder } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, redo, selectAll, undo } from "@codemirror/commands";
-import { openSearchPanel, search, searchKeymap } from "@codemirror/search";
+import { findNext, openSearchPanel, search, searchKeymap, SearchQuery, setSearchQuery } from "@codemirror/search";
 import { base64ToBytes, bytesForSave, bytesToBase64, documentBytes, openDocument, sha256Hex } from "./core/document.ts";
 import { lineSeparatorName } from "./core/lines.ts";
 import { TextStream, type TextEncodingName } from "./core/text.ts";
@@ -14,6 +14,8 @@ import { ask, hasHost, onHostMessage, post, postDroppedFiles, type HostMessage }
 import { normalizeSettings, type Settings } from "./core/settings.ts";
 import { themeLabels } from "./core/palette.ts";
 import { catalog, settingsChange } from "./core/catalog.ts";
+import { appendPiece } from "./core/append.ts";
+import { pageRule } from "./core/output.ts";
 import { highlighting, koreanPhrases, look, modeExtensions, reconfigure, reconfigureEnvironment, type Mode } from "./editor/setup.ts";
 import { linkAt, livePreview } from "./editor/preview.ts";
 import { blockReport, blockServices, forgetImages, type BlockEnv } from "./editor/blocks.ts";
@@ -54,9 +56,13 @@ let autosaveTimer: number | undefined;
 let lastAtEnd = true;
 let settings: Settings = normalizeSettings(window.madiSettings ?? null);
 let dark = applyTheme(settings);
+/** PDF · 프린트로 내보내는 중(`enterOutput`) — 흰 종이에 기본 테마, 캐럿 줄도 꾸민 대로, 문서 전체를 그린다. */
+let outputting = false;
 
 function environment(): BlockEnv {
-  return { dark, loadsRemoteImages: settings.loadsRemoteImages, collapsesFrontMatter: settings.collapsesFrontMatter };
+  return {
+    dark, loadsRemoteImages: settings.loadsRemoteImages, collapsesFrontMatter: settings.collapsesFrontMatter, output: outputting,
+  };
 }
 
 const status = new StatusBar();
@@ -91,11 +97,24 @@ const commands: Record<string, (arg?: string) => void> = {
   commandPalette: () => commandPalette(),
   pickBodyFont: () => pickFont("body"),
   pickCodeFont: () => pickFont("code"),
+  // 껍데기가 하는 것 — 저장 창 · PDF 쓰기 · LLM 키 창 · 새 판 확인.
+  exportPdf: () => post({ type: "command", name: "exportPdf" }),
+  llmKeys: () => post({ type: "command", name: "llmKeys" }),
+  checkForUpdates: () => post({ type: "command", name: "checkForUpdates" }),
+  print: () => void printDocument(),
+  // `madi://` 링크(껍데기가 읽어 보낸다) — 줄로 가기 · 찾기 · 끝에 더하기 · 끝으로.
+  goToLine: (arg) => goToLine(Number(arg)),
+  search: (arg) => startSearch(arg ?? ""),
+  appendText: (arg) => appendText(arg ?? ""),
+  caretEnd: () => {
+    view.dispatch({ selection: EditorSelection.cursor(view.state.doc.length), scrollIntoView: true });
+  },
 };
 // 설정 명령(테마 · 모양 · 글자 크기 · 줄 사이 · 글 폭 · 글꼴 · 원격 그림 · 앞머리 접기) — 값은 `core/catalog.ts`가 정한다.
 for (const id of [
   "setTheme", "setAppearance", "setLineSpacing", "setDocumentWidth", "textBigger", "textSmaller", "textStandard",
   "setBodyFont", "setCodeFont", "toggleRemoteImages", "toggleFrontMatter",
+  "setPrintMargin", "setPrintOrientation", "setPrintPaper", "toggleUpdateChecks",
 ]) {
   commands[id] = (arg) => {
     const next = settingsChange(settings, id, arg);
@@ -112,7 +131,8 @@ const shortcuts = Prec.highest(keymap.of([
   { key: "Mod-e", run: () => (commands.toggleSource!(), true) },
   { key: "Mod-Alt-l", run: () => (commands.toggleFollow!(), true) },
   { key: "Mod-Shift-o", run: () => (commands.toggleOutline!(), true) },
-  { key: "Mod-p", run: () => (commands.quickOpen!(), true) },
+  // Ctrl+P는 프린트(Windows의 약속이고 macOS판의 ⌘P와 같다). 빠른 열기는 macOS판의 ⌥⌘O 자리.
+  { key: "Mod-p", run: () => (commands.print!(), true) },
   { key: "Mod-Alt-o", run: () => (commands.quickOpen!(), true) },
   { key: "Mod-Shift-p", run: () => (commands.commandPalette!(), true) },
   { key: "Mod-=", run: () => (commands.textBigger!(), true) },
@@ -282,6 +302,9 @@ function scheduleOutline(delay = 300): void {
 function applySettings(next: Settings): void {
   const changed = JSON.stringify(next) !== JSON.stringify(settings);
   settings = next;
+  updatePageRule();
+  // 내보내는 동안은 흰 종이 그대로 — 끝나면(`exitOutput`) 바뀐 설정으로 돌아간다.
+  if (outputting) return;
   const wasDark = dark;
   dark = applyTheme(settings);
   if (!changed && wasDark === dark) return;
@@ -302,6 +325,124 @@ function describeSettings(): string {
 }
 
 onSystemAppearanceChange(() => applySettings(settings));
+
+// MARK: 내보내기 — PDF(껍데기가 `output` begin → PrintToPdf → end) · 프린트(편집기가 `window.print()`)
+
+/** 용지 · 방향 · 여백 — 프린트 창의 기본값이 된다. PDF는 껍데기가 같은 값을 넘긴다(`PrintLayout`). */
+const pageStyle = document.createElement("style");
+pageStyle.id = "md-page";
+document.head.append(pageStyle);
+function updatePageRule(): void {
+  pageStyle.textContent = pageRule(settings);
+}
+updatePageRule();
+
+/**
+ * CodeMirror는 보이는 줄만 그린다. 프린트할 때(`beforeprint`) 잠깐(0.5초) 전체를 그리는데, 다이어그램 · 그림은 그 안에 그려지지 않는다.
+ * 그래서 내보내는 동안 내내 전체를 그리게 둔다 — CodeMirror의 안쪽 값(`viewState.printing`, 6.43.15에서 확인)이라 판을 올리면
+ * 확인 실행의 PDF 쪽 수가 지킨다.
+ */
+function setPrinting(on: boolean): void {
+  const state = (view as unknown as { viewState?: { printing?: boolean } }).viewState;
+  if (state && "printing" in state) state.printing = on;
+  view.requestMeasure();
+}
+
+async function settled(timeout = 20000): Promise<void> {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    const pending = view.dom.querySelectorAll('.md-block[data-state="pending"]').length;
+    const images = [...view.dom.querySelectorAll("img")].filter((image) => !image.complete).length;
+    if (pending === 0 && images === 0) break;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  await document.fonts.ready;
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+}
+
+async function enterOutput(): Promise<void> {
+  if (outputting) return;
+  outputting = true;
+  picker.close();
+  // macOS판처럼 고른 테마와 상관없이 흰 종이에 기본 색 — 다이어그램도 라이트로 다시 그린다.
+  dark = applyTheme({ ...settings, theme: "standard", appearance: "light" });
+  document.documentElement.classList.add("md-output");
+  view.dispatch({ effects: reconfigureEnvironment(environment()) });
+  setPrinting(true);
+  await settled();
+  setPrinting(true);
+  await settled(2000);
+}
+
+function exitOutput(): void {
+  if (!outputting) return;
+  outputting = false;
+  document.documentElement.classList.remove("md-output");
+  dark = applyTheme(settings);
+  view.dispatch({ effects: reconfigureEnvironment(environment()) });
+  setPrinting(false);
+  view.focus();
+}
+
+async function printDocument(): Promise<void> {
+  await enterOutput();
+  // 프린트 창을 닫으면(찍든 취소하든) 돌아온다. `print()`가 창이 닫힐 때까지 기다리지 않는 엔진이면 `afterprint`가 한다.
+  window.addEventListener("afterprint", exitOutput, { once: true });
+  window.print();
+}
+
+/** 껍데기가 시킨 내보내기(PDF) 중인가 — 그때는 껍데기의 `end`를 기다린다. */
+let hostOutput = false;
+// 프린트 창이 `afterprint` 없이 닫혔을 때 — 사람이 편집기로 돌아오면 끝낸다.
+for (const type of ["mousedown", "keydown"] as const) {
+  window.addEventListener(type, () => {
+    if (outputting && !hostOutput) exitOutput();
+  }, true);
+}
+
+// MARK: 링크(`madi://`)
+
+function goToLine(line: number): void {
+  if (!Number.isInteger(line) || line < 1) return;
+  const target = view.state.doc.line(Math.min(line, view.state.doc.lines));
+  view.dispatch({
+    selection: EditorSelection.cursor(target.from),
+    effects: EditorView.scrollIntoView(target.from, { y: "center" }),
+  });
+  view.focus();
+}
+
+function startSearch(text: string): void {
+  if (text === "") return;
+  openSearchPanel(view);
+  view.dispatch({ effects: setSearchQuery.of(new SearchQuery({ search: text })) });
+  findNext(view);
+}
+
+/** `madi://new`(경로 없이) — 받은 글로 새 문서. 사람이 쓴 것처럼 들여 고친 상태가 된다(닫을 때 묻는다). 캐럿은 끝. */
+function compose(text: string): void {
+  view.dispatch({
+    changes: { from: 0, to: view.state.doc.length, insert: text.replace(/\r\n?/g, "\n") },
+    selection: EditorSelection.cursor(text.replace(/\r\n?/g, "\n").length),
+    scrollIntoView: true,
+    userEvent: "input.link",
+  });
+  view.focus();
+}
+
+function appendText(text: string): void {
+  if (text === "" || view.state.readOnly) return;
+  // 편집기의 글은 줄 끝이 늘 `\n`이다 — 받은 글의 CRLF도 그렇게(쓸 때 문서의 줄 끝으로 돌아간다).
+  const piece = appendPiece(text.replace(/\r\n?/g, "\n"), view.state.doc.toString());
+  const end = view.state.doc.length;
+  view.dispatch({
+    changes: { from: end, insert: piece },
+    selection: EditorSelection.cursor(end + piece.length),
+    scrollIntoView: true,
+    userEvent: "input.link",
+  });
+  view.focus();
+}
 
 // MARK: 고르는 칸 — 빠른 열기 · 명령 팔레트 · 글꼴
 
@@ -556,6 +697,18 @@ onHostMessage((message) => {
     case "settings":
       applySettings(normalizeSettings(message.settings));
       break;
+    case "output":
+      if (message.action === "begin") {
+        hostOutput = true;
+        void enterOutput().then(() => post({ type: "outputReady", id: message.id, lines: view.state.doc.lines }));
+      } else {
+        hostOutput = false;
+        exitOutput();
+      }
+      break;
+    case "compose":
+      compose(message.text);
+      break;
     case "smoke":
       if (smoke) void runSmoke(message);
       break;
@@ -603,6 +756,14 @@ async function runSmoke(message: Extract<HostMessage, { type: "smoke" }>): Promi
           scheme: document.documentElement.style.colorScheme,
         },
         fontSize: getComputedStyle(view.scrollDOM).fontSize,
+        caretLine: view.state.doc.lineAt(view.state.selection.main.head).number,
+        output: outputting,
+        renderedLines: view.contentDOM.querySelectorAll(".cm-line").length,
+        // 코드 블록의 문법 색 — 첫 `let`(확인 문서의 Swift)의 색. 칠하지 않았으면 본문 색이거나 없다.
+        codeKeyword: (() => {
+          const word = [...view.contentDOM.querySelectorAll(".cm-md-line-code span")].find((span) => span.textContent === "let");
+          return word ? getComputedStyle(word).color : null;
+        })(),
       });
       break;
     }

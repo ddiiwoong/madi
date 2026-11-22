@@ -1,6 +1,6 @@
 // 편집기를 dist/로 묶는다 — WPF 호스트가 그 폴더를 `https://app.madi/`로 연다(`Madi.Windows.csproj`가 옮긴다).
 //
-// - main.js: src/main.ts와 CodeMirror를 한 파일로(esbuild).
+// - main.js: src/main.ts와 CodeMirror(esbuild). 코드 블록의 언어 꾸러미는 chunks/에 따로.
 // - index.html · style.css, 글꼴(macOS판과 같은 파일 — 한 곳에서만 고친다).
 // - diagrams/: Mermaid 12.2.0 · KaTeX 0.19.1(macOS판 `Sources/Madi/Resources/Diagrams`의 같은 파일 — 받은 곳 · 해시는 그 README).
 //   편집기가 그런 블록을 처음 볼 때 싣는다(`src/editor/diagrams.ts`). KaTeX의 CSS가 `fonts/`를 상대 경로로 부르므로 폴더째.
@@ -24,7 +24,11 @@ await mkdir(path.join(dist, "diagrams", "fonts"), { recursive: true });
 const result = await build({
   absWorkingDir: root,
   entryPoints: ["src/main.ts"],
-  outfile: path.join(dist, "main.js"),
+  // 코드 블록의 언어 꾸러미는 따로(`chunks/`) — 그 언어의 블록이 처음 보일 때 싣는다(`src/editor/codelang.ts`).
+  outdir: dist,
+  entryNames: "[name]",
+  chunkNames: "chunks/[name]-[hash]",
+  splitting: true,
   bundle: true,
   format: "esm",
   target: "chrome120",
