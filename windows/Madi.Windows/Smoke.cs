@@ -593,7 +593,8 @@ internal sealed class SmokeRun(MainWindow window, string directory)
         // 10. PDF — 다크에서 내보내도 흰 종이 · 문서 전체. 끝나면 다크로 돌아온다. 마지막 화면.
         await Scenario("PDF", async () =>
         {
-            var path = Path.Combine(directory, "long.md");
+            // 블록 문서와 같은 폴더 — 그림(`그림/dot.png`)이 풀리게.
+            var path = Path.Combine(directory, "blocks", "long.md");
             var longer = BlocksDocument + string.Concat(Enumerable.Range(1, 160).Select(line => $"\n줄 {line} — 쪽을 넘기는 글"));
             await File.WriteAllBytesAsync(path, Utf8(longer + "\n"));
             await window.LoadFileAsync(path);
@@ -608,12 +609,14 @@ internal sealed class SmokeRun(MainWindow window, string directory)
             window.Post(new { type = "output", action = "end" });
             var colors = Child(output, "colors");
             var blocks = Counts(Child(Child(output, "blocks"), "kinds"));
-            Check("PDF — 내보내는 동안 흰 종이 · 기본 색 · 문서 전체 · 메타데이터 없음",
+            var drawn = Counts(Child(Child(output, "blocks"), "states"));
+            Check("PDF — 내보내는 동안 흰 종이 · 기본 색 · 문서 전체 · 메타데이터 없음 · 블록 다섯 모두 그려짐",
                 Flag(output, "output") && Field(colors, "background") == "rgb(255, 255, 255)"
+                && drawn.GetValueOrDefault("ready") == 5 && drawn.Count == 1
                 // 블록 그림이 갈아 끼운 줄(메타데이터 4 · 표 4 · 다이어그램 4 · 수식 6 · 그림 1)만 빠진다 — 보이는 화면만 그렸다면 수십 줄이다.
                 && Number(output, "renderedLines") >= Number(ready, "lines") - 30
                 && !blocks.ContainsKey("frontmatter") && blocks.GetValueOrDefault("mermaid") == 1,
-                new { lines = Number(ready, "lines"), rendered = Number(output, "renderedLines"), colors, blocks });
+                new { lines = Number(ready, "lines"), rendered = Number(output, "renderedLines"), colors, blocks, drawn });
 
             var pdf = Path.Combine(directory, "export.pdf");
             var written = await window.ExportPdfToAsync(pdf);
