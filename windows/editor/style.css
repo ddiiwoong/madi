@@ -10,14 +10,4 @@
 html, body { height: 100%; margin: 0; }
 body { background: Canvas; color: CanvasText; }
 #editor { height: 100%; }
-
-.cm-editor { height: 100%; }
-.cm-editor.cm-focused { outline: none; }
-.cm-scroller {
-  font-family: "Pretendard", "Malgun Gothic", sans-serif;
-  font-size: 15px;
-  line-height: 1.6;
-}
-/* macOS판의 보통 문서 폭: 본문 크기의 56배(15px에서 840px), 창이 넓으면 가운데. */
-.cm-content { max-width: 840px; margin: 0 auto; padding: 24px 28px; box-sizing: border-box; }
-.cm-content, .cm-line { caret-color: auto; }
+/* 편집기의 글꼴 · 글 폭은 src/main.ts의 `layout` 테마에 있다 — 여기 적으면 CodeMirror의 기본 테마에 밀린다. */

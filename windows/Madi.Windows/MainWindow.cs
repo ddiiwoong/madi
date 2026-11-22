@@ -26,8 +26,10 @@ public sealed class MainWindow : Window
     {
         this.options = options;
         Title = "마디";
-        Width = 1100;
-        Height = 800;
+        // 화면이 작으면(CI는 1024×768) 그 안에 든다.
+        var area = SystemParameters.WorkArea;
+        Width = Math.Min(1100, area.Width * 0.92);
+        Height = Math.Min(800, area.Height * 0.92);
         MinWidth = 520;
         MinHeight = 380;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;

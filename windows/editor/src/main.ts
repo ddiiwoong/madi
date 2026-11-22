@@ -20,8 +20,23 @@ function extensions(separator: LineSeparator): Extension[] {
     markdown(),
     syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
     EditorView.contentAttributes.of({ lang: "ko", spellcheck: "false" }),
+    layout,
   ];
 }
+
+// 글꼴과 글 폭은 CodeMirror의 테마로 준다. style.css에 적었더니 CodeMirror의 기본 테마(`.ͼ1 .cm-scroller` — 클래스 둘)에 밀려
+// 고정폭 기본 글꼴 · 여백 없음으로 그려졌다(Windows CI의 editor.png).
+// 글 폭은 macOS판과 같다: 본문 크기의 56배(15px에서 840px), 창이 넓으면 남는 자리를 양옆에 반씩(`MarkdownTheme.textInsets`).
+const layout = EditorView.theme({
+  "&": { height: "100%" },
+  "&.cm-focused": { outline: "none" },
+  ".cm-scroller": {
+    fontFamily: '"Pretendard", "Malgun Gothic", sans-serif',
+    fontSize: "15px",
+    lineHeight: "1.6",
+  },
+  ".cm-content": { padding: "24px max(28px, calc((100% - 840px) / 2))" },
+});
 
 const parent = document.getElementById("editor");
 if (!parent) throw new Error("편집기를 놓을 자리(#editor)가 없다");
@@ -74,6 +89,13 @@ async function loaded(family: string): Promise<boolean> {
 if (hasHost) {
   void (async () => {
     const fonts = { pretendard: await loaded("Pretendard"), plexMono: await loaded("IBM Plex Mono") };
-    post({ type: "ready", userAgent: navigator.userAgent, fonts });
+    const style = getComputedStyle(view.contentDOM);
+    post({
+      type: "ready",
+      userAgent: navigator.userAgent,
+      fonts,
+      editorFont: style.fontFamily,
+      editorPaddingLeft: style.paddingLeft,
+    });
   })();
 }

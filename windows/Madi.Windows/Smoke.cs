@@ -118,6 +118,11 @@ internal sealed class SmokeRun(MainWindow window, string directory)
             && fonts.TryGetProperty("pretendard", out var pretendard) && pretendard.ValueKind == JsonValueKind.True
             && fonts.TryGetProperty("plexMono", out var plex) && plex.ValueKind == JsonValueKind.True;
         ok &= fontsLoaded;
+        // 실렸어도 다른 규칙에 밀리면 쓰이지 않는다 — 처음 빌드가 그랬다(고정폭 기본 글꼴, 여백 없음).
+        var editorFont = ready.TryGetProperty("editorFont", out var fontValue) ? fontValue.GetString() : null;
+        var fontApplied = editorFont?.TrimStart().StartsWith("\"Pretendard\"", StringComparison.Ordinal) == true
+            || editorFont?.TrimStart().StartsWith("Pretendard", StringComparison.Ordinal) == true;
+        ok &= fontApplied;
         watchdog?.Stop();
         Write(new
         {
@@ -125,6 +130,9 @@ internal sealed class SmokeRun(MainWindow window, string directory)
             webView2 = window.Core.Environment.BrowserVersionString,
             userAgent = ready.TryGetProperty("userAgent", out var agent) ? agent.GetString() : null,
             fontsLoaded,
+            fontApplied,
+            editorFont,
+            editorPaddingLeft = ready.TryGetProperty("editorPaddingLeft", out var padding) ? padding.GetString() : null,
             cases = results,
         });
         window.Finish(ok ? 0 : 1, TimeSpan.FromSeconds(5));

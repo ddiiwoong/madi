@@ -15,6 +15,9 @@ export type EditorMessage =
       userAgent: string;
       /** 앱에 든 글꼴이 실제로 실렸는가. */
       fonts: { pretendard: boolean; plexMono: boolean };
+      /** 편집기 글이 실제로 쓰는 글꼴과 왼쪽 여백(계산된 CSS) — 실렸어도 다른 규칙에 밀리면 쓰이지 않는다. */
+      editorFont: string;
+      editorPaddingLeft: string;
     }
   | {
       type: "opened";
