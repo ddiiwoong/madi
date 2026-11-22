@@ -9,6 +9,7 @@
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
+    <!-- WPF 꾸러미는 System.IO를 저절로 들이지 않는다(System.Windows.Shapes.Path와 겹친다) — 파일마다 적는다. -->
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <AssemblyName>Madi</AssemblyName>
