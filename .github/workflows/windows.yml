@@ -1,0 +1,93 @@
+# 마디 Windows판(windows/) — 편집기(TypeScript)를 시험 · 묶고, WPF 껍데기를 빌드하고, 띄워서 확인한다.
+#
+# 확인 실행(`Madi.exe --smoke`)은 시험 문서를 열어 편집기를 지나도 바이트가 그대로인지 견주고 편집기 화면을 찍는다.
+# 그동안 이 단계가 화면 전체를 한 장 더 찍는다(창 테두리까지). 받을 것: Madi-windows-x64(그대로 풀어 Madi.exe를 연다), smoke.
+name: windows
+
+on:
+  push:
+    branches: ["windows/**"]
+  pull_request:
+    paths: ["windows/**", ".github/workflows/windows.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  app:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: windows/editor/package-lock.json
+
+      - name: 편집기 — 시험 · 형 검사 · 묶기
+        working-directory: windows/editor
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+          npm run check
+          npm run build
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: 껍데기 빌드(x64, .NET 포함)
+        run: |
+          dotnet publish windows/Madi.Windows/Madi.Windows.csproj -c Release -r win-x64 --self-contained true -o out/Madi
+          Get-ChildItem out/Madi/editor | Select-Object Name, Length | Format-Table -AutoSize
+
+      - name: 띄워서 확인
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP "smoke"
+          $process = Start-Process -FilePath "out/Madi/Madi.exe" -ArgumentList @("--smoke", "`"$out`"") -PassThru
+          $null = $process.Handle   # 끝 코드를 읽으려면 손잡이를 먼저 잡아 둔다
+          $deadline = (Get-Date).AddMinutes(3)
+          while (-not (Test-Path "$out/result.json") -and -not $process.HasExited -and (Get-Date) -lt $deadline) {
+            Start-Sleep -Milliseconds 500
+          }
+          Start-Sleep -Seconds 1
+          try {
+            Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+            $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bitmap = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
+            $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+            $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+            $bitmap.Save("$out/screen.png")
+          } catch {
+            Write-Warning "화면을 찍지 못했다: $_"
+          }
+          if (-not $process.WaitForExit(60000)) {
+            $process.Kill()
+            throw "마디가 끝나지 않았다"
+          }
+          if (Test-Path "$out/result.json") { Get-Content "$out/result.json" -Encoding utf8 }
+          Write-Host "끝 코드: $($process.ExitCode)"
+          if ($process.ExitCode -ne 0) { throw "확인 실패 — 끝 코드 $($process.ExitCode)" }
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke
+          path: |
+            ${{ runner.temp }}/smoke/*.png
+            ${{ runner.temp }}/smoke/result.json
+            ${{ runner.temp }}/smoke/*.md
+            ${{ runner.temp }}/smoke/*.txt
+            ${{ runner.temp }}/smoke/*.log
+          if-no-files-found: warn
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Madi-windows-x64
+          path: out/Madi

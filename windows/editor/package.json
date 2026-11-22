@@ -1,0 +1,24 @@
+{
+  "name": "madi-windows-editor",
+  "private": true,
+  "type": "module",
+  "description": "마디 Windows판의 편집기 — CodeMirror 6, WebView2 안에서 돈다.",
+  "license": "MIT",
+  "scripts": {
+    "build": "node build.mjs",
+    "check": "tsc -p .",
+    "test": "node --test \"test/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@codemirror/commands": "6.11.1",
+    "@codemirror/lang-markdown": "6.5.2",
+    "@codemirror/language": "6.13.1",
+    "@codemirror/state": "6.7.6",
+    "@codemirror/view": "6.43.15"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.6",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2"
+  }
+}
