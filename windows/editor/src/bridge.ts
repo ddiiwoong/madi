@@ -26,7 +26,9 @@ export type HostMessage =
   | { type: "smoke"; action: "toggleTask" }
   /** 열린 고르는 칸에 친다. */
   | { type: "smoke"; action: "pickerType"; query: string }
-  | { type: "smoke"; action: "pickerClose" };
+  | { type: "smoke"; action: "pickerClose" }
+  /** 끝까지 굴린다(화면을 찍으려고 — 캐럿만 옮기면 굴리지 않는다). */
+  | { type: "smoke"; action: "scrollEnd" };
 
 /** 편집기가 물은 것의 답 — `id`로 짝을 짓는다. */
 export type Reply =

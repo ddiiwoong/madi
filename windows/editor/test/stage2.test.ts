@@ -64,6 +64,9 @@ test("거르기 — 이름에 맞는 것이 먼저, 대소문자 · 분음부호
   // 경로에만 맞는 둘 중에선 맨 앞에서 맞는 "회의/old"(22)가 "docs/회의"(16)보다 앞.
   assert.deepEqual(fuzzyRank(items, "회의", (item) => item).map((item) => item.title), ["회의록.md", "readme.md", "notes.md"]);
   assert.deepEqual(fuzzyRank(items, "", (item) => item).map((item) => item.title), ["notes.md", "회의록.md", "readme.md"]);
+  // 이름에 겨우 맞는 것(1점)도 경로에 잘 맞는 것(22점)보다 앞이다.
+  const loose = [{ title: "readme.md", detail: "회의/old" }, { title: "x회y의z.md", detail: "docs" }];
+  assert.deepEqual(fuzzyRank(loose, "회의", (item) => item).map((item) => item.title), ["x회y의z.md", "readme.md"]);
 });
 
 test("설정 — 모르는 값은 기본, 크기는 10~28", () => {
@@ -126,6 +129,11 @@ test("그림으로 바꿀 블록 — 앞머리 · 표 · 다이어그램 · 수�
   assert.ok(image && image.kind === "image" && image.src === "그림/a.png" && image.alt === "그림");
   const state = stateOf(doc);
   assert.equal(state.sliceDoc(blocks[0]!.from, blocks[0]!.to), "---\ntitle: 글\n---");
+  // 그리지 않는 것 — 닫는 펜스가 없는 다이어그램(쓰는 중), 같은 문단 안의 `… $$`는 닫는 줄이 아니다, 앞머리 안의 `$$ … $$`.
+  const kinds = (text: string) => renderedBlocks(stateOf(text)).map((block) => block.kind);
+  assert.deepEqual(kinds("```mermaid\ngraph TD; A-->B\n"), []);
+  assert.deepEqual(kinds("앞\n\n$$\n짝 없는 $$\n\n뒤"), []);
+  assert.deepEqual(kinds("---\ntitle: 글\n\n$$ x $$\n\n---\n본문"), ["frontmatter"]);
 });
 
 test("할 일 상자 · 알림 제목", () => {

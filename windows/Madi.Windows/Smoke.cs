@@ -18,7 +18,8 @@ namespace Madi;
 /// <item>로그(따라 보기)에 바깥에서 줄이 붙으면 따라가는지, 한 글자를 둘로 나눠 써도 한 번만 들어오는지</item>
 /// <item>고친 것이 있는데 바깥에서 바뀌면 섞지 않고 묻는지(자동 저장을 멈추는지), '내 것 지키기'가 여기 것을 쓰는지</item>
 /// <item>라이브 프리뷰와 목차를 켠 화면(<c>editor.png</c>)</item>
-/// <item>블록 그림 — 앞머리 카드 · 표 · Mermaid · KaTeX · 그림이 모두 그려지는지, 할 일 상자를 누르면 파일이 바뀌는지(<c>blocks.png</c>)</item>
+/// <item>블록 그림 — 앞머리 카드 · 표 · Mermaid · KaTeX · 그림이 모두 그려지는지, 할 일 상자를 누르면 파일이 바뀌는지(<c>blocks.png</c> ·
+/// <c>blocks-end.png</c>)</item>
 /// <item>명령 팔레트 · 빠른 열기가 거르는지(<c>palette.png</c> · <c>quickopen.png</c>)</item>
 /// <item>설정 — 테마 · 다크 · 글자 크기가 편집기에 쓰이고 <c>settings.json</c>에 남는지(<c>blocks-dark.png</c>, 마지막 화면)</item>
 /// </list>
@@ -382,6 +383,9 @@ internal sealed class SmokeRun(MainWindow window, string directory)
                 blocks);
             Check("블록 — 할 일 상자 둘 · 알림 제목", Number(digest, "tasks") == 2, Number(digest, "tasks"));
             await Capture("blocks.png");
+            window.Post(new { type = "smoke", action = "scrollEnd" });
+            await Task.Delay(600);
+            await Capture("blocks-end.png"); // 아래쪽 — 그림 · 할 일 상자 · 알림
 
             Drain();
             window.Post(new { type = "smoke", action = "toggleTask" });

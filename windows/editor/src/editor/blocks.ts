@@ -79,6 +79,7 @@ class FrontMatterWidget extends WidgetType {
   }
   toDOM(view: EditorView): HTMLElement {
     const dom = block("frontmatter");
+    dom.classList.add("md-card");
     dom.dataset.state = "ready";
     const head = document.createElement("button");
     head.type = "button";

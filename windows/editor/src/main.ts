@@ -581,6 +581,9 @@ async function runSmoke(message: Extract<HostMessage, { type: "smoke" }>): Promi
     case "pickerClose":
       picker.close();
       break;
+    case "scrollEnd":
+      scrollToEnd();
+      break;
     case "digest": {
       const back = documentBytes(view.state.sliceDoc(), info.stream);
       const plugin = view.plugin(livePreview);
