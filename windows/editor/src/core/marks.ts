@@ -7,8 +7,11 @@
 import type { EditorState } from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
 
-export type InlineStyle = "strong" | "emphasis" | "strike" | "code" | "link";
-export type LineStyle = "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "quote" | "code" | "fence";
+export type InlineStyle = "strong" | "emphasis" | "strike" | "code" | "link" | "done";
+export type AlertKind = "note" | "tip" | "important" | "warning" | "caution";
+export type LineStyle =
+  | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "quote" | "code" | "fence"
+  | `alert-${AlertKind}`;
 
 export type PreviewMark =
   | { type: "hide"; from: number; to: number }
@@ -17,7 +20,23 @@ export type PreviewMark =
   /** 글머리 표(`-` `*` `+`)를 ● ○ ■로 — 깊이마다(macOS판과 같다). */
   | { type: "bullet"; from: number; to: number; depth: number }
   /** 구분선(`---`)을 선 하나로. */
-  | { type: "rule"; from: number; to: number };
+  | { type: "rule"; from: number; to: number }
+  /** 할 일 `[ ]` · `[x]`를 누를 수 있는 상자로. 글머리 `- `는 숨긴다(상자만 — macOS판과 같다). */
+  | { type: "task"; from: number; to: number; checked: boolean }
+  /** 알림 인용(`> [!NOTE]`)의 표식을 제목(`Note`)으로. */
+  | { type: "alertTitle"; from: number; to: number; kind: AlertKind };
+
+/** 알림 인용의 첫 줄 내용(`>` 뒤)이 표식인가 — GitHub와 같다. macOS판 `GithubAlert.marker`. */
+export function alertKind(content: string): AlertKind | null {
+  const match = /^\s*\\?\[\\?!(note|tip|important|warning|caution)\\?\]\s*$/i.exec(content);
+  return match ? (match[1]!.toLowerCase() as AlertKind) : null;
+}
+
+/** 할 일 상자를 뒤집는 바꿈 — 상자 안의 글자 하나. */
+export function taskToggle(marker: string, from: number): { from: number; to: number; insert: string } | null {
+  if (!/^\[[ xX]\]$/.test(marker)) return null;
+  return { from: from + 1, to: from + 2, insert: marker[1] === " " ? "x" : " " };
+}
 
 export interface Range {
   from: number;
@@ -127,9 +146,18 @@ export function previewMarks(state: EditorState, ranges: readonly Range[], caret
           case "URL":
           case "LinkTitle":
             return false;
-          case "Blockquote":
-            lineStyle(node.from, node.to, "quote");
+          case "Blockquote": {
+            // 알림 인용 — 첫 줄이 `[!NOTE]`이면 그 종류의 색으로, 표식은 제목으로 바꾼다.
+            const first = doc.lineAt(node.from);
+            const quoteMark = /^\s*>\s?/.exec(first.text);
+            const kind = quoteMark ? alertKind(first.text.slice(quoteMark[0].length)) : null;
+            lineStyle(node.from, node.to, kind ? `alert-${kind}` : "quote");
+            if (kind && quoteMark && !onCaretLine(first.from)) {
+              const at = first.from + quoteMark[0].length;
+              marks.push({ type: "alertTitle", from: at, to: first.to, kind });
+            }
             return;
+          }
           case "QuoteMark":
             hide(node.from, doc.sliceString(node.to, node.to + 1) === " " ? node.to + 1 : node.to);
             return;
@@ -140,11 +168,28 @@ export function previewMarks(state: EditorState, ranges: readonly Range[], caret
           case "CodeInfo":
             return;
           case "ListMark": {
-            const list = node.node.parent?.parent;
+            const item = node.node.parent;
+            const list = item?.parent;
+            if (item?.getChild("Task")) {
+              // 할 일 — 글머리는 숨기고 상자만.
+              hide(node.from, doc.sliceString(node.to, node.to + 1) === " " ? node.to + 1 : node.to);
+              return;
+            }
             if (list?.name !== "BulletList" || onCaretLine(node.from)) return;
             let depth = 0;
             for (let up: typeof list | null = list; up; up = up.parent) if (up.name === "BulletList" || up.name === "OrderedList") depth++;
             marks.push({ type: "bullet", from: node.from, to: node.to, depth: depth - 1 });
+            return;
+          }
+          case "TaskMarker": {
+            const marker = doc.sliceString(node.from, node.to);
+            const checked = /x/i.test(marker);
+            if (!onCaretLine(node.from)) marks.push({ type: "task", from: node.from, to: node.to, checked });
+            if (checked) {
+              // 끝낸 일은 흐리게 · 줄을 긋는다 — 상자 뒤의 글.
+              const line = doc.lineAt(node.from);
+              if (node.to + 1 < line.to) marks.push({ type: "inline", from: node.to + 1, to: line.to, style: "done" });
+            }
             return;
           }
           case "HorizontalRule":

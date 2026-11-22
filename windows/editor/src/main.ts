@@ -10,10 +10,23 @@ import { TextStream, type TextEncodingName } from "./core/text.ts";
 import { appendSplice, countNewLines, docSplice } from "./core/splice.ts";
 import { fileKind, type FileKind } from "./core/kind.ts";
 import { outline } from "./core/outline.ts";
-import { hasHost, onHostMessage, post, postDroppedFiles, type HostMessage } from "./bridge.ts";
-import { highlighting, koreanPhrases, look, modeExtensions, reconfigure, type Mode } from "./editor/setup.ts";
+import { ask, hasHost, onHostMessage, post, postDroppedFiles, type HostMessage } from "./bridge.ts";
+import { normalizeSettings, type Settings } from "./core/settings.ts";
+import { themeLabels } from "./core/palette.ts";
+import { catalog, settingsChange } from "./core/catalog.ts";
+import { highlighting, koreanPhrases, look, modeExtensions, reconfigure, reconfigureEnvironment, type Mode } from "./editor/setup.ts";
 import { linkAt, livePreview } from "./editor/preview.ts";
+import { blockReport, blockServices, forgetImages, type BlockEnv } from "./editor/blocks.ts";
+import { applyTheme, onSystemAppearanceChange } from "./editor/theme.ts";
+import { Picker, type PickItem } from "./editor/picker.ts";
 import { ConflictBand, NewLinesPill, OutlinePanel, StatusBar } from "./editor/ui.ts";
+
+declare global {
+  interface Window {
+    /** 껍데기가 페이지를 띄우기 전에 넣어 둔 설정 — 첫 화면부터 그 테마로(밝게 그렸다가 바뀌지 않게). */
+    madiSettings?: unknown;
+  }
+}
 
 const params = new URLSearchParams(location.search);
 const smoke = params.has("smoke");
@@ -39,6 +52,12 @@ let saving: { doc: Text; encoding: TextEncodingName; bom: boolean } | null = nul
 let conflict = false;
 let autosaveTimer: number | undefined;
 let lastAtEnd = true;
+let settings: Settings = normalizeSettings(window.madiSettings ?? null);
+let dark = applyTheme(settings);
+
+function environment(): BlockEnv {
+  return { dark, loadsRemoteImages: settings.loadsRemoteImages, collapsesFrontMatter: settings.collapsesFrontMatter };
+}
 
 const status = new StatusBar();
 const band = new ConflictBand(() => post({ type: "reload" }), () => save());
@@ -51,7 +70,9 @@ const outlinePanel = new OutlinePanel((heading) => {
   view.focus();
 });
 
-const commands: Record<string, () => void> = {
+const picker = new Picker();
+
+const commands: Record<string, (arg?: string) => void> = {
   new: () => post({ type: "command", name: "new" }),
   open: () => post({ type: "command", name: "open" }),
   close: () => post({ type: "command", name: "close" }),
@@ -66,7 +87,21 @@ const commands: Record<string, () => void> = {
   undo: () => undo(view),
   redo: () => redo(view),
   selectAll: () => selectAll(view),
+  quickOpen: () => quickOpen(),
+  commandPalette: () => commandPalette(),
+  pickBodyFont: () => pickFont("body"),
+  pickCodeFont: () => pickFont("code"),
 };
+// 설정 명령(테마 · 모양 · 글자 크기 · 줄 사이 · 글 폭 · 글꼴 · 원격 그림 · 앞머리 접기) — 값은 `core/catalog.ts`가 정한다.
+for (const id of [
+  "setTheme", "setAppearance", "setLineSpacing", "setDocumentWidth", "textBigger", "textSmaller", "textStandard",
+  "setBodyFont", "setCodeFont", "toggleRemoteImages", "toggleFrontMatter",
+]) {
+  commands[id] = (arg) => {
+    const next = settingsChange(settings, id, arg);
+    if (next) changeSettings(next);
+  };
+}
 
 const shortcuts = Prec.highest(keymap.of([
   { key: "Mod-n", run: () => (commands.new!(), true) },
@@ -77,6 +112,13 @@ const shortcuts = Prec.highest(keymap.of([
   { key: "Mod-e", run: () => (commands.toggleSource!(), true) },
   { key: "Mod-Alt-l", run: () => (commands.toggleFollow!(), true) },
   { key: "Mod-Shift-o", run: () => (commands.toggleOutline!(), true) },
+  { key: "Mod-p", run: () => (commands.quickOpen!(), true) },
+  { key: "Mod-Alt-o", run: () => (commands.quickOpen!(), true) },
+  { key: "Mod-Shift-p", run: () => (commands.commandPalette!(), true) },
+  { key: "Mod-=", run: () => (commands.textBigger!(), true) },
+  { key: "Mod-+", run: () => (commands.textBigger!(), true) },
+  { key: "Mod--", run: () => (commands.textSmaller!(), true) },
+  { key: "Mod-0", run: () => (commands.textStandard!(), true) },
 ]));
 
 function baseExtensions() {
@@ -117,7 +159,7 @@ function baseExtensions() {
 }
 
 function makeState(text: string): EditorState {
-  return EditorState.create({ doc: text, extensions: [baseExtensions(), modeExtensions(mode)] });
+  return EditorState.create({ doc: text, extensions: [baseExtensions(), modeExtensions(mode, environment())] });
 }
 
 const parent = document.getElementById("editor");
@@ -125,6 +167,13 @@ if (!parent) throw new Error("편집기를 놓을 자리(#editor)가 없다");
 const view = new EditorView({ state: makeState(""), parent });
 savedDoc = view.state.doc;
 view.focus();
+
+blockServices.openUrl = (url) => post({ type: "openUrl", url });
+blockServices.loadImage = async (path) => {
+  const reply = await ask<"image">({ type: "loadImage", path });
+  if (!reply.ok) throw new Error(reply.message);
+  return reply.dataUrl;
+};
 
 view.scrollDOM.addEventListener("scroll", () => {
   lastAtEnd = isAtEnd();
@@ -228,6 +277,74 @@ function scheduleOutline(delay = 300): void {
   }, delay);
 }
 
+// MARK: 설정 — 모든 창이 함께. 여기서 바꾸면 껍데기가 저장하고 열린 창 모두에(이 창에도) 돌려준다.
+
+function applySettings(next: Settings): void {
+  const changed = JSON.stringify(next) !== JSON.stringify(settings);
+  settings = next;
+  const wasDark = dark;
+  dark = applyTheme(settings);
+  if (!changed && wasDark === dark) return;
+  view.dispatch({ effects: reconfigureEnvironment(environment()) });
+  // 글자 크기 · 줄 높이가 바뀌면 줄의 높이를 다시 잰다.
+  view.requestMeasure();
+  if (mode.follow && lastAtEnd) scrollToEnd();
+}
+
+function changeSettings(next: Settings): void {
+  applySettings(normalizeSettings(next));
+  post({ type: "settings", settings });
+  status.say(`설정: ${describeSettings()}`);
+}
+
+function describeSettings(): string {
+  return `${themeLabels[settings.theme]}${dark ? " 다크" : ""} · ${settings.bodySize}px`;
+}
+
+onSystemAppearanceChange(() => applySettings(settings));
+
+// MARK: 고르는 칸 — 빠른 열기 · 명령 팔레트 · 글꼴
+
+function quickOpen(): void {
+  const items = ask<"files">({ type: "listFiles" })
+    .then((reply) => reply.items.map((item): PickItem => ({
+      title: item.name,
+      detail: item.detail,
+      run: () => post({ type: "openPath", path: item.path }),
+    })))
+    .catch(() => []);
+  picker.open("파일 이름으로 열기 — 열린 문서 · 최근 문서 · 이 폴더", items, () => view.focus());
+}
+
+function commandPalette(): void {
+  const entries = catalog({ settings, source: mode.source, follow: mode.follow, outline: outlinePanel.shown });
+  picker.open("명령", entries.map((entry): PickItem => ({
+    title: entry.title,
+    detail: entry.menu,
+    hint: [entry.checked ? "✓" : "", entry.shortcut ?? ""].filter(Boolean).join("  "),
+    run: () => commands[entry.id]?.(entry.arg),
+  })), () => view.focus());
+}
+
+function pickFont(which: "body" | "code"): void {
+  const current = which === "body" ? settings.bodyFont : settings.codeFont;
+  const command = which === "body" ? "setBodyFont" : "setCodeFont";
+  const builtIn: PickItem = {
+    title: which === "body" ? "Pretendard" : "IBM Plex Mono",
+    detail: "앱에 든 글꼴(기본)",
+    hint: current === null ? "✓" : "",
+    run: () => commands[command]!(undefined),
+  };
+  const items = ask<"fonts">({ type: "listFonts" })
+    .then((reply) => [builtIn, ...reply.families.map((family): PickItem => ({
+      title: family,
+      hint: current === family ? "✓" : "",
+      run: () => commands[command]!(family),
+    }))])
+    .catch(() => [builtIn]);
+  picker.open(which === "body" ? "본문 글꼴" : "코드 글꼴", items, () => view.focus());
+}
+
 // MARK: 열기
 
 async function open(message: Extract<HostMessage, { type: "open" }>): Promise<void> {
@@ -245,6 +362,7 @@ async function open(message: Extract<HostMessage, { type: "open" }>): Promise<vo
     conflict = false;
     band.shown = false;
     pill.hide();
+    if (!reload) forgetImages();
     view.setState(makeState(opened.text));
     savedDoc = view.state.doc;
     if (mode.follow) scrollToEnd();
@@ -431,8 +549,12 @@ onHostMessage((message) => {
       saving = null;
       break;
     case "run":
-      commands[message.command]?.();
-      view.focus();
+      picker.close();
+      commands[message.command]?.(message.arg);
+      if (!picker.isOpen) view.focus();
+      break;
+    case "settings":
+      applySettings(normalizeSettings(message.settings));
       break;
     case "smoke":
       if (smoke) void runSmoke(message);
@@ -448,6 +570,17 @@ async function runSmoke(message: Extract<HostMessage, { type: "smoke" }>): Promi
     case "caret":
       view.dispatch({ selection: EditorSelection.cursor(Math.min(message.at, view.state.doc.length)) });
       break;
+    case "toggleTask": {
+      const box = view.dom.querySelector<HTMLElement>(".cm-md-task");
+      box?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
+      break;
+    }
+    case "pickerType":
+      picker.type(message.query);
+      break;
+    case "pickerClose":
+      picker.close();
+      break;
     case "digest": {
       const back = documentBytes(view.state.sliceDoc(), info.stream);
       const plugin = view.plugin(livePreview);
@@ -458,6 +591,15 @@ async function runSmoke(message: Extract<HostMessage, { type: "smoke" }>): Promi
         atEnd: isAtEnd(),
         previewDecorations: plugin?.count ?? 0,
         text: view.state.sliceDoc(0, 2000),
+        blocks: blockReport(view),
+        tasks: view.dom.querySelectorAll(".cm-md-task").length,
+        picker: picker.report,
+        colors: {
+          background: getComputedStyle(view.dom).backgroundColor,
+          text: getComputedStyle(view.contentDOM).color,
+          scheme: document.documentElement.style.colorScheme,
+        },
+        fontSize: getComputedStyle(view.scrollDOM).fontSize,
       });
       break;
     }

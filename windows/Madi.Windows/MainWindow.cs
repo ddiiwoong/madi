@@ -1,8 +1,10 @@
 using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 using Win32 = Microsoft.Win32;
@@ -27,6 +29,21 @@ public sealed class MainWindow : Window
     internal const string AppHost = "app.madi";
     private static readonly List<MainWindow> Windows = [];
     private static Task<CoreWebView2Environment>? environment;
+
+    /// <summary>설정 · 최근 파일 — 모든 창이 함께. <see cref="Program"/>이 정한다(확인 실행은 그 폴더 안에).</summary>
+    internal static SettingsStore Store { get; set; } = new(SettingsStore.DefaultFolder);
+
+    /// <summary>테마 여덟 — 편집기의 <c>core/palette.ts</c>와 같은 이름 · 차례.</summary>
+    private static readonly (string Id, string Label)[] Themes =
+    [
+        ("standard", "기본"), ("notion", "Notion"), ("confluence", "Confluence"), ("github", "GitHub"),
+        ("obsidian", "Obsidian"), ("paper", "종이"), ("solarized", "Solarized"), ("highContrast", "고대비"),
+    ];
+
+    /// <summary>메뉴의 ✓ — 설정의 어느 값이 이 항목인가. 설정이 바뀌면 다시 단다.</summary>
+    private readonly List<(MenuItem Item, string Field, string Value, string Default)> choiceItems = [];
+    private readonly List<(MenuItem Item, string Field)> flagItems = [];
+    private readonly MenuItem recentMenu;
 
     private readonly WebView2 webView = new();
     private readonly LaunchOptions options;
@@ -71,6 +88,11 @@ public sealed class MainWindow : Window
         var file = Heading("파일(_F)");
         file.Items.Add(Item("새로 만들기(_N)", "Ctrl+N", () => OpenWindow(null)));
         file.Items.Add(Item("열기(_O)…", "Ctrl+O", ShowOpenDialog));
+        file.Items.Add(Item("빠른 열기(_Q)…", "Ctrl+P", () => Run("quickOpen")));
+        recentMenu = Heading("최근 문서(_R)");
+        recentMenu.Items.Add(new MenuItem { Header = "(없음)", IsEnabled = false });
+        recentMenu.SubmenuOpened += (_, _) => FillRecentMenu();
+        file.Items.Add(recentMenu);
         file.Items.Add(new Separator());
         file.Items.Add(Item("저장(_S)", "Ctrl+S", () => Run("save")));
         file.Items.Add(Item("다른 이름으로 저장(_A)…", "Ctrl+Shift+S", () => Run("saveAs")));
@@ -83,12 +105,45 @@ public sealed class MainWindow : Window
         edit.Items.Add(Item("모두 선택(_A)", "Ctrl+A", () => Run("selectAll")));
         edit.Items.Add(Item("찾기(_F)…", "Ctrl+F", () => Run("find")));
         var viewMenu = Heading("보기(_V)");
+        viewMenu.Items.Add(Item("명령 팔레트(_P)…", "Ctrl+Shift+P", () => Run("commandPalette")));
+        viewMenu.Items.Add(new Separator());
         outlineItem = Item("목차(_O)", "Ctrl+Shift+O", () => Run("toggleOutline"));
         sourceItem = Item("원본 보기(_S)", "Ctrl+E", () => Run("toggleSource"));
         followItem = Item("따라 보기(_L)", "Ctrl+Alt+L", () => Run("toggleFollow"));
         viewMenu.Items.Add(outlineItem);
         viewMenu.Items.Add(sourceItem);
         viewMenu.Items.Add(followItem);
+        viewMenu.Items.Add(new Separator());
+        var themeMenu = Heading("테마(_T)");
+        foreach (var (id, label) in Themes) themeMenu.Items.Add(Choice(label, "setTheme", "theme", id, "standard"));
+        viewMenu.Items.Add(themeMenu);
+        var appearanceMenu = Heading("모양(_M)");
+        appearanceMenu.Items.Add(Choice("시스템 따라(_S)", "setAppearance", "appearance", "system", "system"));
+        appearanceMenu.Items.Add(Choice("밝게(_L)", "setAppearance", "appearance", "light", "system"));
+        appearanceMenu.Items.Add(Choice("어둡게(_D)", "setAppearance", "appearance", "dark", "system"));
+        viewMenu.Items.Add(appearanceMenu);
+        var fontMenu = Heading("글꼴(_F)");
+        fontMenu.Items.Add(Item("본문 글꼴(_B)…", "", () => Run("pickBodyFont")));
+        fontMenu.Items.Add(Item("코드 글꼴(_C)…", "", () => Run("pickCodeFont")));
+        viewMenu.Items.Add(fontMenu);
+        viewMenu.Items.Add(Item("글자 크게(_I)", "Ctrl+=", () => Run("textBigger")));
+        viewMenu.Items.Add(Item("글자 작게(_D)", "Ctrl+-", () => Run("textSmaller")));
+        viewMenu.Items.Add(Item("글자 기본 크기(_Z)", "Ctrl+0", () => Run("textStandard")));
+        var spacingMenu = Heading("줄 사이(_G)");
+        spacingMenu.Items.Add(Choice("좁게", "setLineSpacing", "lineSpacing", "tight", "normal"));
+        spacingMenu.Items.Add(Choice("보통", "setLineSpacing", "lineSpacing", "normal", "normal"));
+        spacingMenu.Items.Add(Choice("넓게", "setLineSpacing", "lineSpacing", "loose", "normal"));
+        viewMenu.Items.Add(spacingMenu);
+        var widthMenu = Heading("글 폭(_W)");
+        widthMenu.Items.Add(Choice("좁게", "setDocumentWidth", "documentWidth", "narrow", "normal"));
+        widthMenu.Items.Add(Choice("보통", "setDocumentWidth", "documentWidth", "normal", "normal"));
+        widthMenu.Items.Add(Choice("넓게", "setDocumentWidth", "documentWidth", "wide", "normal"));
+        widthMenu.Items.Add(Choice("창 폭 전체", "setDocumentWidth", "documentWidth", "full", "normal"));
+        viewMenu.Items.Add(widthMenu);
+        viewMenu.Items.Add(new Separator());
+        viewMenu.Items.Add(Flag("원격 그림 받기(_R)", "toggleRemoteImages", "loadsRemoteImages"));
+        viewMenu.Items.Add(Flag("문서 메타데이터 접어 두기(_H)", "toggleFrontMatter", "collapsesFrontMatter"));
+        UpdateSettingsMenu();
         menu.Items.Add(file);
         menu.Items.Add(edit);
         menu.Items.Add(viewMenu);
@@ -112,6 +167,18 @@ public sealed class MainWindow : Window
         };
 
         MenuItem Heading(string header) => new() { Header = header };
+        MenuItem Choice(string header, string command, string field, string value, string fallback)
+        {
+            var item = Item(header, "", () => Run(command, value));
+            choiceItems.Add((item, field, value, fallback));
+            return item;
+        }
+        MenuItem Flag(string header, string command, string field)
+        {
+            var item = Item(header, "", () => Run(command));
+            flagItems.Add((item, field));
+            return item;
+        }
         MenuItem Item(string header, string gesture, Action action)
         {
             var item = new MenuItem { Header = header, InputGestureText = gesture };
@@ -162,6 +229,8 @@ public sealed class MainWindow : Window
         // 브라우저의 단축키(F5 새로 고침 · Ctrl+P …)를 끈다 — 새로 고침은 고친 글을 버린다. 편집 키(Ctrl+C · V · Z)는 그대로고,
         // Ctrl+S · O · N · W는 편집기가 받는다.
         settings.AreBrowserAcceleratorKeysEnabled = false;
+        // 글자 크기는 설정(Ctrl+= · Ctrl+- · Ctrl+0)이다 — 브라우저의 확대(Ctrl+휠)가 따로 놀지 않게.
+        settings.IsZoomControlEnabled = false;
 #if !DEBUG
         settings.AreDevToolsEnabled = false;
 #endif
@@ -179,6 +248,8 @@ public sealed class MainWindow : Window
         };
         Core.NewWindowRequested += (_, e) => e.Handled = true;
         Core.WebMessageReceived += OnWebMessage;
+        // 첫 그림부터 설정의 테마로 — 밝게 그렸다가 어둡게 바뀌지 않게. 값은 JSON 그대로(문자열은 이스케이프된다).
+        await Core.AddScriptToExecuteOnDocumentCreatedAsync($"window.madiSettings = {Store.Settings.ToJsonString()};");
         var query = smoke is not null ? "?smoke=1&autosave=1500" : "";
         Core.Navigate($"https://{AppHost}/index.html{query}");
     }
@@ -241,6 +312,21 @@ public sealed class MainWindow : Window
                 case "reload":
                     if (path is not null) await LoadFileAsync(path, reload: true);
                     break;
+                case "settings":
+                    if (message.TryGetProperty("settings", out var settingsValue) && Store.Save(settingsValue)) BroadcastSettings();
+                    break;
+                case "listFiles":
+                    await ReplyFilesAsync(Number(message, "id"));
+                    break;
+                case "listFonts":
+                    Post(new { type = "fonts", id = Number(message, "id"), families = FontNames() });
+                    break;
+                case "loadImage":
+                    await ReplyImageAsync(Number(message, "id"), Field(message, "path") ?? "");
+                    break;
+                case "openPath":
+                    if (Field(message, "path") is { } picked && File.Exists(picked)) OpenPath(picked);
+                    break;
                 case "drop":
                     foreach (var dropped in e.AdditionalObjects?.OfType<CoreWebView2File>() ?? Enumerable.Empty<CoreWebView2File>())
                     {
@@ -260,6 +346,9 @@ public sealed class MainWindow : Window
 
     private static byte[] Bytes(JsonElement message) => Convert.FromBase64String(Field(message, "bytes") ?? "");
 
+    private static int Number(JsonElement message, string name) =>
+        message.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number) ? number : -1;
+
     private void UpdateState(JsonElement message)
     {
         bool Flag(string name) => message.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.True;
@@ -271,11 +360,104 @@ public sealed class MainWindow : Window
         outlineItem.IsChecked = State.Outline;
     }
 
-    /// <summary>메뉴에서 고른 명령을 편집기에 — 단축키는 편집기가 직접 받는다.</summary>
-    internal void Run(string command)
+    /// <summary>메뉴에서 고른 명령을 편집기에 — 단축키는 편집기가 직접 받는다. 설정 명령은 값을 <paramref name="arg"/>로.</summary>
+    internal void Run(string command, string? arg = null)
     {
         if (!editorReady) return;
-        Post(new { type = "run", command });
+        if (arg is null) Post(new { type = "run", command });
+        else Post(new { type = "run", command, arg });
+    }
+
+    // MARK: 설정 · 최근 문서 · 빠른 열기 · 글꼴 · 그림
+
+    /// <summary>어느 창에서 바꾼 설정이든 모든 창에(바꾼 창에도 — 편집기가 같은 값을 다시 받아도 그대로다).</summary>
+    private static void BroadcastSettings()
+    {
+        foreach (var window in Windows.ToList())
+        {
+            window.UpdateSettingsMenu();
+            if (window.editorReady) window.Post(new { type = "settings", settings = Store.Settings });
+        }
+    }
+
+    private void UpdateSettingsMenu()
+    {
+        foreach (var (item, field, value, fallback) in choiceItems) item.IsChecked = (Store.Text(field) ?? fallback) == value;
+        foreach (var (item, field) in flagItems) item.IsChecked = Store.Flag(field);
+    }
+
+    private void FillRecentMenu()
+    {
+        recentMenu.Items.Clear();
+        foreach (var file in Store.Recent)
+        {
+            var item = new MenuItem { Header = file.Replace("_", "__", StringComparison.Ordinal), ToolTip = file };
+            var target = file;
+            item.Click += (_, _) =>
+            {
+                if (File.Exists(target)) OpenPath(target);
+                else ShowError($"파일이 없습니다: {target}");
+            };
+            recentMenu.Items.Add(item);
+        }
+        if (recentMenu.Items.Count == 0)
+        {
+            recentMenu.Items.Add(new MenuItem { Header = "(없음)", IsEnabled = false });
+            return;
+        }
+        recentMenu.Items.Add(new Separator());
+        var clear = new MenuItem { Header = "목록 지우기(_C)" };
+        clear.Click += (_, _) => Store.ClearRecent();
+        recentMenu.Items.Add(clear);
+    }
+
+    /// <summary>빠른 열기의 후보 — 폴더를 훑는 것(최대 20,000항목)과 최근 파일이 있는지 보는 것(네트워크 위치는 느리다)은 UI 밖에서.</summary>
+    private async Task ReplyFilesAsync(int id)
+    {
+        var open = Windows.Where(window => window != this && window.path is not null).Select(window => window.path!).ToList();
+        var recent = Store.Recent.ToList();
+        var current = path;
+        var root = current is null ? null : Path.GetDirectoryName(current);
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var candidates = await Task.Run(() =>
+        {
+            var folder = root is null ? [] : QuickOpenSources.FolderFiles(root);
+            return QuickOpenSources.Candidates(open, recent.Where(File.Exists), folder, root, home);
+        });
+        var items = candidates
+            .Where(candidate => !string.Equals(candidate.Path, current, StringComparison.OrdinalIgnoreCase))
+            .Select(candidate => new { path = candidate.Path, name = candidate.Name, detail = candidate.Detail });
+        Post(new { type = "files", id, items });
+    }
+
+    /// <summary>
+    /// 이 PC의 글꼴 이름. CSS의 <c>font-family</c>로 쓰므로 Edge가 아는 이름(영어 이름이 있으면 그것)으로. WPF의 합성 글꼴
+    /// (<c>Global User Interface</c> 같은 것)은 실제 글꼴이 아니라 뺀다.
+    /// </summary>
+    private static List<string> FontNames()
+    {
+        var english = System.Windows.Markup.XmlLanguage.GetLanguage("en-us");
+        return Fonts.SystemFontFamilies
+            .Select(family => family.FamilyNames.TryGetValue(english, out var name) ? name : family.Source)
+            .Where(name => !string.IsNullOrWhiteSpace(name) && !name.StartsWith("Global ", StringComparison.Ordinal))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+    }
+
+    private async Task ReplyImageAsync(int id, string raw)
+    {
+        var document = path;
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        try
+        {
+            var dataUrl = await Task.Run(() => ImageFiles.Load(raw, document, home));
+            Post(new { type = "image", id, ok = true, dataUrl });
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            Post(new { type = "image", id, ok = false, message = error.Message });
+        }
     }
 
     internal void Post(object message) => Core.PostWebMessageAsJson(JsonSerializer.Serialize(message));
@@ -302,6 +484,7 @@ public sealed class MainWindow : Window
             ShowError($"파일을 열지 못했습니다: {file}\n{Field(reply, "message")}");
             return reply;
         }
+        if (!reload) Store.AddRecent(file);
         return reply;
     }
 
@@ -447,7 +630,11 @@ public sealed class MainWindow : Window
             CompleteSave(false);
             return;
         }
-        if (!string.Equals(path, file, StringComparison.OrdinalIgnoreCase)) Watch(file, bytes);
+        if (!string.Equals(path, file, StringComparison.OrdinalIgnoreCase))
+        {
+            Watch(file, bytes);
+            Store.AddRecent(file);
+        }
         else
         {
             baseline?.Dispose();

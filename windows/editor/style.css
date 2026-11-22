@@ -6,10 +6,20 @@
 @font-face { font-family: "IBM Plex Mono"; src: url("fonts/IBMPlexMono-Italic.otf") format("opentype"); font-weight: 400; font-style: italic; }
 @font-face { font-family: "IBM Plex Mono"; src: url("fonts/IBMPlexMono-BoldItalic.otf") format("opentype"); font-weight: 700; font-style: italic; }
 
-/* 어두운 테마는 2단계(테마). 지금은 밝게만 — CodeMirror의 기본 캐럿 · 칠이 밝은 바탕을 전제한다. */
-:root { color-scheme: light; font-family: "Pretendard", "Malgun Gothic", sans-serif; }
+/*
+ * 색 · 글꼴 · 크기는 모두 설정의 CSS 변수다(`src/editor/theme.ts`가 :root에 단다 — 테마 여덟 × 라이트 · 다크, macOS판의 색).
+ * 아래의 값은 변수가 달리기 전(첫 그림)의 기본 테마 · 라이트다.
+ */
+:root {
+  --md-background: #FFFFFF; --md-text: #1D1D1F; --md-dim: #6E6E73; --md-rule: #D8D8DC; --md-link: #0068DA;
+  --md-selection: #B3D7FF; --md-warning: #9A6700; --md-caution: #CF222E;
+  --md-font-body: "Pretendard", "Malgun Gothic", sans-serif; --md-font-code: "IBM Plex Mono", Consolas, monospace;
+  --md-size: 15px; --md-line-height: 1.62; --md-width: 840px;
+  --md-tint: color-mix(in srgb, var(--md-text) 6%, var(--md-background));
+  color-scheme: light; font-family: var(--md-font-body);
+}
 html, body { height: 100%; margin: 0; }
-body { background: Canvas; color: CanvasText; overflow: hidden; }
+body { background: var(--md-background); color: var(--md-text); overflow: hidden; }
 
 /* 편집기의 글꼴 · 글 폭 · 꾸밈은 src/editor/setup.ts의 `look` 테마에 있다 — 여기 적으면 CodeMirror의 기본 테마에 밀린다. */
 #app { display: flex; flex-direction: column; height: 100%; position: relative; }
@@ -17,36 +27,102 @@ body { background: Canvas; color: CanvasText; overflow: hidden; }
 #editor { flex: 1; min-width: 0; }
 
 .band {
-  display: flex; align-items: center; gap: 8px; margin: 8px 12px 4px; padding: 6px 10px;
-  border: 1px solid #f0a040; border-radius: 6px; background: #fff7ec; font-size: 12px;
+  display: flex; align-items: center; gap: 8px; margin: 8px 12px 4px; padding: 6px 10px; font-size: 12px;
+  border: 1px solid var(--md-warning); border-radius: 6px;
+  background: color-mix(in srgb, var(--md-warning) 12%, var(--md-background));
 }
-.band[hidden], .pill[hidden], #outline[hidden] { display: none; }
+.band[hidden], .pill[hidden], #outline[hidden], #picker[hidden] { display: none; }
 .band-text { flex: 1; }
 .band button { font: inherit; padding: 3px 10px; white-space: nowrap; }
 
 #outline {
-  width: 220px; flex: none; overflow: auto; border-right: 1px solid #e5e5e5; padding: 12px 0; font-size: 13px;
+  width: 220px; flex: none; overflow: auto; border-right: 1px solid var(--md-rule); padding: 12px 0; font-size: 13px;
 }
-#outline h2 { font-size: 12px; font-weight: 700; color: #777; margin: 0 12px 8px; }
+#outline h2 { font-size: 12px; font-weight: 700; color: var(--md-dim); margin: 0 12px 8px; }
 #outline ol { list-style: none; margin: 0; padding: 0; }
 #outline button {
   display: block; width: 100%; text-align: left; border: 0; background: none; font: inherit; color: inherit;
   padding-block: 3px; padding-inline-end: 8px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-#outline button:hover { background: #f0f0f0; }
-#outline .empty { color: #999; margin: 0 12px; }
+#outline button:hover { background: var(--md-tint); }
+#outline .empty { color: var(--md-dim); margin: 0 12px; }
 #outline .empty[hidden] { display: none; }
 
 #status {
-  display: flex; gap: 12px; justify-content: space-between; padding: 3px 12px; font-size: 12px; color: #666;
-  border-top: 1px solid #ececec; background: #fafafa; white-space: nowrap;
+  display: flex; gap: 12px; justify-content: space-between; padding: 3px 12px; font-size: 12px; color: var(--md-dim);
+  border-top: 1px solid var(--md-rule); background: var(--md-tint); white-space: nowrap;
 }
-#status .error { color: #c62828; }
+#status .error { color: var(--md-caution); }
 
 /* 위를 읽는 동안 끝에 붙은 줄 — 강조색으로 꽉 칠한다(반투명하면 빽빽한 로그 위에서 읽을 수 없다 — macOS판에서 겪었다). */
 .pill {
   position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%); z-index: 5;
   border: 0; border-radius: 999px; padding: 4px 14px;
   background: #0067c0; color: #fff; background: AccentColor; color: AccentColorText; /* 앞의 둘은 AccentColor를 모르는 엔진용 */
-  font: 600 12px "Pretendard", "Malgun Gothic", sans-serif; cursor: pointer; box-shadow: 0 1px 4px rgb(0 0 0 / 25%);
+  font: 600 12px var(--md-font-body); cursor: pointer; box-shadow: 0 1px 4px rgb(0 0 0 / 25%);
 }
+
+/* MARK: 그림으로 바꾼 블록(`src/editor/blocks.ts`) — 편집기 글 안에 놓이지만 CodeMirror의 기본 테마가 손대지 않는 이름이다. */
+.md-block { margin: 6px 0; cursor: text; }
+.md-block[data-state="pending"] { color: var(--md-dim); font-size: 0.85em; padding: 12px 0; }
+.md-block-error-title { color: var(--md-caution); font-weight: 700; font-size: 0.85em; }
+pre.md-block-error {
+  margin: 4px 0 0; white-space: pre-wrap; font: 0.8em/1.5 var(--md-font-code); color: var(--md-dim);
+  max-height: 12em; overflow: auto;
+}
+.md-mermaid, .md-math { text-align: center; padding: 6px 0; overflow-x: auto; }
+.md-mermaid[data-state="error"], .md-math[data-state="error"] {
+  text-align: left; padding: 8px 12px; border-left: 3px solid var(--md-caution);
+  background: color-mix(in srgb, var(--md-caution) 6%, var(--md-background));
+}
+.md-mermaid svg { max-width: 100%; height: auto; }
+.md-math .katex-display { margin: 0.4em 0; }
+.md-image img { display: block; max-width: 100%; height: auto; border-radius: 4px; }
+.md-image-note {
+  display: inline-block; padding: 6px 10px; border: 1px dashed var(--md-rule); border-radius: 6px;
+  color: var(--md-dim); font-size: 0.85em;
+}
+
+.md-table-scroll { overflow-x: auto; }
+.md-table table { border-collapse: collapse; font-size: 0.95em; line-height: 1.45; }
+.md-table th, .md-table td { border: 1px solid var(--md-table-line); padding: 5px 12px; vertical-align: top; text-align: left; }
+.md-table th { background: var(--md-table-header-background); font-weight: 700; }
+
+.md-card {
+  border: 1px solid var(--md-rule); border-radius: 8px; padding: 6px 12px 8px; font-size: 0.8em; line-height: 1.5;
+  background: var(--md-tint); margin: 2px 0 14px;
+}
+.md-card-head {
+  border: 0; background: none; padding: 2px 0; font: 600 1em var(--md-font-body); color: var(--md-dim); cursor: pointer;
+}
+.md-card-grid { display: grid; grid-template-columns: max-content 1fr; gap: 3px 14px; margin: 6px 0 0; }
+.md-card-grid dt { font-family: var(--md-font-code); color: var(--md-dim); }
+.md-card-grid dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.md-chip {
+  display: inline-block; margin: 0 4px 3px 0; padding: 0 6px; border-radius: 4px; font-size: 0.92em;
+  background: color-mix(in srgb, var(--md-text) 9%, var(--md-background)); color: var(--md-dim);
+}
+.md-chip[hidden] { display: none; }
+.md-chip-more { border: 0; background: none; padding: 0; font: 600 0.9em var(--md-font-body); color: var(--md-link); cursor: pointer; }
+.md-block code { font-family: var(--md-font-code); font-size: 0.92em; background: var(--md-code-background); border-radius: 3px; padding: 0 2px; }
+.md-block a[data-url] { color: var(--md-link); text-decoration: underline; text-underline-offset: 2px; }
+
+/* MARK: 고르는 칸 — 빠른 열기 · 명령 팔레트 · 글꼴(`src/editor/picker.ts`) */
+#picker {
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 10; width: min(640px, calc(100% - 32px));
+  background: var(--md-background); color: var(--md-text); border: 1px solid var(--md-rule); border-radius: 8px;
+  box-shadow: 0 8px 28px rgb(0 0 0 / 28%); font-size: 13px; overflow: hidden;
+}
+#picker input {
+  box-sizing: border-box; width: 100%; border: 0; border-bottom: 1px solid var(--md-rule); outline: none;
+  padding: 10px 12px; font: 14px var(--md-font-body); background: transparent; color: inherit;
+}
+#picker ol { list-style: none; margin: 0; padding: 4px 0; max-height: min(420px, 60vh); overflow: auto; }
+#picker li { display: flex; align-items: baseline; gap: 10px; padding: 5px 12px; cursor: pointer; white-space: nowrap; }
+#picker li.selected { background: var(--md-selection); }
+#picker li:hover:not(.selected) { background: var(--md-tint); }
+#picker .title { flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; }
+#picker .detail { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--md-dim); font-size: 12px; }
+#picker .hint { margin-left: auto; color: var(--md-dim); font-size: 12px; }
+#picker .empty { margin: 8px 12px 10px; color: var(--md-dim); }
+#picker .empty[hidden] { display: none; }

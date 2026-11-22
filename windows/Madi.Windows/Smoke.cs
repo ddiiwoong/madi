@@ -18,6 +18,9 @@ namespace Madi;
 /// <item>로그(따라 보기)에 바깥에서 줄이 붙으면 따라가는지, 한 글자를 둘로 나눠 써도 한 번만 들어오는지</item>
 /// <item>고친 것이 있는데 바깥에서 바뀌면 섞지 않고 묻는지(자동 저장을 멈추는지), '내 것 지키기'가 여기 것을 쓰는지</item>
 /// <item>라이브 프리뷰와 목차를 켠 화면(<c>editor.png</c>)</item>
+/// <item>블록 그림 — 앞머리 카드 · 표 · Mermaid · KaTeX · 그림이 모두 그려지는지, 할 일 상자를 누르면 파일이 바뀌는지(<c>blocks.png</c>)</item>
+/// <item>명령 팔레트 · 빠른 열기가 거르는지(<c>palette.png</c> · <c>quickopen.png</c>)</item>
+/// <item>설정 — 테마 · 다크 · 글자 크기가 편집기에 쓰이고 <c>settings.json</c>에 남는지(<c>blocks-dark.png</c>, 마지막 화면)</item>
 /// </list>
 /// CI(<c>.github/workflows/windows.yml</c>)가 이것을 돌린다. 처음 다섯 문서는 <c>windows/editor/test/cases.ts</c>와 같은 바이트다.
 /// </summary>
@@ -50,6 +53,50 @@ internal sealed class SmokeRun(MainWindow window, string directory)
         "let 인사 = \"안녕\"",
         "```",
         ""));
+
+    /// <summary>블록 그림을 모두 담은 문서 — 캐럿은 끝 줄(블록 밖)에 둔다.</summary>
+    private static readonly string BlocksDocument = string.Join("\n",
+        "---",
+        "title: 마디 Windows 2단계",
+        "tags: [표, 다이어그램, 수식]",
+        "---",
+        "",
+        "# 블록 그림",
+        "",
+        "| 기능 | 상태 | 수 |",
+        "|:--|:-:|--:|",
+        "| **표** | 완료 | 1 |",
+        "| `코드` | [링크](https://github.com/ddiiwoong/madi) | 22 |",
+        "",
+        "```mermaid",
+        "graph LR",
+        "  A[열기] --> B[고치기] --> C[저장]",
+        "```",
+        "",
+        "$$",
+        "\\int_0^1 x^2\\,dx = \\frac{1}{3}",
+        "$$",
+        "",
+        "```math",
+        "e^{i\\pi} + 1 = 0",
+        "```",
+        "",
+        "![체크무늬](그림/dot.png)",
+        "",
+        "- [ ] 첫 일",
+        "- [x] 끝낸 일",
+        "",
+        "> [!TIP]",
+        "> 알림 상자 — 제목이 Tip으로 보인다",
+        "",
+        "끝",
+        "");
+
+    /// <summary>160×48 체크무늬 PNG(204바이트).</summary>
+    private static readonly byte[] CheckerPng = Convert.FromBase64String(
+        "iVBORw0KGgoAAAANSUhEUgAAAKAAAAAwCAIAAAAZy+Y5AAAAk0lEQVR42u3aMQ0AMAhFQYxVT21VSjVVQTUwkcAlzG/4txKxb+reWanTL+4bCDAAwAAA6wPW" +
+        "B6wPWB8wYAMBBgAYAGB9wPqA9QGP7Ru0dx8wYACAAQDWB6wPWB+wPmDABgIMADAAwPqA9QHrA54LbFAfHQAAAwCsD1gfsD5gfcCADQQYAGAAgPUB6wPWBwzY" +
+        "QC37H0FebJUItSnGAAAAAElFTkSuQmCC");
 
     private static readonly Case[] Cases =
     [
@@ -104,14 +151,46 @@ internal sealed class SmokeRun(MainWindow window, string directory)
         watchdog.Start();
     }
 
+    // 없는 것(객체가 아닌 값)은 없는 것으로 — 편집기의 답 모양이 틀려도 예외가 아니라 실패로 적힌다.
     private static string? Field(JsonElement message, string name) =>
-        message.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+        Child(message, name) is { ValueKind: JsonValueKind.String } value ? value.GetString() : null;
 
-    private static bool Flag(JsonElement message, string name) =>
-        message.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.True;
+    private static bool Flag(JsonElement message, string name) => Child(message, name).ValueKind == JsonValueKind.True;
 
     private static int Number(JsonElement message, string name) =>
-        message.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number ? value.GetInt32() : -1;
+        Child(message, name) is { ValueKind: JsonValueKind.Number } value && value.TryGetInt32(out var number) ? number : -1;
+
+    private static JsonElement Child(JsonElement message, string name) =>
+        message.ValueKind == JsonValueKind.Object && message.TryGetProperty(name, out var value) ? value : default;
+
+    private static Dictionary<string, int> Counts(JsonElement value) =>
+        value.ValueKind == JsonValueKind.Object
+            ? value.EnumerateObject().ToDictionary(property => property.Name, property => property.Value.GetInt32())
+            : [];
+
+    private async Task<JsonElement> Digest()
+    {
+        window.Post(new { type = "smoke", action = "digest" });
+        return await WaitFor("digest");
+    }
+
+    /// <summary>조건이 설 때까지 몇 번 다시 잰다(다이어그램 · 그림은 늦게 그려진다).</summary>
+    private async Task<JsonElement> DigestUntil(Func<JsonElement, bool> done, double seconds = 30)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(seconds);
+        while (true)
+        {
+            var digest = await Digest();
+            if (done(digest) || DateTime.UtcNow > deadline) return digest;
+            await Task.Delay(400);
+        }
+    }
+
+    private async Task Capture(string name)
+    {
+        await using var stream = File.Create(Path.Combine(directory, name));
+        await window.Core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, stream);
+    }
 
     private async Task<JsonElement> WaitFor(string type, Func<JsonElement, bool>? match = null, double seconds = 15)
     {
@@ -273,8 +352,95 @@ internal sealed class SmokeRun(MainWindow window, string directory)
             window.Post(new { type = "smoke", action = "digest" });
             var digest = await WaitFor("digest");
             Check("화면 — 라이브 프리뷰가 장식을 단다", Number(digest, "previewDecorations") > 10, Number(digest, "previewDecorations"));
-            await using var stream = File.Create(Path.Combine(directory, "editor.png"));
-            await window.Core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, stream);
+            await Capture("editor.png");
+            window.Run("toggleOutline");
+            await WaitFor("state", message => !Flag(message, "outline"));
+        });
+
+        // 6. 블록 그림 — 앞머리 · 표 · 다이어그램 · 수식 둘 · 그림, 할 일 상자를 누르면 파일의 글자 하나가 바뀐다
+        await Scenario("블록", async () =>
+        {
+            var folder = Path.Combine(directory, "blocks");
+            Directory.CreateDirectory(Path.Combine(folder, "그림"));
+            await File.WriteAllBytesAsync(Path.Combine(folder, "그림", "dot.png"), CheckerPng);
+            var path = Path.Combine(folder, "blocks.md");
+            await File.WriteAllBytesAsync(path, Utf8(BlocksDocument));
+            await window.LoadFileAsync(path);
+            window.Post(new { type = "smoke", action = "caret", at = 1_000_000 });
+            var expected = new Dictionary<string, int> { ["frontmatter"] = 1, ["table"] = 1, ["mermaid"] = 1, ["math"] = 2, ["image"] = 1 };
+            var digest = await DigestUntil(message =>
+            {
+                var states = Counts(Child(Child(message, "blocks"), "states"));
+                return states.GetValueOrDefault("ready") + states.GetValueOrDefault("error") >= 6;
+            });
+            var blocks = Child(digest, "blocks");
+            var kinds = Counts(Child(blocks, "kinds"));
+            var readyStates = Counts(Child(blocks, "states"));
+            Check("블록 — 앞머리 · 표 · 다이어그램 · 수식 · 그림을 그린다",
+                kinds.Count == expected.Count && expected.All(pair => kinds.GetValueOrDefault(pair.Key) == pair.Value)
+                && readyStates.GetValueOrDefault("ready") == 6,
+                blocks);
+            Check("블록 — 할 일 상자 둘 · 알림 제목", Number(digest, "tasks") == 2, Number(digest, "tasks"));
+            await Capture("blocks.png");
+
+            Drain();
+            window.Post(new { type = "smoke", action = "toggleTask" });
+            await WaitFor("state", message => Flag(message, "dirty"));
+            await WaitFor("state", message => !Flag(message, "dirty"), seconds: 10); // 자동 저장(1.5초)
+            var written = Encoding.UTF8.GetString(await File.ReadAllBytesAsync(path));
+            Check("블록 — 할 일 상자를 누르면 [ ] → [x], 나머지는 그대로",
+                written == BlocksDocument.Replace("- [ ] 첫 일", "- [x] 첫 일", StringComparison.Ordinal),
+                written.Length);
+        });
+
+        // 7. 명령 팔레트 · 빠른 열기
+        await Scenario("고르기", async () =>
+        {
+            window.Run("commandPalette");
+            window.Post(new { type = "smoke", action = "pickerType", query = "githb" });
+            var palette = Child(await Digest(), "picker");
+            var shown = Child(palette, "shown").ValueKind == JsonValueKind.Array
+                ? Child(palette, "shown").EnumerateArray().Select(item => item.GetString()).ToList() : [];
+            await Capture("palette.png");
+            window.Post(new { type = "smoke", action = "pickerClose" });
+            Check("명령 팔레트 — 띄엄띄엄 친 `githb`가 보기 ▸ 테마 ▸ GitHub를 찾는다", Flag(palette, "open") && shown.FirstOrDefault() == "GitHub", palette);
+
+            window.Run("quickOpen");
+            var loaded = await DigestUntil(message => Number(Child(message, "picker"), "items") > 0, seconds: 15);
+            window.Post(new { type = "smoke", action = "pickerType", query = "showcase" });
+            var quick = Child(await Digest(), "picker");
+            var first = Child(quick, "shown").ValueKind == JsonValueKind.Array
+                ? Child(quick, "shown").EnumerateArray().Select(item => item.GetString()).FirstOrDefault() : null;
+            await Capture("quickopen.png");
+            window.Post(new { type = "smoke", action = "pickerClose" });
+            Check("빠른 열기 — 최근 문서에서 showcase.md를 찾는다",
+                Number(Child(loaded, "picker"), "items") >= 5 && first == "showcase.md", new { items = Number(Child(loaded, "picker"), "items"), quick });
+        });
+
+        // 8. 설정 — 테마 · 다크 · 글자 크기. 편집기가 정한 값을 껍데기가 저장한다. 마지막 화면(CI가 창째 한 장 더 찍는다).
+        await Scenario("설정", async () =>
+        {
+            Drain();
+            window.Run("setTheme", "github");
+            window.Run("setAppearance", "dark");
+            window.Run("textBigger");
+            await WaitFor("settings", message =>
+            {
+                var value = Child(message, "settings");
+                return Field(value, "appearance") == "dark" && Number(value, "bodySize") == 16;
+            });
+            await Task.Delay(500);
+            var digest = await Digest();
+            var colors = Child(digest, "colors");
+            Check("설정 — GitHub 다크 · 16px이 편집기에 쓰인다",
+                Field(colors, "background") == "rgb(13, 17, 23)" && Field(colors, "scheme") == "dark" && Field(digest, "fontSize") == "16px",
+                new { colors, fontSize = Field(digest, "fontSize") });
+            var saved = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(MainWindow.Store.Folder, "settings.json"))).RootElement;
+            Check("설정 — settings.json에 남는다",
+                Field(saved, "theme") == "github" && Field(saved, "appearance") == "dark" && Number(saved, "bodySize") == 16,
+                saved.GetRawText());
+            await DigestUntil(message => Counts(Child(Child(message, "blocks"), "states")).GetValueOrDefault("ready") >= 6, seconds: 20);
+            await Capture("blocks-dark.png");
         });
 
         var fonts = ready.TryGetProperty("fonts", out var fontsValue) ? fontsValue : default;

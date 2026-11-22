@@ -1,7 +1,8 @@
 # 마디 Windows판(windows/) — 편집기(TypeScript)를 시험 · 묶고, WPF 껍데기를 빌드하고, 띄워서 확인한다.
 #
-# 확인 실행(`Madi.exe --smoke`)은 시험 문서를 열어 편집기를 지나도 바이트가 그대로인지 견주고 편집기 화면을 찍는다.
-# 그동안 이 단계가 화면 전체를 한 장 더 찍는다(창 테두리까지). 받을 것: Madi-windows-x64(그대로 풀어 Madi.exe를 연다), smoke.
+# 확인 실행(`Madi.exe --smoke`)은 시험 문서를 열어 편집기를 지나도 바이트가 그대로인지 견주고, 블록 그림(표 · Mermaid · KaTeX ·
+# 그림 · 앞머리) · 명령 팔레트 · 빠른 열기 · 설정(테마 · 다크)을 지나며 편집기 화면을 찍는다. 끝에 이 단계가 화면 전체를 한 장 더
+# 찍는다(창 테두리까지 — 마지막 화면은 GitHub 다크). 받을 것: Madi-windows-x64(그대로 풀어 Madi.exe를 연다), smoke.
 name: windows
 
 on:
@@ -88,6 +89,8 @@ jobs:
             ${{ runner.temp }}/smoke/*.md
             ${{ runner.temp }}/smoke/*.txt
             ${{ runner.temp }}/smoke/*.log
+            ${{ runner.temp }}/smoke/blocks/*.md
+            ${{ runner.temp }}/smoke/settings/*.json
           if-no-files-found: warn
 
       - uses: actions/upload-artifact@v4
