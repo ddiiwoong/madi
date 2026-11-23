@@ -73,8 +73,14 @@ CI(`.github/workflows/windows.yml`)가 꾸러미를 만들고, **시험 인증�
   - 파일을 바이트 그대로 지킨다 — UTF-8 · BOM · UTF-16 · CRLF, 옛 EUC-KR 파일도 읽는다
 - **검색어**: 마크다운, markdown, 메모, 편집기, mermaid
 
+## CI가 본 것(실행 45130508987)
+
+- 꾸러미 64.4MB(파일 365개), makeappx의 매니페스트 확인 통과
+- 시험 서명한 사본을 깔아 `madi.exe` 별칭으로 켠 확인 실행 **27/27**, `packageFamilyName` = `Madi.Test_ph4m0g76w2xk0`(꾸러미 안에서 돌았다)
+- Windows App Certification Kit **PASS**. 선택(OPTIONAL) 검사 하나만 FAIL — `Blocked executables`: .NET · WPF 런타임 dll 안의 글자
+  (`cmd` · `reg` …)와, 마디가 링크 · 탐색기를 여는 `ShellExecute`를 보고 적는다. 선택 검사라 전체 결과를 떨어뜨리지 않는다.
+
 ## 아직 하지 않은 것
 
-- **Windows App Certification Kit**(Store가 권하는 사전 검사) — CI에 붙이는 중
 - **ARM64 꾸러미** — 지금은 x64만(ARM PC에서는 에뮬레이션으로 돈다)
 - **영어 목록** — 화면이 한국어뿐이라 매니페스트의 언어를 `ko-KR` 하나로 두었다

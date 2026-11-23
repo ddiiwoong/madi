@@ -24,6 +24,20 @@
 
 ## 끝난 것
 
+- **Windows판 Store용 MSIX 준비**(2026-11-23, 사용자 — "Store용 MSIX 묶기를 준비해줘"). 가지 `windows/msix`(3단계 위), 자세한 것은
+  `windows/msix/README.md`. 고른 까닭: 개인 · 한국에서 서명 없이 SmartScreen 경고를 없애는 길은 Store뿐이다(Azure Artifact Signing은 개인이면
+  미국 · 캐나다만, EV는 2024년부터 경고를 없애 주지 않는다 — 2026-11-23 Microsoft 문서).
+  - 꾸러미: `AppxManifest.xml`(연결 프로그램 · `madi://` · 터미널 별칭 `madi.exe`를 선언으로, 언어 ko-KR, runFullTrust), `build.ps1`(makepri ·
+    makeappx, 서명 없음), 로고 25장과 `Madi.ico`(`make-assets.py`가 macOS판 아이콘에서 — exe · 창 · 설치 파일도 이제 마디 아이콘).
+  - 앱: `PackageIdentity` — Store판이면 새 판 확인을 하지 않고(메뉴 · 명령 팔레트에서 빠짐, Store가 업데이트), 기본 앱 설정을 꾸러미의 앱 ID로.
+  - CI: MSIX를 만들고, 그 실행에서 만든 시험 인증서로 사본을 서명해 깔아 확인 실행을 **꾸러미 안에서** 다시 돌린다(27/27, 결과의
+    `packageFamilyName`으로 꾸러미 안이었는지 본다). Windows App Certification Kit 전체 PASS — 선택 검사 `Blocked executables` 하나만 FAIL
+    (런타임 dll의 글자와 마디의 `ShellExecute`를 적는다). 실행 45130508987.
+  - 고치며 안 것: 매니페스트 머리 주석에 적은 `{{…}}`를 채우지 못한 자리로 읽어 첫 CI가 멈췄다 — 이름이 든 자리(`{{\w+}}`)만 본다.
+  - 사람이 할 것: Store 개발자 계정(개인, 무료) · 이름 예약 · 제품 ID 값 셋을 저장소 변수로(`MSIX_IDENTITY_NAME` · `MSIX_PUBLISHER` ·
+    `MSIX_PUBLISHER_DISPLAY_NAME`) · 스크린샷(1366×768 이상) · 연령 등급 · 제출. 개인정보처리방침 URL이 반드시 있어야 해서
+    `windows/PRIVACY.md`를 썼다(master에 머지된 뒤의 주소를 쓴다).
+  - 못 본 것: 실제 Store 제출과 인증, ARM64 꾸러미, Windows 10에서의 설치(CI는 Windows Server 2025).
 - **Windows판 3단계**(2026-11-23, 사용자 — "3단계 진행해줘"). 가지 `windows/stage-3`(2단계 위), 자세한 것은 `windows/README.md`.
   - 편집기: 코드 블록의 문법 색(macOS판 `CodeHighlighter`의 이름 · 별명 + TypeScript, 언어 꾸러미는 처음 보일 때 — esbuild 나눠 묶기),
     내보내기(흰 종이 · 기본 테마 · 캐럿 줄도 꾸밈 · 메타데이터 숨김 · 문서 전체 — CodeMirror의 `viewState.printing`을 내내 켠다),

@@ -13,6 +13,7 @@ macOS판과 같은 기능을 Windows에서 내는 두 번째 앱입니다(사용
 | `editor/` | 편집기와 문서 로직 — 인코딩 · 줄 끝, 라이브 프리뷰 · 블록 그림, 찾기, 목차, 고친 상태 · 자동 저장, 바깥 변경 들이기, 테마 · 설정 값, 고르는 칸(거르기) | TypeScript, [CodeMirror 6](https://codemirror.net/), esbuild, Mermaid · KaTeX(macOS판과 같은 파일) |
 | `Madi.Windows/` | 창 · 메뉴 · 열기 · 저장 창, 파일 읽고 쓰기, 파일 지켜보기, 닫을 때 묻기, 설정 · 최근 문서 저장, 빠른 열기의 후보, 로컬 그림 읽기, 글꼴 목록 | C# · WPF(.NET 10), [WebView2](https://learn.microsoft.com/microsoft-edge/webview2/) |
 | `Madi.Windows.Tests/` | 껍데기의 파일 로직 시험(xunit v3, Windows에서만) | |
+| `installer/` · `msix/` | 설치 파일(Inno Setup) · Microsoft Store용 MSIX 꾸러미 — `msix/README.md`에 올리는 순서 | Inno Setup 6 · Windows SDK |
 
 - macOS판의 라이브 프리뷰는 `NSLayoutManager`가 마크다운 표식의 글리프를 지우는 데 기대고, Windows에는 그 대응물이 없다.
   CodeMirror 6의 장식(decoration)으로 표식을 숨기는 것은 이미 검증된 길이다(Obsidian의 라이브 프리뷰가 이 방식이다).
@@ -116,7 +117,7 @@ macOS판과 같은 기능을 Windows에서 내는 두 번째 앱입니다(사용
 | 코드 블록 색 | 직접 쓴 한 번 훑기(`CodeHighlighter`) | CodeMirror의 언어 문법(Swift · 셸은 CodeMirror 5 모드) | 이름 · 별명은 같고, TypeScript는 따로 칠한다 |
 | 링크의 경로 | `/…` · `~/…` · `file://…` | 드라이브부터(`C:\…`) · `~\…` · `file:///C:/…`, 네트워크 경로는 받지 않는다 | NTLM — 위 |
 | 업데이트 | 받아 서명을 보고 끌 때 바꿔 넣는다 | 알리고 받는 페이지만 | 서명(Authenticode)이 없다 |
-| 설치 | DMG · Homebrew | 설치 파일(사용자별) · 압축 파일 | winget · 서명은 판을 낼 때 |
+| 설치 | DMG · Homebrew | 설치 파일(사용자별) · 압축 파일 · Microsoft Store(MSIX — Store가 서명) | winget · 설치 파일의 서명은 판을 낼 때 |
 
 ## 빌드 · 실행(Windows)
 
@@ -155,10 +156,13 @@ dotnet run --project Madi.Windows -- 문서.md
     돌아오는지(`export.pdf`, 마지막 화면). 5에서 코드 블록의 문법 색도 본다(Swift의 `let`이 본문과 다른 색)
 
 확인 실행 뒤에 설치 파일을 만들고(Inno Setup) 조용히 깔아 파일 · `madi://` · 연결 프로그램 · 기본 앱 목록이 놓였는지 보고, 지워서 다
-없어지는지 본다.
+없어지는지 본다. 이어서 Store용 MSIX를 만들고(`msix/build.ps1`), 시험 인증서로 서명한 사본을 깔아 **꾸러미 안에서 확인 실행을 한 번 더**
+돌리고(터미널 별칭 `madi.exe`로 켜서 — 결과의 `packageFamilyName`으로 꾸러미 안이었는지 본다), Windows App Certification Kit의 결과를 적은
+뒤 지운다.
 
 `editor.png` · `blocks*.png` · `palette.png` · `quickopen.png` · `output.png` · `screen.png` · `export.pdf` · `result.json` · `settings\*.json`을
-남긴다. 받을 것: `Madi-windows-x64-setup`(설치 파일), `Madi-windows-x64`(풀어서 `Madi.exe`), `smoke`.
+남긴다. 받을 것: `Madi-windows-x64-setup`(설치 파일), `Madi-windows-x64-msix`(Store에 올릴 서명 없는 `.msix` · 꾸러미 안의 확인 실행 ·
+WACK 보고서), `Madi-windows-x64`(풀어서 `Madi.exe`), `smoke`.
 
 서명하지 않은 exe라 처음 열면 SmartScreen이 막는다 — `추가 정보` ▸ `실행`. 받은 zip은 속성에서 `차단 해제`를 먼저 누르면 편하다.
 
@@ -167,8 +171,8 @@ dotnet run --project Madi.Windows -- 문서.md
 사용자별(관리자 권한 없이 `%LOCALAPPDATA%\Programs\Madi`), 시작 메뉴에 마디, 마크다운 · 글 · 로그 확장자의 "연결 프로그램"에 마디,
 `madi://`, 설정 ▸ 기본 앱의 목록에 마디(`RegisteredApplications`). 기본 앱을 스스로 바꾸지는 않는다 — Windows가 막고, 사람이 고를 일이다
 (도구 ▸ 기본 앱 설정 열기). 지우면 이 항목들을 지운다(설정 · 최근 문서 `%APPDATA%\Madi`는 남긴다). 판 번호는 `Madi.Windows.csproj`의
-`Version`. 아직 하지 않은 것: **서명**(Authenticode 인증서가 필요하다 — 사람이 정할 일), **winget**(판을 낸 뒤 microsoft/winget-pkgs에 PR),
-MSIX(서명 없이는 깔리지 않는다).
+`Version`. 아직 하지 않은 것: **서명**(Authenticode 인증서가 필요하다 — 사람이 정할 일), **winget**(판을 낸 뒤 microsoft/winget-pkgs에 PR).
+서명 없이 SmartScreen 경고를 없애는 길은 Microsoft Store다(`msix/` — Store가 서명한다).
 
 ## 단계
 
@@ -178,4 +182,5 @@ MSIX(서명 없이는 깔리지 않는다).
 | 1 | 열기 · 편집 · 저장, 기본 라이브 프리뷰, 찾기, 목차, 바깥 변경 다시 읽기 · 따라 보기, `.txt` · `.log` | 끝 |
 | 2 | 표, 체크박스, 다이어그램 · 수식, 그림, 메타데이터 카드, 테마(어두운 테마) · 글꼴 · 글자 크기, 빠른 열기 · 명령 팔레트 | 끝 |
 | 3 | 코드 블록 색, PDF · 프린트, `madi://`, 파일 연결 · 한 번만 켜기, 새 판 확인, LLM 키(macOS판처럼 확인까지), 설치 파일 | 끝 — 서명 · winget · 바꿔 넣는 업데이트는 인증서 · 판 내기를 정한 뒤 |
+| Store | MSIX 꾸러미 · 아이콘 · Store판의 다른 점(업데이트는 Store가) · 제출 안내 · 개인정보처리방침(`PRIVACY.md`) | 꾸러미 준비 끝 — 계정 · 이름 예약 · 제출은 사람 |
 | 뒤 | 번역(Edge의 기기 안 Translator API를 WebView2에서 쓸 수 있는지부터) | |
