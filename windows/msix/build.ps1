@@ -76,7 +76,8 @@ $values = [ordered]@{
     "{{Version}}" = $Version
 }
 foreach ($token in $values.Keys) { $manifest = $manifest.Replace($token, (& $escape $values[$token])) }
-if ($manifest -match '\{\{') { Fail "채우지 못한 자리가 남았습니다" }
+# 머리 주석의 `{{…}}`는 설명이다 — 이름이 든 자리만 본다.
+if ($manifest -match '\{\{\w+\}\}') { Fail "채우지 못한 자리가 남았습니다: $($Matches[0])" }
 [System.IO.File]::WriteAllText((Join-Path $stage "AppxManifest.xml"), $manifest, [System.Text.UTF8Encoding]::new($false))
 
 # 로고의 배율 · 크기 한정자(scale-200 · targetsize-24 …)는 resources.pri가 푼다. 로고만 따로 둔 폴더에서 만든다 — publish 출력

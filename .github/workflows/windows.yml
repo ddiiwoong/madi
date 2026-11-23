@@ -19,7 +19,7 @@ permissions:
 jobs:
   app:
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     defaults:
       run:
         shell: pwsh
@@ -190,9 +190,39 @@ jobs:
           }
           finally {
             Get-AppxPackage -Name $env:MSIX_IDENTITY_NAME | Remove-AppxPackage
-            Get-ChildItem Cert:\LocalMachine\TrustedPeople | Where-Object Thumbprint -eq $cert.Thumbprint | Remove-Item
           }
           if (Get-AppxPackage -Name $env:MSIX_IDENTITY_NAME) { throw "지우고도 남았다" }
+          # 다음 단계(WACK)가 같은 사본을 깐다 — 시험 인증서는 그 뒤에 거둔다.
+          "MSIX_TEST=$test" >> $env:GITHUB_ENV
+          "MSIX_TEST_CERT=$($cert.Thumbprint)" >> $env:GITHUB_ENV
+
+      # Windows App Certification Kit — Store가 제출 전에 돌려 보라고 하는 검사. 지금은 결과를 적고 남기기만 한다(실패해도 멈추지 않는다).
+      - name: MSIX 인증 키트(WACK)
+        run: |
+          $appcert = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\App Certification Kit\appcert.exe"
+          $report = Join-Path $env:RUNNER_TEMP "smoke-msix\wack.xml"
+          try {
+            if (-not (Test-Path $appcert)) { Write-Warning "WACK가 없다: $appcert"; return }
+            & $appcert reset | Out-Host
+            & $appcert test -appxpackagepath $env:MSIX_TEST -reportoutputpath $report | Out-Host
+            if (-not (Test-Path $report)) { Write-Warning "WACK가 보고서를 남기지 않았다 — 끝 코드 $LASTEXITCODE"; return }
+            [xml]$xml = Get-Content $report -Raw
+            Write-Host "WACK 전체: $($xml.REPORT.OVERALL_RESULT)"
+            foreach ($test in $xml.SelectNodes("//TEST")) {
+              $result = $test.RESULT.InnerText.Trim()
+              $line = "$result  $($test.NAME)"
+              if ($result -eq "FAIL") {
+                $messages = @($test.SelectNodes(".//MESSAGE") | ForEach-Object { $_.TEXT }) -join " / "
+                Write-Warning "$line — $messages"
+              } else {
+                Write-Host $line
+              }
+            }
+          }
+          finally {
+            Get-AppxPackage -Name "${{ vars.MSIX_IDENTITY_NAME || 'Madi.Test' }}" | Remove-AppxPackage
+            Get-ChildItem Cert:\LocalMachine\TrustedPeople | Where-Object Thumbprint -eq $env:MSIX_TEST_CERT | Remove-Item
+          }
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -201,6 +231,7 @@ jobs:
           path: |
             out/msix/*.msix
             ${{ runner.temp }}/smoke-msix/result.json
+            ${{ runner.temp }}/smoke-msix/wack.xml
             ${{ runner.temp }}/smoke-msix/*.png
           if-no-files-found: warn
 
