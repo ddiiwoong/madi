@@ -54,7 +54,7 @@ public sealed partial class MainWindow
         foreach (var action in afterLoad.ToList()) action(this);
         afterLoad.Clear();
         foreach (var url in options.Urls) await RunLinkAsync(url);
-        if (!launchChecked && !SmokeMode)
+        if (!launchChecked && !SmokeMode && !PackageIdentity.IsPackaged)
         {
             launchChecked = true;
             Updates.CheckAtLaunch(this);
@@ -177,12 +177,18 @@ public sealed partial class MainWindow
 
     // MARK: 도구 · 도움말
 
-    /// <summary>Windows 설정 ▸ 기본 앱의 마디 쪽(설치 파일이 <c>RegisteredApplications</c>에 <c>Madi</c>로 올린다).</summary>
+    /// <summary>
+    /// Windows 설정 ▸ 기본 앱의 마디 쪽. 설치 파일판은 <c>RegisteredApplications</c>의 <c>Madi</c>로, Store판은 꾸러미의 앱 ID로 찾는다
+    /// (Windows 11 — 그보다 옛 판은 기본 앱 첫 쪽이 열린다).
+    /// </summary>
     private void OpenDefaultAppsSettings()
     {
+        var target = PackageIdentity.AppUserModelId is { } aumid
+            ? $"registeredAUMID={Uri.EscapeDataString(aumid)}"
+            : "registeredAppUser=Madi";
         try
         {
-            Process.Start(new ProcessStartInfo("ms-settings:defaultapps?registeredAppUser=Madi") { UseShellExecute = true });
+            Process.Start(new ProcessStartInfo($"ms-settings:defaultapps?{target}") { UseShellExecute = true });
         }
         catch (System.ComponentModel.Win32Exception error)
         {
@@ -194,7 +200,7 @@ public sealed partial class MainWindow
     {
         var webView2 = editorReady ? Core.Environment.BrowserVersionString : "(아직 뜨지 않음)";
         MessageBox.Show(this,
-            $"마디 Windows판 {Updates.Current}\nWebView2 {webView2}\n\n" +
+            $"마디 Windows판 {Updates.Current}{(PackageIdentity.IsPackaged ? " (Microsoft Store)" : "")}\nWebView2 {webView2}\n\n" +
             $"포함된 오픈 소스와 라이선스: {Path.Combine(AppContext.BaseDirectory, "editor", "THIRD-PARTY.txt")}\n" +
             "글꼴: Pretendard · IBM Plex Mono(SIL OFL 1.1)\n\ngithub.com/ddiiwoong/madi",
             "마디 정보", MessageBoxButton.OK, MessageBoxImage.Information);

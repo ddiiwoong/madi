@@ -54,4 +54,8 @@ test("설정 — 프린트 설정 · 새 판 확인(기본 켜짐, 꺼짐만 받
   assert.equal(entries.find((entry) => entry.id === "quickOpen")?.shortcut, "Ctrl+Alt+O", "빠른 열기는 macOS판 ⌥⌘O 자리");
   assert.equal(entries.find((entry) => entry.id === "toggleUpdateChecks")?.checked, true);
   assert.deepEqual(entries.filter((entry) => entry.id === "setPrintPaper" && entry.checked).map((entry) => entry.title), ["시스템 기본"]);
+  // Store판(MSIX)은 Store가 업데이트한다 — 새 판 확인 명령이 없다. 다른 명령은 그대로.
+  const packaged = catalog({ settings: defaultSettings, source: false, follow: false, outline: false, packaged: true });
+  assert.deepEqual(packaged.filter((entry) => /Update/.test(entry.id)).map((entry) => entry.id), []);
+  assert.equal(packaged.length, entries.length - 2);
 });

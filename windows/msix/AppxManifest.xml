@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  마디 Windows판의 MSIX 꾸러미 — Microsoft Store용. build.ps1이 {{…}}를 채운다: 꾸러미 이름 · 게시자 · 표시 이름은 Partner Center에서
+  이름을 예약하면 받는 값이다(README.md). Store가 꾸러미를 받은 뒤 Microsoft의 인증서로 서명한다 — 여기서는 서명하지 않는다.
+
+  설치 파일(installer/Madi.iss)이 레지스트리에 적는 것과 같은 일을 선언으로 한다: 마크다운 · 글 · 로그의 연결 프로그램, madi:// 링크.
+  꾸러미를 지우면 Windows가 모두 거둔다. 거기에 터미널에서 `madi 문서.md`로 켜는 별칭(madi.exe)을 더했다.
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap uap3 desktop rescap">
+
+  <Identity Name="{{IdentityName}}" Publisher="{{Publisher}}" Version="{{Version}}" ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>{{DisplayName}}</DisplayName>
+    <PublisherDisplayName>{{PublisherDisplayName}}</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+
+  <!-- Windows 10 1809부터(WebView2 · .NET 10이 받는 가장 낮은 판). 시험한 판은 Windows 11 24H2 · Windows Server 2025(26100). -->
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <!-- 화면이 한국어뿐이다 — 언어를 하나만 적는다(Store 목록도 한국어). -->
+  <Resources>
+    <Resource Language="ko-KR" />
+  </Resources>
+
+  <Applications>
+    <Application Id="Madi" Executable="Madi.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="{{DisplayName}}"
+        Description="마크다운 · 글 · 로그 편집기"
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png" />
+      <Extensions>
+        <!-- 파일 경로는 따옴표로 싸서 넘긴다 — 띄어쓰기가 든 경로가 둘로 갈리지 않게(Madi.exe의 LaunchOptions가 받는다). -->
+        <uap:Extension Category="windows.fileTypeAssociation">
+          <uap3:FileTypeAssociation Name="markdown" Parameters="&quot;%1&quot;">
+            <uap:DisplayName>마크다운 문서</uap:DisplayName>
+            <uap:SupportedFileTypes>
+              <uap:FileType>.md</uap:FileType>
+              <uap:FileType>.markdown</uap:FileType>
+              <uap:FileType>.mdown</uap:FileType>
+              <uap:FileType>.mkd</uap:FileType>
+              <uap:FileType>.mkdn</uap:FileType>
+              <uap:FileType>.mdx</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap3:FileTypeAssociation>
+        </uap:Extension>
+        <uap:Extension Category="windows.fileTypeAssociation">
+          <uap3:FileTypeAssociation Name="text" Parameters="&quot;%1&quot;">
+            <uap:DisplayName>글 문서</uap:DisplayName>
+            <uap:SupportedFileTypes>
+              <uap:FileType>.txt</uap:FileType>
+              <uap:FileType>.text</uap:FileType>
+              <uap:FileType>.log</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap3:FileTypeAssociation>
+        </uap:Extension>
+        <uap3:Extension Category="windows.protocol">
+          <uap3:Protocol Name="madi" Parameters="&quot;%1&quot;">
+            <uap:DisplayName>마디 링크</uap:DisplayName>
+          </uap3:Protocol>
+        </uap3:Extension>
+        <uap3:Extension Category="windows.appExecutionAlias" Executable="Madi.exe" EntryPoint="Windows.FullTrustApplication">
+          <uap3:AppExecutionAlias>
+            <desktop:ExecutionAlias Alias="madi.exe" />
+          </uap3:AppExecutionAlias>
+        </uap3:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <Capability Name="internetClient" />
+    <!-- 데스크톱 앱(WPF)이라 반드시 있어야 한다. Store 제출 때 까닭을 적는다(README.md). -->
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>

@@ -129,6 +129,81 @@ jobs:
           name: Madi-windows-x64-setup
           path: out/installer/*.exe
 
+      # Microsoft Store용 MSIX(서명 없음 — Store가 서명한다). 꾸러미 이름 · 게시자는 저장소 변수(Settings ▸ Variables)에서 —
+      # Partner Center에서 이름을 예약하고 받는 값이다(windows/msix/README.md). 없으면 시험용 값.
+      - name: MSIX 만들기
+        env:
+          MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME || 'Madi.Test' }}
+          MSIX_PUBLISHER: ${{ vars.MSIX_PUBLISHER || 'CN=Madi Test' }}
+          MSIX_PUBLISHER_DISPLAY_NAME: ${{ vars.MSIX_PUBLISHER_DISPLAY_NAME || 'ddiiwoong' }}
+          MSIX_DISPLAY_NAME: ${{ vars.MSIX_DISPLAY_NAME || '마디' }}
+        run: |
+          ./windows/msix/build.ps1 -Source out/Madi -Output out/msix -IdentityName $env:MSIX_IDENTITY_NAME `
+            -Publisher $env:MSIX_PUBLISHER -PublisherDisplayName $env:MSIX_PUBLISHER_DISPLAY_NAME -DisplayName $env:MSIX_DISPLAY_NAME
+          Get-ChildItem out/msix/*.msix | Select-Object Name, Length | Format-Table -AutoSize
+
+      # 꾸러미 안에서 정말 도는지 — 시험 인증서(이 실행에서 만들고 버린다)로 사본에 서명해 깔고, 확인 실행을 꾸러미 안에서 한 번 더
+      # 돌린다(터미널 별칭 madi.exe로 켠다). Store에 올리는 것은 서명하지 않은 원본이다.
+      - name: MSIX 설치 · 확인 실행 · 지우기
+        env:
+          MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME || 'Madi.Test' }}
+          MSIX_PUBLISHER: ${{ vars.MSIX_PUBLISHER || 'CN=Madi Test' }}
+        run: |
+          $msix = (Get-ChildItem out/msix/*.msix | Select-Object -First 1).FullName
+          $test = Join-Path $env:RUNNER_TEMP "madi-test.msix"
+          Copy-Item $msix $test
+          $cert = New-SelfSignedCertificate -Type Custom -Subject $env:MSIX_PUBLISHER -KeyUsage DigitalSignature `
+            -FriendlyName "Madi MSIX CI test" -CertStoreLocation "Cert:\CurrentUser\My" `
+            -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3", "2.5.29.19={text}")
+          $password = [guid]::NewGuid().ToString()
+          $pfx = Join-Path $env:RUNNER_TEMP "madi-test.pfx"
+          $cer = Join-Path $env:RUNNER_TEMP "madi-test.cer"
+          Export-PfxCertificate -Cert $cert -FilePath $pfx -Password (ConvertTo-SecureString $password -AsPlainText -Force) | Out-Null
+          Export-Certificate -Cert $cert -FilePath $cer | Out-Null
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\10.*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1
+          & $signtool.FullName sign /fd SHA256 /f $pfx /p $password $test
+          if ($LASTEXITCODE -ne 0) { throw "signtool 실패 — $LASTEXITCODE" }
+          Import-Certificate -FilePath $cer -CertStoreLocation Cert:\LocalMachine\TrustedPeople | Out-Null
+          try {
+            Add-AppxPackage -Path $test
+            $package = Get-AppxPackage -Name $env:MSIX_IDENTITY_NAME
+            if (-not $package) { throw "깔리지 않았다" }
+            Write-Host "깔림: $($package.PackageFullName) · $($package.InstallLocation)"
+
+            $alias = Join-Path $env:LOCALAPPDATA "Microsoft\WindowsApps\madi.exe"
+            if (-not (Test-Path $alias)) { throw "터미널 별칭이 없다: $alias" }
+            $out = Join-Path $env:RUNNER_TEMP "smoke-msix"
+            $process = Start-Process -FilePath $alias -ArgumentList @("--smoke", "`"$out`"") -PassThru
+            $null = $process.Handle
+            $deadline = (Get-Date).AddMinutes(4)
+            while (-not (Test-Path "$out/result.json") -and -not $process.HasExited -and (Get-Date) -lt $deadline) {
+              Start-Sleep -Milliseconds 500
+            }
+            if (-not $process.WaitForExit(90000)) { $process.Kill(); throw "꾸러미 안의 마디가 끝나지 않았다" }
+            if (-not (Test-Path "$out/result.json")) { throw "꾸러미 안의 확인 실행이 결과를 남기지 않았다 — 끝 코드 $($process.ExitCode)" }
+            $result = Get-Content "$out/result.json" -Raw -Encoding utf8 | ConvertFrom-Json
+            $passed = @($result.scenarios | Where-Object pass).Count
+            Write-Host "꾸러미 안의 확인 실행: ok=$($result.ok), $passed/$(@($result.scenarios).Count), 꾸러미=$($result.packageFamilyName), 끝 코드 $($process.ExitCode)"
+            @($result.scenarios | Where-Object { -not $_.pass }) | ForEach-Object { Write-Warning "$($_.name): $($_.detail | ConvertTo-Json -Compress -Depth 6)" }
+            if (-not $result.packageFamilyName -or $result.packageFamilyName -notlike "$($env:MSIX_IDENTITY_NAME)_*") { throw "꾸러미 밖에서 돌았다" }
+            if (-not $result.ok -or $process.ExitCode -ne 0) { throw "꾸러미 안의 확인 실행 실패" }
+          }
+          finally {
+            Get-AppxPackage -Name $env:MSIX_IDENTITY_NAME | Remove-AppxPackage
+            Get-ChildItem Cert:\LocalMachine\TrustedPeople | Where-Object Thumbprint -eq $cert.Thumbprint | Remove-Item
+          }
+          if (Get-AppxPackage -Name $env:MSIX_IDENTITY_NAME) { throw "지우고도 남았다" }
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Madi-windows-x64-msix
+          path: |
+            out/msix/*.msix
+            ${{ runner.temp }}/smoke-msix/result.json
+            ${{ runner.temp }}/smoke-msix/*.png
+          if-no-files-found: warn
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:

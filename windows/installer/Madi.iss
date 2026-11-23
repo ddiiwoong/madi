@@ -38,6 +38,7 @@ WizardStyle=modern
 ChangesAssociations=yes
 CloseApplications=yes
 UninstallDisplayIcon={app}\Madi.exe
+SetupIconFile=..\Madi.Windows\Madi.ico
 UninstallDisplayName=마디
 
 [Languages]

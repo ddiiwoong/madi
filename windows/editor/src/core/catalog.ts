@@ -23,6 +23,8 @@ export interface CatalogContext {
   source: boolean;
   follow: boolean;
   outline: boolean;
+  /** Microsoft Store판(MSIX) — Store가 업데이트하므로 새 판 확인 명령이 없다(껍데기의 메뉴도 같다). */
+  packaged?: boolean;
 }
 
 const appearances: [Appearance, string][] = [["system", "시스템 따라"], ["light", "밝게"], ["dark", "어둡게"]];
@@ -71,8 +73,10 @@ export function catalog(context: CatalogContext): CatalogEntry[] {
     { id: "toggleRemoteImages", title: "원격 그림 받기", menu: "보기", checked: settings.loadsRemoteImages },
     { id: "toggleFrontMatter", title: "문서 메타데이터 접어 두기", menu: "보기", checked: settings.collapsesFrontMatter },
     { id: "llmKeys", title: "LLM 키…", menu: "도구" },
-    { id: "checkForUpdates", title: "업데이트 확인…", menu: "도움말" },
-    { id: "toggleUpdateChecks", title: "하루 한 번 새 판 확인", menu: "도움말", checked: settings.checksForUpdates },
+    ...(context.packaged ? [] : [
+      { id: "checkForUpdates", title: "업데이트 확인…", menu: "도움말" },
+      { id: "toggleUpdateChecks", title: "하루 한 번 새 판 확인", menu: "도움말", checked: settings.checksForUpdates },
+    ]),
   ];
 }
 

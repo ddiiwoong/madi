@@ -27,6 +27,8 @@ declare global {
   interface Window {
     /** 껍데기가 페이지를 띄우기 전에 넣어 둔 설정 — 첫 화면부터 그 테마로(밝게 그렸다가 바뀌지 않게). */
     madiSettings?: unknown;
+    /** 껍데기에 대한 것 — `packaged`면 Microsoft Store판(MSIX). */
+    madiHost?: { packaged?: boolean };
   }
 }
 
@@ -458,7 +460,9 @@ function quickOpen(): void {
 }
 
 function commandPalette(): void {
-  const entries = catalog({ settings, source: mode.source, follow: mode.follow, outline: outlinePanel.shown });
+  const entries = catalog({
+    settings, source: mode.source, follow: mode.follow, outline: outlinePanel.shown, packaged: window.madiHost?.packaged === true,
+  });
   picker.open("명령", entries.map((entry): PickItem => ({
     title: entry.title,
     detail: entry.menu,

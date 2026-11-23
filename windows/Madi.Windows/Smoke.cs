@@ -649,6 +649,8 @@ internal sealed class SmokeRun(MainWindow window, string directory)
             fontApplied,
             editorFont,
             editorPaddingLeft = Field(ready, "editorPaddingLeft"),
+            // MSIX로 깔아 돌렸으면 꾸러미 계열 이름 — CI가 정말 꾸러미 안에서 돌았는지 본다.
+            packageFamilyName = PackageIdentity.FamilyName,
             cases,
             scenarios,
             notes,

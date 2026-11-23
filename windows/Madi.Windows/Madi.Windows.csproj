@@ -17,6 +17,8 @@
     <Product>마디</Product>
     <Version>0.0.1</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- macOS판 아이콘에서 만든 것(windows/msix/make-assets.py). 창 제목 줄 · 작업 표시줄 · 탐색기 · 설치 파일이 쓴다. -->
+    <ApplicationIcon>Madi.ico</ApplicationIcon>
     <!-- WPF가 언어마다 싣는 리소스 어셈블리 — 한국어와 영어만. -->
     <SatelliteResourceLanguages>ko;en</SatelliteResourceLanguages>
   </PropertyGroup>

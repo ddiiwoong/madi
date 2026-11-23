@@ -166,9 +166,13 @@ public sealed partial class MainWindow : Window
         tools.Items.Add(Item("LLM 키(_K)…", "", () => new LlmKeysWindow(this).ShowDialog()));
         tools.Items.Add(Item("기본 앱 설정 열기(_D)…", "", OpenDefaultAppsSettings));
         var help = Heading("도움말(_H)");
-        help.Items.Add(Item("업데이트 확인(_U)…", "", () => _ = Updates.CheckAsync(this, interactive: true)));
-        help.Items.Add(Flag("하루 한 번 새 판 확인(_D)", "toggleUpdateChecks", "checksForUpdates", fallback: true));
-        help.Items.Add(new Separator());
+        // Store판(MSIX)은 Store가 업데이트한다 — GitHub에 묻는 확인은 설치 파일판만.
+        if (!PackageIdentity.IsPackaged)
+        {
+            help.Items.Add(Item("업데이트 확인(_U)…", "", () => _ = Updates.CheckAsync(this, interactive: true)));
+            help.Items.Add(Flag("하루 한 번 새 판 확인(_D)", "toggleUpdateChecks", "checksForUpdates", fallback: true));
+            help.Items.Add(new Separator());
+        }
         help.Items.Add(Item("마디 정보(_A)", "", ShowAbout));
         UpdateSettingsMenu();
         menu.Items.Add(file);
@@ -279,6 +283,9 @@ public sealed partial class MainWindow : Window
         Core.WebMessageReceived += OnWebMessage;
         // 첫 그림부터 설정의 테마로 — 밝게 그렸다가 어둡게 바뀌지 않게. 값은 JSON 그대로(문자열은 이스케이프된다).
         await Core.AddScriptToExecuteOnDocumentCreatedAsync($"window.madiSettings = {Store.Settings.ToJsonString()};");
+        // 껍데기에 대한 것 — Store판이면 명령 팔레트가 새 판 확인을 보이지 않는다.
+        var host = JsonSerializer.Serialize(new { packaged = PackageIdentity.IsPackaged });
+        await Core.AddScriptToExecuteOnDocumentCreatedAsync($"window.madiHost = {host};");
         // 확인 실행 중에는 링크로 연 창도 확인 메시지를 받는다(`SmokeMode`).
         var query = smoke is not null || SmokeMode ? "?smoke=1&autosave=1500" : "";
         Core.Navigate($"https://{AppHost}/index.html{query}");
