@@ -99,6 +99,12 @@ internal sealed class SmokeRun(MainWindow window, string directory)
         "> [!TIP]",
         "> 알림 상자 — 제목이 Tip으로 보인다",
         "",
+        // 그림 블록 여섯 아래의 코드 블록 — 블록 위젯의 margin이 높이 지도를 어긋나게 해 복사 단추가 블록 위로 떴던 자리.
+        "```js",
+        "const a = 1;",
+        "const b = 2;",
+        "```",
+        "",
         "끝",
         "");
 
@@ -435,9 +441,10 @@ internal sealed class SmokeRun(MainWindow window, string directory)
                 clipboard = Clipboard.ContainsText() ? Clipboard.GetText() : null;
             }
             var pressed = Child(await Digest(), "codeCopy");
-            Check("코드 복사 — 코드 블록 위에 마우스를 두면 단추가 뜨고, 누르면 펜스를 뺀 코드가 클립보드에(CRLF) · '복사됨'",
-                Flag(Child(hovered, "codeCopy"), "shown") && Field(Child(hovered, "codeCopy"), "language") == "swift"
-                && clipboard == expectedCode && Field(pressed, "label") == "복사됨",
+            Check("코드 복사 — 코드 블록 위에 마우스를 두면 단추가 블록 안에 뜨고, 누르면 펜스를 뺀 코드가 클립보드에(Win32, CRLF) · '복사됨'",
+                Flag(Child(hovered, "codeCopy"), "shown") && Flag(Child(hovered, "codeCopy"), "inside")
+                && Field(Child(hovered, "codeCopy"), "language") == "swift"
+                && clipboard == expectedCode && Field(pressed, "label") == "복사됨" && Field(pressed, "via") == "host",
                 new { hovered = Child(hovered, "codeCopy"), pressed, clipboard });
         });
 
@@ -483,6 +490,25 @@ internal sealed class SmokeRun(MainWindow window, string directory)
             Check("블록 — 할 일 상자를 누르면 [ ] → [x], 나머지는 그대로",
                 written == BlocksDocument.Replace("- [ ] 첫 일", "- [x] 첫 일", StringComparison.Ordinal),
                 written.Length);
+
+            // 코드 복사 — 그림 블록 여섯 아래의 블록에서도 단추가 그 블록의 그려진 상자 안에(편집기가 화면에서 잰다 — 블록 위젯의 margin이
+            // 높이 지도를 어긋나게 해 단추가 블록 위로 떴던 자리), 누르면 그 블록의 코드가 클립보드에.
+            Clipboard.SetText("복사 전");
+            window.Activate();
+            window.Post(new { type = "smoke", action = "hoverCode", last = true });
+            var below = await DigestUntil(message => Flag(Child(message, "codeCopy"), "shown"), seconds: 10);
+            window.Post(new { type = "smoke", action = "codeCopyPress" });
+            var hostCode = "const a = 1;\r\nconst b = 2;";
+            string? hostClipboard = null;
+            for (var tries = 0; tries < 30 && hostClipboard != hostCode; tries++)
+            {
+                await Task.Delay(100);
+                hostClipboard = Clipboard.ContainsText() ? Clipboard.GetText() : null;
+            }
+            var hostPressed = Child(await Digest(), "codeCopy");
+            Check("코드 복사 — 그림 블록 여섯 아래의 블록에서도 단추가 그 블록 안 오른쪽 위에, 누르면 그 블록의 코드가 클립보드에",
+                Flag(Child(below, "codeCopy"), "inside") && hostClipboard == hostCode && Field(hostPressed, "via") == "host",
+                new { below = Child(below, "codeCopy"), hostPressed, hostClipboard });
         });
 
         // 6½. 모양 — 제목 막대(메뉴 막대 대신)와 서식 막대. 창째 찍는다(`design.png` — 제목 막대까지).

@@ -123,17 +123,23 @@ button { font-family: var(--md-font-body); }
 #codecopy:hover { color: var(--md-text); }
 #codecopy svg { display: block; }
 
-/* MARK: 그림으로 바꾼 블록(`src/editor/blocks.ts`) — 편집기 글 안에 놓이지만 CodeMirror의 기본 테마가 손대지 않는 이름이다. */
-.md-block { margin: 8px 0; cursor: text; }
+/*
+ * MARK: 그림으로 바꾼 블록(`src/editor/blocks.ts`) — 편집기 글 안에 놓이지만 CodeMirror의 기본 테마가 손대지 않는 이름이다.
+ * 블록 바깥(`.md-block`)에는 **margin을 쓰지 않는다** — CodeMirror는 위젯의 높이를 테두리 상자로 재서 margin을 세지 못한다. 전에
+ * `margin: 8px 0`이라 블록 하나마다 16px씩 높이 지도가 실제보다 짧아, 그 아래의 코드 복사 단추가 블록 위로 떴다(블록 셋 → 48px)
+ * — 클릭 · 굴리기의 자리도 그만큼 어긋난다. 사이는 padding으로, 테두리 · 바탕은 안쪽 상자(`.md-card` · `.md-error-box`)에 둔다.
+ */
+.md-block { padding: 8px 0; cursor: text; }
 .md-block[data-state="pending"] { color: var(--md-dim); font-size: 0.85em; padding: 12px 0; }
 .md-block-error-title { color: var(--md-caution); font-weight: 700; font-size: 0.85em; }
 pre.md-block-error {
   margin: 4px 0 0; white-space: pre-wrap; font: 0.8em/1.5 var(--md-font-code); color: var(--md-dim);
   max-height: 12em; overflow: auto;
 }
-.md-mermaid, .md-math { text-align: center; padding: 10px 0; overflow-x: auto; }
-.md-mermaid[data-state="error"], .md-math[data-state="error"] {
-  text-align: left; padding: 10px 14px; border-left: 3px solid var(--md-caution); border-radius: 4px 8px 8px 4px;
+.md-mermaid, .md-math { text-align: center; padding: 18px 0; overflow-x: auto; }
+.md-mermaid[data-state="error"], .md-math[data-state="error"] { text-align: left; padding: 8px 0; }
+.md-error-box {
+  padding: 10px 14px; border-left: 3px solid var(--md-caution); border-radius: 4px 8px 8px 4px;
   background: color-mix(in srgb, var(--md-caution) 6%, var(--md-background));
 }
 .md-mermaid svg { max-width: 100%; height: auto; }
@@ -158,9 +164,10 @@ pre.md-block-error {
 .md-table tbody tr:last-child td { border-bottom: 0; }
 .md-table th { background: var(--md-table-header-background); font-weight: 700; }
 
+.md-frontmatter { padding: 2px 0 16px; }
 .md-card {
   border: 1px solid color-mix(in srgb, var(--md-text) 9%, var(--md-background)); border-radius: 10px; padding: 8px 14px 10px;
-  font-size: 0.82em; line-height: 1.55; background: color-mix(in srgb, var(--md-text) 3%, var(--md-background)); margin: 2px 0 16px;
+  font-size: 0.82em; line-height: 1.55; background: color-mix(in srgb, var(--md-text) 3%, var(--md-background));
 }
 .md-card-head {
   border: 0; background: none; padding: 2px 0; font: 600 1em var(--md-font-body); color: var(--md-dim); cursor: pointer;

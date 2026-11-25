@@ -83,9 +83,12 @@ class FrontMatterWidget extends WidgetType {
     return other.json === this.json && other.collapsed === this.collapsed;
   }
   toDOM(view: EditorView): HTMLElement {
+    // 바깥(`.md-block`)은 자리만, 테두리 · 바탕은 안쪽 카드 — 바깥에 margin을 두면 CodeMirror가 높이를 잘못 잰다(style.css).
     const dom = block("frontmatter");
-    dom.classList.add("md-card");
     dom.dataset.state = "ready";
+    const card = document.createElement("div");
+    card.className = "md-card";
+    dom.append(card);
     const head = document.createElement("button");
     head.type = "button";
     head.className = "md-card-head";
@@ -93,7 +96,7 @@ class FrontMatterWidget extends WidgetType {
     head.textContent = `${this.collapsed ? "▸" : "▾"} 문서 메타데이터 · ${this.fields.length}개 항목`;
     head.addEventListener("mousedown", (event) => event.preventDefault());
     head.addEventListener("click", () => view.dispatch({ effects: setFrontMatterCollapsed.of(!this.collapsed) }));
-    dom.append(head);
+    card.append(head);
     if (this.collapsed) return dom;
     const grid = document.createElement("dl");
     grid.className = "md-card-grid";
@@ -131,7 +134,7 @@ class FrontMatterWidget extends WidgetType {
       }
       grid.append(key, value);
     }
-    dom.append(grid);
+    card.append(grid);
     enterOnPress(dom, view);
     return dom;
   }
@@ -218,7 +221,11 @@ class DiagramWidget extends WidgetType {
         const detail = document.createElement("pre");
         detail.className = "md-block-error";
         detail.textContent = result.message;
-        dom.replaceChildren(title, detail);
+        // 테두리 · 바탕은 안쪽 상자에 — 바깥(`.md-block`)은 padding뿐이어야 높이를 바르게 잰다(style.css).
+        const box = document.createElement("div");
+        box.className = "md-error-box";
+        box.append(title, detail);
+        dom.replaceChildren(box);
         dom.dataset.state = "error";
       }
     };

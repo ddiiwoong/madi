@@ -38,8 +38,8 @@ export type HostMessage =
   | { type: "smoke"; action: "select"; from: number; to: number }
   /** 서식 막대의 단추를 사람이 누른 것처럼. */
   | { type: "smoke"; action: "formatPress"; command: string }
-  /** 첫 코드 블록을 보이게 굴리고 그 둘째 줄에 마우스를 올린 것처럼(mousemove). */
-  | { type: "smoke"; action: "hoverCode" }
+  /** 첫(`last`면 마지막) 코드 블록을 보이게 굴리고 그 둘째 줄에 마우스를 올린 것처럼(mousemove). */
+  | { type: "smoke"; action: "hoverCode"; last?: boolean }
   /** 코드 복사 단추를 사람이 누른 것처럼(mousedown). */
   | { type: "smoke"; action: "codeCopyPress" };
 
@@ -60,7 +60,7 @@ export type Request =
   | { type: "listFonts" }
   /** 로컬 그림 — 문서 폴더를 기준으로 풀고, 그림 확장자만 읽어 `data:` 주소로. */
   | { type: "loadImage"; path: string }
-  /** 클립보드에 글로(코드 복사 단추). 줄 끝은 `\n` — 껍데기가 Windows의 CRLF로 바꾼다. */
+  /** 클립보드에 글로(코드 복사 단추, 껍데기가 Win32로 바로). 줄 끝은 `\n` — 껍데기가 Windows의 CRLF로 바꾼다. */
   | { type: "copyText"; text: string };
 
 /** 편집기 → 호스트. */
@@ -131,7 +131,7 @@ export type EditorMessage =
       renderedLines: number;
       codeKeyword: string | null;
       formatBar: { shown: boolean; buttons: string[] };
-      codeCopy: { shown: boolean; label: string; language: string | null };
+      codeCopy: { shown: boolean; label: string; language: string | null; via: string | null; inside: boolean | null };
       toast: { text: string; shown: boolean };
     }
   | { type: "settings"; settings: unknown }

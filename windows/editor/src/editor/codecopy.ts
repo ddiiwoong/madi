@@ -11,7 +11,7 @@ import { codeBlockAt, codeText, type CodeBlock } from "../core/codecopy.ts";
 
 export class CodeCopyButton {
   private readonly root = document.getElementById("codecopy") as HTMLButtonElement;
-  private readonly copy: (text: string) => Promise<boolean>;
+  private readonly copy: (text: string) => Promise<"editor" | "host" | null>;
   private view: EditorView | null = null;
   /** 마지막 마우스 자리(화면 좌표) — 굴리면 그 자리 밑의 블록을 다시 찾는다. 편집기 밖이면 null. */
   private point: { x: number; y: number } | null = null;
@@ -22,8 +22,8 @@ export class CodeCopyButton {
   /** `복사됨`을 보이는 시간. */
   copiedDuration = 1400;
 
-  /** `copy`는 클립보드에 넣고 됐는지 답한다(못 했으면 알리는 것도 그쪽이 한다). */
-  constructor(copy: (text: string) => Promise<boolean>) {
+  /** `copy`는 클립보드에 넣고 어느 길로 넣었는지 답한다 — 못 넣었으면 null(알리는 것도 그쪽이 한다). */
+  constructor(copy: (text: string) => Promise<"editor" | "host" | null>) {
     this.copy = copy;
     this.root.tabIndex = -1;
     this.showCopied(false);
@@ -62,8 +62,34 @@ export class CodeCopyButton {
     this.schedule();
   }
 
-  get report(): { shown: boolean; label: string; language: string | null } {
-    return { shown: !this.root.hidden, label: this.root.querySelector("span")?.textContent ?? "", language: this.block?.language ?? null };
+  /** 마지막으로 베낀 길 — 편집기(Chromium) · 껍데기(Win32). 확인 실행이 본다. */
+  via: "editor" | "host" | null = null;
+
+  /**
+   * 확인 실행이 보는 것. `inside`는 단추가 그 블록의 **그려진** 회색 상자(코드 줄들의 DOM) 안 오른쪽 위에 있는가 — 높이 지도가 아니라
+   * 화면에서 잰다(블록 위젯의 margin이 높이 지도를 어긋나게 해 단추가 블록 위로 떴다).
+   */
+  get report(): { shown: boolean; label: string; language: string | null; via: string | null; inside: boolean | null } {
+    const shown = !this.root.hidden;
+    let inside: boolean | null = null;
+    const view = this.view;
+    if (shown && view && this.block) {
+      const block = this.block;
+      const boxes = [...view.contentDOM.querySelectorAll<HTMLElement>(".cm-md-line-code")]
+        .filter((line) => {
+          const pos = view.posAtDOM(line);
+          return pos >= block.from && pos <= block.to;
+        })
+        .map((line) => line.getBoundingClientRect());
+      if (boxes.length > 0) {
+        const top = Math.min(...boxes.map((box) => box.top));
+        const bottom = Math.max(...boxes.map((box) => box.bottom));
+        const right = Math.max(...boxes.map((box) => box.right));
+        const button = this.root.getBoundingClientRect();
+        inside = button.top >= top - 0.5 && button.bottom <= bottom + 0.5 && button.right <= right + 0.5 && button.right >= right - 16;
+      }
+    }
+    return { shown, label: this.root.querySelector("span")?.textContent ?? "", language: this.block?.language ?? null, via: this.via, inside };
   }
 
   /** 글이 바뀌거나 굴리면 — 상자가 옮겨졌을 수 있다. */
@@ -78,7 +104,10 @@ export class CodeCopyButton {
     if (!view || !this.block) return;
     const block = codeBlockAt(view.state, Math.min(this.block.from, view.state.doc.length));
     if (!block) return;
-    if (await this.copy(codeText(view.state.doc, block))) this.showCopied(true);
+    const via = await this.copy(codeText(view.state.doc, block));
+    if (!via) return;
+    this.via = via;
+    this.showCopied(true);
   }
 
   private hide(): void {
