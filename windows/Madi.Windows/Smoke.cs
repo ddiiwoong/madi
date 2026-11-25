@@ -60,6 +60,7 @@ internal sealed class SmokeRun(MainWindow window, string directory)
         "",
         "```swift",
         "let 인사 = \"안녕\"",
+        "print(인사)",
         "```",
         ""));
 
@@ -418,6 +419,26 @@ internal sealed class SmokeRun(MainWindow window, string directory)
             await Capture("editor.png");
             window.Run("toggleOutline");
             await WaitFor("state", message => !Flag(message, "outline"));
+
+            // 코드 복사 단추 — 마우스를 코드 블록에 올리면 뜨고, 누르면 펜스를 뺀 코드가 클립보드에(Windows의 CRLF로). 실제 클립보드를 읽는다.
+            Clipboard.SetText("복사 전");
+            window.Activate();
+            window.Post(new { type = "smoke", action = "hoverCode" });
+            var hovered = await DigestUntil(message => Flag(Child(message, "codeCopy"), "shown"), seconds: 10);
+            await Capture("codecopy.png");
+            window.Post(new { type = "smoke", action = "codeCopyPress" });
+            var expectedCode = "let 인사 = \"안녕\"\r\nprint(인사)";
+            string? clipboard = null;
+            for (var tries = 0; tries < 30 && clipboard != expectedCode; tries++)
+            {
+                await Task.Delay(100);
+                clipboard = Clipboard.ContainsText() ? Clipboard.GetText() : null;
+            }
+            var pressed = Child(await Digest(), "codeCopy");
+            Check("코드 복사 — 코드 블록 위에 마우스를 두면 단추가 뜨고, 누르면 펜스를 뺀 코드가 클립보드에(CRLF) · '복사됨'",
+                Flag(Child(hovered, "codeCopy"), "shown") && Field(Child(hovered, "codeCopy"), "language") == "swift"
+                && clipboard == expectedCode && Field(pressed, "label") == "복사됨",
+                new { hovered = Child(hovered, "codeCopy"), pressed, clipboard });
         });
 
         // 6. 블록 그림 — 앞머리 · 표 · 다이어그램 · 수식 둘 · 그림, 할 일 상자를 누르면 파일의 글자 하나가 바뀐다

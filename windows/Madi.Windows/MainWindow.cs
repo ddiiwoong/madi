@@ -521,6 +521,9 @@ public sealed partial class MainWindow : Window
                 case "loadImage":
                     await ReplyImageAsync(Number(message, "id"), Field(message, "path") ?? "");
                     break;
+                case "copyText":
+                    Post(CopyText(Number(message, "id"), Field(message, "text") ?? ""));
+                    break;
                 case "openPath":
                     if (Field(message, "path") is { } picked && File.Exists(picked)) OpenPath(picked);
                     break;
@@ -646,6 +649,25 @@ public sealed partial class MainWindow : Window
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Order(StringComparer.CurrentCultureIgnoreCase)
             .ToList();
+    }
+
+    /// <summary>
+    /// 코드 복사 단추(편집기)의 글을 클립보드에. Windows의 글 클립보드는 줄 끝이 CRLF다 — LF 그대로 두면 메모장 밖의 오래된 앱이 한
+    /// 줄로 읽는다(Edge도 복사할 때 CRLF로 바꾼다). 다른 앱이 클립보드를 쥐고 있으면 WPF가 몇 번 다시 해 보고 그래도 안 되면 던진다.
+    /// </summary>
+    private static object CopyText(int id, string text)
+    {
+        try
+        {
+            // 빈 블록 — 빈 글을 넣는 것과 같게 비운다(빈 글을 받지 않는 클립보드 API가 있다).
+            if (text.Length == 0) Clipboard.Clear();
+            else Clipboard.SetText(text.ReplaceLineEndings("\r\n"), TextDataFormat.UnicodeText);
+            return new { type = "copied", id, ok = true };
+        }
+        catch (Exception error) when (error is System.Runtime.InteropServices.ExternalException)
+        {
+            return new { type = "copied", id, ok = false, message = error.Message };
+        }
     }
 
     private async Task ReplyImageAsync(int id, string raw)

@@ -2,6 +2,7 @@
 
 import { Annotation, EditorSelection, EditorState, Prec, type Text, Transaction } from "@codemirror/state";
 import { EditorView, drawSelection, highlightSpecialChars, keymap, placeholder } from "@codemirror/view";
+import { syntaxTree } from "@codemirror/language";
 import { defaultKeymap, history, historyKeymap, redo, selectAll, undo } from "@codemirror/commands";
 import { findNext, openSearchPanel, search, searchKeymap, SearchQuery, setSearchQuery } from "@codemirror/search";
 import { base64ToBytes, bytesForSave, bytesToBase64, documentBytes, openDocument, sha256Hex } from "./core/document.ts";
@@ -24,6 +25,7 @@ import { applyTheme, onSystemAppearanceChange } from "./editor/theme.ts";
 import { Picker, type PickItem } from "./editor/picker.ts";
 import { ConflictBand, NewLinesPill, OutlinePanel, Toast } from "./editor/ui.ts";
 import { FormatBar } from "./editor/formatbar.ts";
+import { CodeCopyButton } from "./editor/codecopy.ts";
 import { cssVariables } from "./core/settings.ts";
 
 declare global {
@@ -80,6 +82,21 @@ function environment(): BlockEnv {
 
 const status = new Toast();
 const formatBar = new FormatBar((command) => applyFormat(command));
+const codeCopy = new CodeCopyButton(async (text) => {
+  try {
+    if (hasHost) {
+      const reply = await ask<"copied">({ type: "copyText", text });
+      if (!reply.ok) throw new Error(reply.message);
+    } else {
+      // 브라우저로 띄운 개발 화면 — 껍데기가 없다.
+      await navigator.clipboard.writeText(text);
+    }
+    return true;
+  } catch (error) {
+    status.say(`코드를 복사하지 못했습니다: ${error instanceof Error ? error.message : String(error)}`, true);
+    return false;
+  }
+});
 const band = new ConflictBand(() => post({ type: "reload" }), () => save());
 const pill = new NewLinesPill(() => scrollToEnd());
 const outlinePanel = new OutlinePanel((heading) => {
@@ -205,6 +222,8 @@ function baseExtensions() {
       if (update.selectionSet || update.docChanged || update.geometryChanged || update.focusChanged || update.viewportChanged) {
         formatBar.schedule();
       }
+      // 상자가 옮겨졌을 수 있다(고침 · 펜스가 드러남 · 줄이 다시 감김) — 마우스 자리로 다시 놓는다.
+      if (update.docChanged || update.geometryChanged || update.viewportChanged) codeCopy.schedule();
     }),
     EditorView.domEventHandlers({
       // Ctrl+클릭 — 링크를 기본 브라우저로(호스트가 http · https · mailto만 연다). 그냥 클릭은 캐럿을 놓는다(그 줄이 원문이 된다).
@@ -232,6 +251,7 @@ savedDoc = view.state.doc;
 view.focus();
 
 formatBar.attach(view);
+codeCopy.attach(view);
 
 blockServices.openUrl = (url) => post({ type: "openUrl", url });
 blockServices.loadImage = async (path) => {
@@ -439,6 +459,7 @@ async function enterOutput(): Promise<void> {
   if (outputting) return;
   outputting = true;
   formatBar.hidden = true;
+  codeCopy.hidden = true;
   picker.close();
   // macOS판처럼 고른 테마와 상관없이 흰 종이에 기본 색 — 다이어그램도 라이트로 다시 그린다.
   dark = applyTheme({ ...settings, theme: "standard", appearance: "light" });
@@ -454,6 +475,7 @@ function exitOutput(): void {
   if (!outputting) return;
   outputting = false;
   formatBar.hidden = false;
+  codeCopy.hidden = false;
   document.documentElement.classList.remove("md-output");
   dark = applyTheme(settings);
   view.dispatch({ effects: reconfigureEnvironment(environment()) });
@@ -836,6 +858,32 @@ async function runSmoke(message: Extract<HostMessage, { type: "smoke" }>): Promi
       button?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
       break;
     }
+    case "hoverCode": {
+      // 사람이 마우스를 첫 코드 블록의 둘째 줄에 올린 것처럼 — 그 자리가 보이게 굴린 뒤 그려진 줄 위에서 mousemove.
+      let first: number | null = null;
+      syntaxTree(view.state).iterate({
+        enter(node) {
+          if (first !== null) return false;
+          if (node.name === "FencedCode") first = node.from;
+          return undefined;
+        },
+      });
+      if (first === null) break;
+      view.dispatch({ effects: EditorView.scrollIntoView(first, { y: "center" }) });
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const lines = view.contentDOM.querySelectorAll<HTMLElement>(".cm-md-line-code");
+      const line = lines[1] ?? lines[0];
+      if (!line) break;
+      const box = line.getBoundingClientRect();
+      line.dispatchEvent(new MouseEvent("mousemove", {
+        bubbles: true, clientX: box.left + box.width / 2, clientY: box.top + box.height / 2,
+      }));
+      break;
+    }
+    case "codeCopyPress":
+      document.querySelector<HTMLElement>("#codecopy:not([hidden])")
+        ?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
+      break;
     case "scrollEnd":
       scrollToEnd();
       break;
@@ -853,6 +901,7 @@ async function runSmoke(message: Extract<HostMessage, { type: "smoke" }>): Promi
         tasks: view.dom.querySelectorAll(".cm-md-task").length,
         picker: picker.report,
         formatBar: formatBar.report,
+        codeCopy: codeCopy.report,
         toast: status.report,
         colors: {
           background: getComputedStyle(view.dom).backgroundColor,

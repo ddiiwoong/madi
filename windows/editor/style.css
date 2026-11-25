@@ -112,6 +112,17 @@ button { font-family: var(--md-font-body); }
 #formatbar-headings .level-3 { font-size: 14.5px; }
 #formatbar-headings .level-4, #formatbar-headings .level-5, #formatbar-headings .level-6 { font-size: 13.5px; }
 
+/* 코드 복사 단추(`src/editor/codecopy.ts`) — 코드 블록 위에 마우스가 있을 때 오른쪽 위에. 서식 막대보다 아래. */
+#codecopy {
+  position: absolute; z-index: 7; display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px 3px 7px;
+  font-size: 11.5px; font-weight: 500; line-height: 1.3; cursor: pointer; white-space: nowrap;
+  background: color-mix(in srgb, var(--md-background) 92%, transparent); color: var(--md-dim);
+  border: 1px solid color-mix(in srgb, var(--md-text) 14%, var(--md-background)); border-radius: 6px;
+}
+#codecopy[hidden] { display: none; }
+#codecopy:hover { color: var(--md-text); }
+#codecopy svg { display: block; }
+
 /* MARK: 그림으로 바꾼 블록(`src/editor/blocks.ts`) — 편집기 글 안에 놓이지만 CodeMirror의 기본 테마가 손대지 않는 이름이다. */
 .md-block { margin: 8px 0; cursor: text; }
 .md-block[data-state="pending"] { color: var(--md-dim); font-size: 0.85em; padding: 12px 0; }
@@ -192,7 +203,7 @@ pre.md-block-error {
   :root { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   html, body { height: auto !important; overflow: visible !important; background: #fff; }
   #app, #body { display: block !important; height: auto !important; }
-  #band, #outline, #picker, .pill, #toast, #formatbar, #formatbar-headings { display: none !important; }
+  #band, #outline, #picker, .pill, #toast, #formatbar, #formatbar-headings, #codecopy { display: none !important; }
   #editor .cm-editor { height: auto !important; }
   #editor .cm-scroller { overflow: visible !important; height: auto !important; }
   #editor .cm-content { padding: 0 !important; }

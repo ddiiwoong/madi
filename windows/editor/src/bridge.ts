@@ -37,14 +37,20 @@ export type HostMessage =
   /** 글을 고른다(서식 막대가 뜨게). */
   | { type: "smoke"; action: "select"; from: number; to: number }
   /** 서식 막대의 단추를 사람이 누른 것처럼. */
-  | { type: "smoke"; action: "formatPress"; command: string };
+  | { type: "smoke"; action: "formatPress"; command: string }
+  /** 첫 코드 블록을 보이게 굴리고 그 둘째 줄에 마우스를 올린 것처럼(mousemove). */
+  | { type: "smoke"; action: "hoverCode" }
+  /** 코드 복사 단추를 사람이 누른 것처럼(mousedown). */
+  | { type: "smoke"; action: "codeCopyPress" };
 
 /** 편집기가 물은 것의 답 — `id`로 짝을 짓는다. */
 export type Reply =
   | { type: "files"; id: number; items: { path: string; name: string; detail: string }[] }
   | { type: "fonts"; id: number; families: string[] }
   | { type: "image"; id: number; ok: true; dataUrl: string }
-  | { type: "image"; id: number; ok: false; message: string };
+  | { type: "image"; id: number; ok: false; message: string }
+  | { type: "copied"; id: number; ok: true }
+  | { type: "copied"; id: number; ok: false; message: string };
 
 /** 편집기 → 껍데기, 답을 기다리는 것. */
 export type Request =
@@ -53,7 +59,9 @@ export type Request =
   /** 이 PC의 글꼴 이름(WPF `Fonts.SystemFontFamilies`). */
   | { type: "listFonts" }
   /** 로컬 그림 — 문서 폴더를 기준으로 풀고, 그림 확장자만 읽어 `data:` 주소로. */
-  | { type: "loadImage"; path: string };
+  | { type: "loadImage"; path: string }
+  /** 클립보드에 글로(코드 복사 단추). 줄 끝은 `\n` — 껍데기가 Windows의 CRLF로 바꾼다. */
+  | { type: "copyText"; text: string };
 
 /** 편집기 → 호스트. */
 export type EditorMessage =
@@ -123,6 +131,7 @@ export type EditorMessage =
       renderedLines: number;
       codeKeyword: string | null;
       formatBar: { shown: boolean; buttons: string[] };
+      codeCopy: { shown: boolean; label: string; language: string | null };
       toast: { text: string; shown: boolean };
     }
   | { type: "settings"; settings: unknown }
@@ -168,7 +177,7 @@ export function ask<T extends Reply["type"]>(request: Request): Promise<Extract<
   });
 }
 
-const replyTypes = new Set<string>(["files", "fonts", "image"]);
+const replyTypes = new Set<string>(["files", "fonts", "image", "copied"]);
 
 export function onHostMessage(handler: (message: HostMessage) => void): void {
   webview?.addEventListener("message", (event) => {
