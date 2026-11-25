@@ -655,19 +655,15 @@ public sealed partial class MainWindow : Window
     /// 코드 복사 단추(편집기)의 글을 클립보드에. Windows의 글 클립보드는 줄 끝이 CRLF다 — LF 그대로 두면 메모장 밖의 오래된 앱이 한
     /// 줄로 읽는다(Edge도 복사할 때 CRLF로 바꾼다). 다른 앱이 클립보드를 쥐고 있으면 WPF가 몇 번 다시 해 보고 그래도 안 되면 던진다.
     /// </summary>
-    private static object CopyText(int id, string text)
+    /// <summary>
+    /// 편집기가 자기 클립보드(Chromium)로 못 썼을 때만 온다(main.ts). WPF의 <c>Clipboard</c>(OLE)가 아니라 Win32로 바로 —
+    /// <see cref="TextClipboard"/>. 줄 끝은 Windows의 CRLF로.
+    /// </summary>
+    private object CopyText(int id, string text)
     {
-        try
-        {
-            // 빈 블록 — 빈 글을 넣는 것과 같게 비운다(빈 글을 받지 않는 클립보드 API가 있다).
-            if (text.Length == 0) Clipboard.Clear();
-            else Clipboard.SetText(text.ReplaceLineEndings("\r\n"), TextDataFormat.UnicodeText);
-            return new { type = "copied", id, ok = true };
-        }
-        catch (Exception error) when (error is System.Runtime.InteropServices.ExternalException)
-        {
-            return new { type = "copied", id, ok = false, message = error.Message };
-        }
+        var owner = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+        var failure = TextClipboard.SetText(owner, text.ReplaceLineEndings("\r\n"));
+        return failure is null ? new { type = "copied", id, ok = true } : new { type = "copied", id, ok = false, message = failure };
     }
 
     private async Task ReplyImageAsync(int id, string raw)

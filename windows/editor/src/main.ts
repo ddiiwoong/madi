@@ -83,19 +83,29 @@ function environment(): BlockEnv {
 
 const status = new Toast();
 const formatBar = new FormatBar((command) => applyFormat(command));
+// 코드 복사 — 편집기(Chromium)의 클립보드로 먼저 쓴다. Ctrl+C와 같은 길이라 Windows의 CRLF로 바꿔 넣고, 다른 프로그램이 클립보드를
+// 잠깐 쥐고 있어도 견딘다. 전에는 껍데기(WPF `Clipboard.SetText`)로만 썼는데, 클립보드를 지켜보는 프로그램(가상 머신의 클립보드 공유)이
+// 있는 Windows에서 빨간 오류가 났다(사용자 — "복사하면 빨간 에러남", Ctrl+C는 됐다). 껍데기는 이 길이 막혔을 때만.
+/** 확인 실행만 — 편집기의 길을 건너뛰고 껍데기의 길(Win32)을 시험한다. */
+let copyThroughHost = false;
 const codeCopy = new CodeCopyButton(async (text) => {
-  try {
-    if (hasHost) {
-      const reply = await ask<"copied">({ type: "copyText", text });
-      if (!reply.ok) throw new Error(reply.message);
-    } else {
-      // 브라우저로 띄운 개발 화면 — 껍데기가 없다.
+  let first: unknown = null;
+  if (!copyThroughHost) {
+    try {
       await navigator.clipboard.writeText(text);
+      return "editor";
+    } catch (error) {
+      first = error;
     }
-    return true;
+  }
+  try {
+    if (!hasHost) throw first;
+    const reply = await ask<"copied">({ type: "copyText", text });
+    if (!reply.ok) throw new Error(reply.message);
+    return "host";
   } catch (error) {
     status.say(`코드를 복사하지 못했습니다: ${error instanceof Error ? error.message : String(error)}`, true);
-    return false;
+    return null;
   }
 });
 const band = new ConflictBand(() => post({ type: "reload" }), () => save());
@@ -863,20 +873,25 @@ async function runSmoke(message: Extract<HostMessage, { type: "smoke" }>): Promi
       break;
     }
     case "hoverCode": {
-      // 사람이 마우스를 첫 코드 블록의 둘째 줄에 올린 것처럼 — 그 자리가 보이게 굴린 뒤 그려진 줄 위에서 mousemove.
-      let first: number | null = null;
+      // 사람이 마우스를 코드 블록(회색 상자로 그린 것 — 다이어그램 · 수식은 그림이라 뺀다)의 둘째 줄에 올린 것처럼 — 그 자리가 보이게
+      // 굴린 뒤 그려진 줄 위에서 mousemove. `last`면 문서의 마지막 블록(위에 그림 블록들이 있는 자리).
+      const starts: number[] = [];
       syntaxTree(view.state).iterate({
         enter(node) {
-          if (first !== null) return false;
-          if (node.name === "FencedCode") first = node.from;
-          return undefined;
+          if (node.name !== "FencedCode") return undefined;
+          const info = node.node.getChild("CodeInfo");
+          const word = info ? view.state.sliceDoc(info.from, info.to).trim().toLowerCase() : "";
+          if (!["mermaid", "math", "katex"].includes(word)) starts.push(node.from);
+          return false;
         },
       });
-      if (first === null) break;
-      view.dispatch({ effects: EditorView.scrollIntoView(first, { y: "center" }) });
+      const start = message.last ? starts.at(-1) : starts[0];
+      if (start === undefined) break;
+      view.dispatch({ effects: EditorView.scrollIntoView(start, { y: "center" }) });
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      const lines = view.contentDOM.querySelectorAll<HTMLElement>(".cm-md-line-code");
-      const line = lines[1] ?? lines[0];
+      const second = view.state.doc.lineAt(start).number + 1;
+      const lines = [...view.contentDOM.querySelectorAll<HTMLElement>(".cm-md-line-code")];
+      const line = lines.find((element) => view.state.doc.lineAt(view.posAtDOM(element)).number === second) ?? lines[0];
       if (!line) break;
       const box = line.getBoundingClientRect();
       line.dispatchEvent(new MouseEvent("mousemove", {
@@ -885,6 +900,7 @@ async function runSmoke(message: Extract<HostMessage, { type: "smoke" }>): Promi
       break;
     }
     case "codeCopyPress":
+      copyThroughHost = message.via === "host";
       document.querySelector<HTMLElement>("#codecopy:not([hidden])")
         ?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
       break;

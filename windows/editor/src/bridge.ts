@@ -38,10 +38,10 @@ export type HostMessage =
   | { type: "smoke"; action: "select"; from: number; to: number }
   /** 서식 막대의 단추를 사람이 누른 것처럼. */
   | { type: "smoke"; action: "formatPress"; command: string }
-  /** 첫 코드 블록을 보이게 굴리고 그 둘째 줄에 마우스를 올린 것처럼(mousemove). */
-  | { type: "smoke"; action: "hoverCode" }
-  /** 코드 복사 단추를 사람이 누른 것처럼(mousedown). */
-  | { type: "smoke"; action: "codeCopyPress" };
+  /** 첫(`last`면 마지막) 코드 블록을 보이게 굴리고 그 둘째 줄에 마우스를 올린 것처럼(mousemove). */
+  | { type: "smoke"; action: "hoverCode"; last?: boolean }
+  /** 코드 복사 단추를 사람이 누른 것처럼(mousedown). `via: "host"`면 껍데기의 길(Win32)로. */
+  | { type: "smoke"; action: "codeCopyPress"; via?: "editor" | "host" };
 
 /** 편집기가 물은 것의 답 — `id`로 짝을 짓는다. */
 export type Reply =
@@ -131,7 +131,7 @@ export type EditorMessage =
       renderedLines: number;
       codeKeyword: string | null;
       formatBar: { shown: boolean; buttons: string[] };
-      codeCopy: { shown: boolean; label: string; language: string | null };
+      codeCopy: { shown: boolean; label: string; language: string | null; via: string | null; inside: boolean | null };
       toast: { text: string; shown: boolean };
     }
   | { type: "settings"; settings: unknown }
