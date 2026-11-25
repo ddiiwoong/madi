@@ -481,9 +481,18 @@ internal sealed class SmokeRun(MainWindow window, string directory)
             await WaitFor("state", message => Flag(message, "dirty"));
             await WaitFor("state", message => !Flag(message, "dirty"), seconds: 10); // 자동 저장
             var bolded = Encoding.UTF8.GetString(await File.ReadAllBytesAsync(path));
-            var toast = Field(await Digest(), "toast");
-            Check("서식 막대 — 굵게를 누르면 고른 글만 **로 감싸고 자동 저장, 알림이 뜬다",
-                bolded == text.Replace("첫 일", "**첫 일**", StringComparison.Ordinal) && toast == "저장했습니다", new { toast });
+            await Task.Delay(300);
+            var toast = Child(await Digest(), "toast");
+            Check("서식 막대 — 굵게를 누르면 고른 글만 **로 감싸고 자동 저장한다(자동 저장은 알림을 띄우지 않는다)",
+                bolded == text.Replace("첫 일", "**첫 일**", StringComparison.Ordinal) && !Flag(toast, "shown"), new { toast, length = bolded.Length });
+
+            // 메뉴(…) — 메뉴 막대가 하던 것. Windows 11 모양의 메뉴(Fluent)로 뜨는지 찍는다.
+            window.OpenMenu(byKeyboard: false);
+            await Task.Delay(500);
+            var menuOpen = window.MenuIsOpen;
+            WindowFrame.Capture(window, Path.Combine(directory, "menu.png"));
+            window.CloseMenu();
+            Check("메뉴(…) — 제목 막대의 단추로 연다", menuOpen);
 
             // 제목 막대 — 빈 자리는 창 끌기(2), 단추는 누르기(1), 맨 위 끝은 크기 바꾸기(12).
             var bar2 = window.Chrome;

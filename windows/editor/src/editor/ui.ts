@@ -104,8 +104,8 @@ export class Toast {
     this.root.hidden = true;
   }
 
-  /** 확인 실행이 본다 — 마지막으로 띄운 글. */
-  get message(): string {
-    return this.last;
+  /** 확인 실행이 본다 — 마지막으로 띄운 글과 지금 떠 있는지. */
+  get report(): { text: string; shown: boolean } {
+    return { text: this.last, shown: !this.root.hidden };
   }
 }

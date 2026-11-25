@@ -62,6 +62,7 @@ test("앞뒤 공백과 줄 앞의 블록 표식은 감싸지 않는다", () => {
   assert.equal(run("«# 제목»", bold), "# **«제목»**");
   assert.equal(run("«- [ ] 할 일»", bold), "- [ ] **«할 일»**");
   assert.equal(run("앞«   »뒤", bold), null, "공백만 고르면 할 것이 없다");
+  assert.equal(run("«**»글**", bold), "**«**»**글**", "표식만 고른 것은 꾸민 글이 아니다 — 지우지 않는다");
 });
 
 test("여러 줄은 줄마다", () => {
@@ -106,6 +107,7 @@ test("목록 — 글머리 · 번호(들여쓰기마다 다시 센다) · 할 �
   assert.equal(run("- «가\n- 나»", block("bullet")), "«가\n나»");
   assert.equal(run("«1. 가\n2. 나»", block("bullet")), "«- 가\n- 나»", "번호 목록을 글머리로");
   assert.equal(run("«가\n  나\n  다\n라»", block("numbered")), "1. «가\n  1. 나\n  2. 다\n2. 라»");
+  assert.equal(run("«가\n  나\n다\n  라»", block("numbered")), "1. «가\n  1. 나\n2. 다\n  1. 라»", "바깥 항목 뒤의 안쪽은 1부터 다시");
   assert.equal(run("«- 가\n- 나»", block("numbered")), "«1. 가\n2. 나»");
   assert.equal(run("«1. 가\n2. 나»", block("numbered")), "«가\n나»");
   assert.equal(run("‸할 일", block("task")), "- [ ] ‸할 일");

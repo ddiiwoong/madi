@@ -55,7 +55,7 @@ let info: DocumentInfo = { path: null, name: untitled, kind: "markdown", stream:
 let mode: Mode = { kind: "markdown", source: false, follow: false, separator: "\n" };
 let savedDoc: Text;
 /** 저장을 보냈을 때의 글과 그 꼴 — `saved`가 오면 그것이 디스크의 글이다. */
-let saving: { doc: Text; encoding: TextEncodingName; bom: boolean } | null = null;
+let saving: { doc: Text; encoding: TextEncodingName; bom: boolean; autosave: boolean } | null = null;
 let conflict = false;
 let autosaveTimer: number | undefined;
 let lastAtEnd = true;
@@ -694,9 +694,9 @@ function suggestedName(): string {
   return `${clean || untitled}.md`;
 }
 
-function prepareSave() {
+function prepareSave(autosave = false) {
   const { bytes, encoding, bom } = bytesForSave(view.state.sliceDoc(), info.stream);
-  saving = { doc: view.state.doc, encoding, bom };
+  saving = { doc: view.state.doc, encoding, bom, autosave };
   return bytesToBase64(bytes);
 }
 
@@ -711,7 +711,7 @@ function save(autosave = false): void {
   }
   if (autosave && (conflict || mode.follow)) return;
   cancelAutosave();
-  post({ type: "save", bytes: prepareSave(), autosave });
+  post({ type: "save", bytes: prepareSave(autosave), autosave });
 }
 
 function saveAs(): void {
@@ -733,6 +733,7 @@ function cancelAutosave(): void {
 }
 
 function saved(path: string, name: string): void {
+  const wasAutosave = saving?.autosave === true;
   if (saving) {
     savedDoc = saving.doc;
     if (saving.encoding !== info.stream.encoding || saving.bom !== info.stream.bom) {
@@ -751,7 +752,8 @@ function saved(path: string, name: string): void {
     conflict = false;
     band.shown = false;
   }
-  status.say("저장했습니다");
+  // 자동 저장은 알리지 않는다 — 쓰다 쉴 때마다 알림이 뜬다(전의 상태 줄은 조용히 바뀌었다). 손으로 저장했을 때만.
+  if (!wasAutosave) status.say("저장했습니다");
   postState();
   // 저장하는 동안 더 고쳤으면 다시 잡는다.
   if (isDirty()) scheduleAutosave();
@@ -851,7 +853,7 @@ async function runSmoke(message: Extract<HostMessage, { type: "smoke" }>): Promi
         tasks: view.dom.querySelectorAll(".cm-md-task").length,
         picker: picker.report,
         formatBar: formatBar.report,
-        toast: status.message,
+        toast: status.report,
         colors: {
           background: getComputedStyle(view.dom).backgroundColor,
           text: getComputedStyle(view.contentDOM).color,

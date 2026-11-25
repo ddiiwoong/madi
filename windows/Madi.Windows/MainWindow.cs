@@ -340,6 +340,10 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    internal bool MenuIsOpen => burger.IsOpen;
+
+    internal void CloseMenu() => burger.IsOpen = false;
+
     /// <summary>편집기의 테마 색으로 — 제목 막대, 창 바탕(크기를 바꾸는 동안 보인다), 창 테두리, 메뉴의 밝기.</summary>
     private void ApplyChrome(ChromeColors colors)
     {

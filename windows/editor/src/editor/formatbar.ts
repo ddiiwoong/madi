@@ -91,15 +91,21 @@ export class FormatBar {
   /** 편집기에 붙인다 — 고르는 동안 숨기기, 굴리면 따라가기. */
   attach(view: EditorView): void {
     this.view = view;
-    view.contentDOM.addEventListener("mousedown", () => {
+    // 누름은 포인터 이벤트로 — 놓는 것(pointerup)이 창 밖에서 일어나도, 창이 초점을 잃어도 풀린다. 마우스 이벤트로 셌더니 누름만 있고
+    // 뗌이 없는 경우(만든 mousedown — 할 일 상자를 누른 확인 실행)에 막대가 다시는 뜨지 않았다.
+    view.contentDOM.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
       this.pointerDown = true;
       this.hide();
     });
-    window.addEventListener("mouseup", () => {
+    const release = () => {
       if (!this.pointerDown) return;
       this.pointerDown = false;
       this.schedule();
-    });
+    };
+    window.addEventListener("pointerup", release);
+    window.addEventListener("pointercancel", release);
+    window.addEventListener("blur", release);
     view.scrollDOM.addEventListener("scroll", () => this.schedule(), { passive: true });
     window.addEventListener("resize", () => this.schedule());
   }

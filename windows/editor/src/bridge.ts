@@ -123,7 +123,7 @@ export type EditorMessage =
       renderedLines: number;
       codeKeyword: string | null;
       formatBar: { shown: boolean; buttons: string[] };
-      toast: string;
+      toast: { text: string; shown: boolean };
     }
   | { type: "settings"; settings: unknown }
   | { type: "openPath"; path: string }
