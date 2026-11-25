@@ -37,15 +37,28 @@ function lineTexts(doc: Text, first: number, last: number): string[] {
 
 const imageLine = /^\s*!\[([^\]]*)\]\(\s*(<[^>]+>|[^\s)]+)(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)\s*$/;
 
+/** 앞머리 — 맨 위의 `---`부터 닫는 줄까지. 닫는 줄을 찾느라 문서 끝까지 읽지 않는다(500줄). 없으면 null. */
+export function frontMatterSpan(doc: Text): (Span & { fields: FrontMatterField[] }) | null {
+  if (doc.lines < 2 || doc.line(1).text !== "---") return null;
+  const front = parseFrontMatter(lineTexts(doc, 1, Math.min(doc.lines, 500)));
+  return front ? { ...span(doc, 1, front.closingLine + 1), fields: front.fields } : null;
+}
+
+/**
+ * 파일을 열었을 때의 캐럿 — 앞머리가 있으면 그 다음 줄의 처음(카드로 보이게 — macOS판은 앞머리를 편집기 밖의 카드로 떼어 낸다), 없으면
+ * 문서의 처음. 캐럿이 맨 처음이면 앞머리가 원문으로 펼쳐진 채 열렸다(사용자 — "프론트매터 보여주는것도 아래 --- 부분이 이상해").
+ */
+export function openingCaret(doc: Text): number {
+  const front = frontMatterSpan(doc);
+  return front ? Math.min(front.to + 1, doc.length) : 0;
+}
+
 export function renderedBlocks(state: EditorState): RenderedBlock[] {
   const doc = state.doc;
   const blocks: RenderedBlock[] = [];
 
-  // 앞머리 — 맨 위의 `---`부터 닫는 줄까지. 닫는 줄을 찾느라 문서 끝까지 읽지 않는다(500줄).
-  if (doc.lines >= 2 && doc.line(1).text === "---") {
-    const front = parseFrontMatter(lineTexts(doc, 1, Math.min(doc.lines, 500)));
-    if (front) blocks.push({ kind: "frontmatter", ...span(doc, 1, front.closingLine + 1), fields: front.fields });
-  }
+  const front = frontMatterSpan(doc);
+  if (front) blocks.push({ kind: "frontmatter", ...front });
   const frontEnd = blocks[0]?.to ?? -1;
 
   // 맨 위 단계의 블록만 본다 — 목록 · 인용 안의 표나 코드 블록은 원문 그대로(macOS판도 그 자리에서는 그리지 않는다).

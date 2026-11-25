@@ -6,11 +6,12 @@
 
 import type { EditorState } from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
+import { frontMatterSpan } from "./blocks.ts";
 
 export type InlineStyle = "strong" | "emphasis" | "strike" | "code" | "link" | "done";
 export type AlertKind = "note" | "tip" | "important" | "warning" | "caution";
 export type LineStyle =
-  | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "quote" | "code" | "fence"
+  | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "quote" | "code" | "fence" | "frontmatter"
   | `alert-${AlertKind}`;
 
 export type PreviewMark =
@@ -70,11 +71,23 @@ export function previewMarks(state: EditorState, ranges: readonly Range[], caret
   };
   const tree = syntaxTree(state);
 
+  // 앞머리는 마크다운이 아니라 YAML이다 — 캐럿이 들어가 원문으로 펼쳐지면(카드는 `blocks.ts`) 마크다운으로 꾸미지 않는다. 마크다운으로
+  // 읽으면 닫는 `---`가 구분선이나 위 줄들을 제목으로 만드는 밑줄(Setext)이 되고, `  - 항목`이 글머리 ●가 됐다. 한 장의 고정폭 상자로,
+  // `---` 두 줄은 흐리게(코드 블록의 울타리처럼).
+  const front = frontMatterSpan(doc);
+  const inFront = (node: { from: number; to: number }) => front !== null && node.from <= front.to && node.to <= front.to + 1;
+  if (front && ranges.some((range) => range.from <= front.to && range.to >= front.from)) {
+    lineStyle(front.from, front.to, "frontmatter");
+    marks.push({ type: "line", at: front.from, style: "fence" });
+    marks.push({ type: "line", at: doc.line(front.lastLine).from, style: "fence" });
+  }
+
   for (const { from, to } of ranges) {
     tree.iterate({
       from,
       to,
       enter(node) {
+        if (inFront(node)) return false;
         const name = node.name;
         const heading = /^(?:ATX|Setext)Heading([1-6])$/.exec(name);
         if (heading) {
@@ -216,6 +229,7 @@ export function previewMarks(state: EditorState, ranges: readonly Range[], caret
       from,
       to,
       enter(node) {
+        if (inFront(node)) return false;
         if (node.name === "CodeMark" && node.node.parent?.name === "FencedCode") {
           marks.push({ type: "line", at: doc.lineAt(node.from).from, style: "fence" });
         }

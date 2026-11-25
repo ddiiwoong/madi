@@ -156,6 +156,15 @@ export const look = EditorView.theme({
   [firstOf(".cm-md-line-code")]: { borderTopLeftRadius: "10px", borderTopRightRadius: "10px", paddingTop: "10px" },
   [lastOf(".cm-md-line-code")]: { borderBottomLeftRadius: "10px", borderBottomRightRadius: "10px", paddingBottom: "10px" },
   ".cm-md-line-fence": { color: v("dim"), fontSize: `calc(${v("size")} - 3px)`, letterSpacing: "0.02em" },
+  // 펼친 앞머리(캐럿이 카드 안으로 들어갔을 때) — YAML 원문. 코드 블록처럼 한 장의 상자, `---` 두 줄은 울타리처럼 흐리게(`fence`).
+  ".cm-md-line-frontmatter": {
+    fontFamily: v("font-code"), fontSize: `calc(${v("size")} - 1.5px)`, lineHeight: "1.6", color: v("code-text"),
+    background: v("code-background"), padding: "0 18px",
+  },
+  [firstOf(".cm-md-line-frontmatter")]: { borderTopLeftRadius: "10px", borderTopRightRadius: "10px", paddingTop: "8px" },
+  [lastOf(".cm-md-line-frontmatter")]: { borderBottomLeftRadius: "10px", borderBottomRightRadius: "10px", paddingBottom: "8px" },
+  // 문법 색도 마크다운의 것이라 끈다 — `key: 값` 줄 밑의 `---`를 제목 밑줄로 읽어 줄들이 굵게, `  - 항목`의 `-`가 흐리게 칠해졌다.
+  ".cm-md-line-frontmatter span": { fontWeight: "inherit", fontStyle: "inherit", color: "inherit", textDecoration: "inherit" },
   ".cm-md-bullet": { display: "inline-block", minWidth: "0.9em", fontSize: "0.5em", verticalAlign: "0.3em", color: v("text") },
   ".cm-md-rule": { display: "inline-block", width: "100%", borderTop: `1px solid ${v("rule")}`, verticalAlign: "middle" },
   // 할 일 — 조용한 둥근 상자. 끝낸 일은 회색 체크(글은 흐리게 긋는다 — macOS판과 같은 규칙).

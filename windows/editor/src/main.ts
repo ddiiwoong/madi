@@ -21,6 +21,7 @@ import { pageRule } from "./core/output.ts";
 import { highlighting, koreanPhrases, look, modeExtensions, reconfigure, reconfigureEnvironment, type Mode } from "./editor/setup.ts";
 import { linkAt, livePreview } from "./editor/preview.ts";
 import { blockReport, blockServices, forgetImages, type BlockEnv } from "./editor/blocks.ts";
+import { openingCaret } from "./core/blocks.ts";
 import { applyTheme, onSystemAppearanceChange } from "./editor/theme.ts";
 import { Picker, type PickItem } from "./editor/picker.ts";
 import { ConflictBand, NewLinesPill, OutlinePanel, Toast } from "./editor/ui.ts";
@@ -617,7 +618,10 @@ async function open(message: Extract<HostMessage, { type: "open" }>): Promise<vo
     band.shown = false;
     pill.hide();
     if (!reload) forgetImages();
-    view.setState(makeState(opened.text));
+    // 꾸며 보는 마크다운이면 캐럿을 앞머리 다음 줄에 — 앞머리가 카드로 보이게(맨 처음이면 원문으로 펼쳐진 채 열린다).
+    const fresh = makeState(opened.text);
+    const caret = kind === "markdown" && !mode.source ? openingCaret(fresh.doc) : 0;
+    view.setState(caret > 0 ? fresh.update({ selection: EditorSelection.cursor(caret) }).state : fresh);
     savedDoc = view.state.doc;
     if (mode.follow) scrollToEnd();
     else view.focus();

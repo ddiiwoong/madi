@@ -2,6 +2,7 @@
 
 import type { EditorState } from "@codemirror/state";
 import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
+import { frontMatterSpan } from "./blocks.ts";
 
 export interface Heading {
   level: number;
@@ -13,8 +14,13 @@ export interface Heading {
 export function outline(state: EditorState, timeout = 200): Heading[] {
   const tree = ensureSyntaxTree(state, state.doc.length, timeout) ?? syntaxTree(state);
   const headings: Heading[] = [];
+  // 앞머리(YAML)는 건너뛴다 — 마크다운으로 읽으면 `key: 값` 줄 밑의 닫는 `---`가 제목 밑줄(Setext)이 되어 `title: …`이 목차의 첫
+  // 제목이 됐고, 다른 이름으로 저장할 때의 이름(첫 제목)도 그것이었다.
+  const front = frontMatterSpan(state.doc);
   tree.iterate({
+    from: front ? front.to + 1 : 0,
     enter(node) {
+      if (front && node.from <= front.to) return node.name === "Document" ? undefined : false;
       const atx = /^ATXHeading([1-6])$/.exec(node.name);
       const setext = /^SetextHeading([12])$/.exec(node.name);
       if (!atx && !setext) return;

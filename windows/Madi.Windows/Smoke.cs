@@ -450,6 +450,11 @@ internal sealed class SmokeRun(MainWindow window, string directory)
             var path = Path.Combine(folder, "blocks.md");
             await File.WriteAllBytesAsync(path, Utf8(BlocksDocument));
             await window.LoadFileAsync(path);
+            // 연 그대로 — 캐럿이 앞머리 다음 줄(5)이라 앞머리가 카드다. 전에는 캐럿이 맨 처음이라 원문(YAML)이 펼쳐진 채 열렸다.
+            var fresh = await Digest();
+            Check("앞머리 — 파일을 열면 카드로 보인다(캐럿은 앞머리 다음 줄)",
+                Number(fresh, "caretLine") == 5 && Counts(Child(Child(fresh, "blocks"), "kinds")).GetValueOrDefault("frontmatter") == 1,
+                new { caretLine = Number(fresh, "caretLine"), kinds = Child(Child(fresh, "blocks"), "kinds") });
             window.Post(new { type = "smoke", action = "caret", at = 1_000_000 });
             var expected = new Dictionary<string, int> { ["frontmatter"] = 1, ["table"] = 1, ["mermaid"] = 1, ["math"] = 2, ["image"] = 1 };
             var digest = await DigestUntil(message =>
