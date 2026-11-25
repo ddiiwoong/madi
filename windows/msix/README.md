@@ -39,7 +39,7 @@ CI(`.github/workflows/windows.yml`)가 꾸러미를 만들고, **시험 인증�
    | `MSIX_PUBLISHER_DISPLAY_NAME` | Package/Properties/PublisherDisplayName |
    | `MSIX_DISPLAY_NAME` | 2에서 예약한 이름(`마디`면 두지 않아도 된다) |
 
-4. **꾸러미** — 판 번호(`windows/Madi.Windows/Madi.Windows.csproj`의 `Version`, 지금 0.0.1)를 정하고 Actions ▸ windows ▸ Run workflow.
+4. **꾸러미** — 판 번호(`windows/Madi.Windows/Madi.Windows.csproj`의 `Version`, 지금 0.1.4)를 정하고 Actions ▸ windows ▸ Run workflow.
    `Madi-windows-x64-msix`를 받아 `.msix`를 꺼낸다. 판은 올릴 때마다 높아야 한다(네 번째 마디는 늘 0 — `build.ps1`이 붙인다).
 5. **제출**(Partner Center ▸ 그 앱 ▸ 제출 시작):
    - 가격 및 사용 가능 여부: 무료, 시장

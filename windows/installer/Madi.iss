@@ -8,7 +8,7 @@
 ;   %APPDATA%\Madi).
 
 #ifndef AppVersion
-  #define AppVersion "0.0.1"
+  #define AppVersion "0.1.4"
 #endif
 #ifndef SourceDir
   #define SourceDir "..\..\out\Madi"
