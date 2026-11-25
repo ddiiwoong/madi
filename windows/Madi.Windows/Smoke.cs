@@ -441,10 +441,10 @@ internal sealed class SmokeRun(MainWindow window, string directory)
                 clipboard = Clipboard.ContainsText() ? Clipboard.GetText() : null;
             }
             var pressed = Child(await Digest(), "codeCopy");
-            Check("코드 복사 — 코드 블록 위에 마우스를 두면 단추가 블록 안에 뜨고, 누르면 펜스를 뺀 코드가 편집기의 길로 클립보드에(CRLF) · '복사됨'",
+            Check("코드 복사 — 코드 블록 위에 마우스를 두면 단추가 블록 안에 뜨고, 누르면 펜스를 뺀 코드가 클립보드에(Win32, CRLF) · '복사됨'",
                 Flag(Child(hovered, "codeCopy"), "shown") && Flag(Child(hovered, "codeCopy"), "inside")
                 && Field(Child(hovered, "codeCopy"), "language") == "swift"
-                && clipboard == expectedCode && Field(pressed, "label") == "복사됨" && Field(pressed, "via") == "editor",
+                && clipboard == expectedCode && Field(pressed, "label") == "복사됨" && Field(pressed, "via") == "host",
                 new { hovered = Child(hovered, "codeCopy"), pressed, clipboard });
         });
 
@@ -491,13 +491,13 @@ internal sealed class SmokeRun(MainWindow window, string directory)
                 written == BlocksDocument.Replace("- [ ] 첫 일", "- [x] 첫 일", StringComparison.Ordinal),
                 written.Length);
 
-            // 코드 복사 — 그림 블록 여섯 아래의 블록에서도 단추가 그 블록의 그려진 상자 안에(편집기가 화면에서 잰다), 그리고 껍데기의 길
-            // (Win32, 편집기의 길이 막혔을 때)로도 클립보드에 CRLF로.
+            // 코드 복사 — 그림 블록 여섯 아래의 블록에서도 단추가 그 블록의 그려진 상자 안에(편집기가 화면에서 잰다 — 블록 위젯의 margin이
+            // 높이 지도를 어긋나게 해 단추가 블록 위로 떴던 자리), 누르면 그 블록의 코드가 클립보드에.
             Clipboard.SetText("복사 전");
             window.Activate();
             window.Post(new { type = "smoke", action = "hoverCode", last = true });
             var below = await DigestUntil(message => Flag(Child(message, "codeCopy"), "shown"), seconds: 10);
-            window.Post(new { type = "smoke", action = "codeCopyPress", via = "host" });
+            window.Post(new { type = "smoke", action = "codeCopyPress" });
             var hostCode = "const a = 1;\r\nconst b = 2;";
             string? hostClipboard = null;
             for (var tries = 0; tries < 30 && hostClipboard != hostCode; tries++)
@@ -506,7 +506,7 @@ internal sealed class SmokeRun(MainWindow window, string directory)
                 hostClipboard = Clipboard.ContainsText() ? Clipboard.GetText() : null;
             }
             var hostPressed = Child(await Digest(), "codeCopy");
-            Check("코드 복사 — 그림 블록들 아래에서도 단추가 그 블록 안 오른쪽 위에, 껍데기의 길(Win32)로도 클립보드에",
+            Check("코드 복사 — 그림 블록 여섯 아래의 블록에서도 단추가 그 블록 안 오른쪽 위에, 누르면 그 블록의 코드가 클립보드에",
                 Flag(Child(below, "codeCopy"), "inside") && hostClipboard == hostCode && Field(hostPressed, "via") == "host",
                 new { below = Child(below, "codeCopy"), hostPressed, hostClipboard });
         });

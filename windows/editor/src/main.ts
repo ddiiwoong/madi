@@ -83,26 +83,18 @@ function environment(): BlockEnv {
 
 const status = new Toast();
 const formatBar = new FormatBar((command) => applyFormat(command));
-// 코드 복사 — 편집기(Chromium)의 클립보드로 먼저 쓴다. Ctrl+C와 같은 길이라 Windows의 CRLF로 바꿔 넣고, 다른 프로그램이 클립보드를
-// 잠깐 쥐고 있어도 견딘다. 전에는 껍데기(WPF `Clipboard.SetText`)로만 썼는데, 클립보드를 지켜보는 프로그램(가상 머신의 클립보드 공유)이
-// 있는 Windows에서 빨간 오류가 났다(사용자 — "복사하면 빨간 에러남", Ctrl+C는 됐다). 껍데기는 이 길이 막혔을 때만.
-/** 확인 실행만 — 편집기의 길을 건너뛰고 껍데기의 길(Win32)을 시험한다. */
-let copyThroughHost = false;
+// 코드 복사 — 껍데기가 Win32로 바로 넣는다(`TextClipboard.cs`). 전의 WPF `Clipboard.SetText`(OLE)는 클립보드를 지켜보는 프로그램(가상
+// 머신의 클립보드 공유)이 있는 Windows에서 빨간 오류가 났다(사용자 — "복사하면 빨간 에러남", Ctrl+C는 됐다). 편집기의
+// `navigator.clipboard`는 WebView2에서 막혔다(확인 실행에서 봄) — 껍데기가 없는 개발 화면에서만 쓴다.
 const codeCopy = new CodeCopyButton(async (text) => {
-  let first: unknown = null;
-  if (!copyThroughHost) {
-    try {
-      await navigator.clipboard.writeText(text);
-      return "editor";
-    } catch (error) {
-      first = error;
-    }
-  }
   try {
-    if (!hasHost) throw first;
-    const reply = await ask<"copied">({ type: "copyText", text });
-    if (!reply.ok) throw new Error(reply.message);
-    return "host";
+    if (hasHost) {
+      const reply = await ask<"copied">({ type: "copyText", text });
+      if (!reply.ok) throw new Error(reply.message);
+      return "host";
+    }
+    await navigator.clipboard.writeText(text);
+    return "editor";
   } catch (error) {
     status.say(`코드를 복사하지 못했습니다: ${error instanceof Error ? error.message : String(error)}`, true);
     return null;
@@ -900,7 +892,6 @@ async function runSmoke(message: Extract<HostMessage, { type: "smoke" }>): Promi
       break;
     }
     case "codeCopyPress":
-      copyThroughHost = message.via === "host";
       document.querySelector<HTMLElement>("#codecopy:not([hidden])")
         ?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
       break;

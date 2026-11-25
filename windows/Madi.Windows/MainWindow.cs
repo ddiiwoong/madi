@@ -656,8 +656,8 @@ public sealed partial class MainWindow : Window
     /// 줄로 읽는다(Edge도 복사할 때 CRLF로 바꾼다). 다른 앱이 클립보드를 쥐고 있으면 WPF가 몇 번 다시 해 보고 그래도 안 되면 던진다.
     /// </summary>
     /// <summary>
-    /// 편집기가 자기 클립보드(Chromium)로 못 썼을 때만 온다(main.ts). WPF의 <c>Clipboard</c>(OLE)가 아니라 Win32로 바로 —
-    /// <see cref="TextClipboard"/>. 줄 끝은 Windows의 CRLF로.
+    /// 코드 복사 단추(편집기)의 글을 클립보드에 — WPF의 <c>Clipboard</c>(OLE)가 아니라 Win32로 바로(<see cref="TextClipboard"/>).
+    /// 줄 끝은 Windows의 CRLF로(Edge도 복사할 때 CRLF로 바꾼다).
     /// </summary>
     private object CopyText(int id, string text)
     {
