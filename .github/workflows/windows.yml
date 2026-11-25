@@ -1,0 +1,257 @@
+# 마디 Windows판(windows/) — 편집기(TypeScript)를 시험 · 묶고, WPF 껍데기를 빌드하고, 띄워서 확인한다.
+#
+# 확인 실행(`Madi.exe --smoke`)은 시험 문서를 열어 편집기를 지나도 바이트가 그대로인지 견주고, 블록 그림(표 · Mermaid · KaTeX ·
+# 그림 · 앞머리) · 명령 팔레트 · 빠른 열기 · 한 번만 켜기 · madi:// · 설정(테마 · 다크) · PDF를 지나며 편집기 화면을 찍는다. 끝에 이 단계가
+# 화면 전체를 한 장 더 찍는다(창 테두리까지 — 마지막 화면은 GitHub 다크). 그 뒤 설치 파일을 만들어 깔고 지워 본다.
+# 받을 것: Madi-windows-x64-setup(설치 파일), Madi-windows-x64(그대로 풀어 Madi.exe를 연다), smoke.
+name: windows
+
+on:
+  push:
+    branches: ["windows/**"]
+  pull_request:
+    paths: ["windows/**", ".github/workflows/windows.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  app:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: windows/editor/package-lock.json
+
+      - name: 편집기 — 시험 · 형 검사 · 묶기
+        working-directory: windows/editor
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+          npm run check
+          npm run build
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: 껍데기 시험(파일 로직)
+        run: dotnet run --project windows/Madi.Windows.Tests/Madi.Windows.Tests.csproj -c Release
+
+      - name: 껍데기 빌드(x64, .NET 포함)
+        run: |
+          dotnet publish windows/Madi.Windows/Madi.Windows.csproj -c Release -r win-x64 --self-contained true -o out/Madi
+          Get-ChildItem out/Madi/editor | Select-Object Name, Length | Format-Table -AutoSize
+
+      - name: 띄워서 확인
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP "smoke"
+          $process = Start-Process -FilePath "out/Madi/Madi.exe" -ArgumentList @("--smoke", "`"$out`"") -PassThru
+          $null = $process.Handle   # 끝 코드를 읽으려면 손잡이를 먼저 잡아 둔다
+          $deadline = (Get-Date).AddMinutes(4)
+          while (-not (Test-Path "$out/result.json") -and -not $process.HasExited -and (Get-Date) -lt $deadline) {
+            Start-Sleep -Milliseconds 500
+          }
+          Start-Sleep -Seconds 1
+          try {
+            Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+            $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bitmap = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
+            $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+            $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+            $bitmap.Save("$out/screen.png")
+          } catch {
+            Write-Warning "화면을 찍지 못했다: $_"
+          }
+          if (-not $process.WaitForExit(60000)) {
+            $process.Kill()
+            throw "마디가 끝나지 않았다"
+          }
+          if (Test-Path "$out/result.json") { Get-Content "$out/result.json" -Encoding utf8 }
+          Write-Host "끝 코드: $($process.ExitCode)"
+          if ($process.ExitCode -ne 0) { throw "확인 실패 — 끝 코드 $($process.ExitCode)" }
+
+      # 설치 파일 — 사용자별(관리자 권한 없이), 서명 없음. Inno Setup이 러너에 없으면 Chocolatey로 받는다.
+      - name: 설치 파일 만들기
+        run: |
+          $iscc = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
+          if (-not (Test-Path $iscc)) { throw "Inno Setup이 없다: $iscc" }
+          $version = (Select-Xml -Path windows/Madi.Windows/Madi.Windows.csproj -XPath "//Version").Node.InnerText
+          & $iscc "/DAppVersion=$version" "/DSourceDir=$PWD\out\Madi" "/DOutputDir=$PWD\out\installer" windows/installer/Madi.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC 실패 — $LASTEXITCODE" }
+          Get-ChildItem out/installer | Select-Object Name, Length | Format-Table -AutoSize
+
+      # 깐 대로 놓였는지(파일 · madi:// · 연결 프로그램 · 기본 앱 목록) 보고, 지우면 그 항목이 다 없어지는지 본다.
+      - name: 설치 · 지우기 확인
+        run: |
+          $setup = (Get-ChildItem out/installer/*-setup.exe | Select-Object -First 1).FullName
+          $installed = Start-Process -FilePath $setup -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -PassThru -Wait
+          if ($installed.ExitCode -ne 0) { throw "설치 실패 — $($installed.ExitCode)" }
+          $app = Join-Path $env:LOCALAPPDATA "Programs\Madi\Madi.exe"
+          $checks = [ordered]@{
+            "Madi.exe" = Test-Path $app
+            "편집기" = Test-Path (Join-Path $env:LOCALAPPDATA "Programs\Madi\editor\index.html")
+            "madi://" = ((Get-ItemProperty "HKCU:\Software\Classes\madi\shell\open\command" -ErrorAction SilentlyContinue)."(default)" -like "*Madi.exe*%1*")
+            ".md 연결 프로그램" = $null -ne (Get-ItemProperty "HKCU:\Software\Classes\.md\OpenWithProgids" -Name "Madi.Markdown" -ErrorAction SilentlyContinue)
+            ".log 연결 프로그램" = $null -ne (Get-ItemProperty "HKCU:\Software\Classes\.log\OpenWithProgids" -Name "Madi.Text" -ErrorAction SilentlyContinue)
+            "기본 앱 목록" = ((Get-ItemProperty "HKCU:\Software\RegisteredApplications" -ErrorAction SilentlyContinue).Madi -eq "Software\Madi\Capabilities")
+          }
+          $checks | Format-Table -AutoSize
+          if ($checks.Values -contains $false) { throw "설치가 빠뜨린 것이 있다" }
+          $uninstaller = Join-Path $env:LOCALAPPDATA "Programs\Madi\unins000.exe"
+          Start-Process -FilePath $uninstaller -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
+          # 지우기는 자기 사본을 임시 폴더에서 돌려 곧 돌아온다 — 다 지울 때까지 기다린다.
+          $deadline = (Get-Date).AddSeconds(90)
+          while ((Test-Path $app) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
+          Start-Sleep -Seconds 2
+          $left = [ordered]@{
+            "Madi.exe" = Test-Path $app
+            "madi://" = Test-Path "HKCU:\Software\Classes\madi"
+            ".md 연결 프로그램" = $null -ne (Get-ItemProperty "HKCU:\Software\Classes\.md\OpenWithProgids" -Name "Madi.Markdown" -ErrorAction SilentlyContinue)
+            "기본 앱 목록" = $null -ne (Get-ItemProperty "HKCU:\Software\RegisteredApplications" -Name "Madi" -ErrorAction SilentlyContinue)
+            "Software\Madi" = Test-Path "HKCU:\Software\Madi"
+          }
+          $left | Format-Table -AutoSize
+          if ($left.Values -contains $true) { throw "지우고도 남은 것이 있다" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Madi-windows-x64-setup
+          path: out/installer/*.exe
+
+      # Microsoft Store용 MSIX(서명 없음 — Store가 서명한다). 꾸러미 이름 · 게시자는 저장소 변수(Settings ▸ Variables)에서 —
+      # Partner Center에서 이름을 예약하고 받는 값이다(windows/msix/README.md). 없으면 시험용 값.
+      - name: MSIX 만들기
+        env:
+          MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME || 'Madi.Test' }}
+          MSIX_PUBLISHER: ${{ vars.MSIX_PUBLISHER || 'CN=Madi Test' }}
+          MSIX_PUBLISHER_DISPLAY_NAME: ${{ vars.MSIX_PUBLISHER_DISPLAY_NAME || 'ddiiwoong' }}
+          MSIX_DISPLAY_NAME: ${{ vars.MSIX_DISPLAY_NAME || '마디' }}
+        run: |
+          ./windows/msix/build.ps1 -Source out/Madi -Output out/msix -IdentityName $env:MSIX_IDENTITY_NAME `
+            -Publisher $env:MSIX_PUBLISHER -PublisherDisplayName $env:MSIX_PUBLISHER_DISPLAY_NAME -DisplayName $env:MSIX_DISPLAY_NAME
+          Get-ChildItem out/msix/*.msix | Select-Object Name, Length | Format-Table -AutoSize
+
+      # 꾸러미 안에서 정말 도는지 — 시험 인증서(이 실행에서 만들고 버린다)로 사본에 서명해 깔고, 확인 실행을 꾸러미 안에서 한 번 더
+      # 돌린다(터미널 별칭 madi.exe로 켠다). Store에 올리는 것은 서명하지 않은 원본이다.
+      - name: MSIX 설치 · 확인 실행 · 지우기
+        env:
+          MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME || 'Madi.Test' }}
+          MSIX_PUBLISHER: ${{ vars.MSIX_PUBLISHER || 'CN=Madi Test' }}
+        run: |
+          $msix = (Get-ChildItem out/msix/*.msix | Select-Object -First 1).FullName
+          $test = Join-Path $env:RUNNER_TEMP "madi-test.msix"
+          Copy-Item $msix $test
+          $cert = New-SelfSignedCertificate -Type Custom -Subject $env:MSIX_PUBLISHER -KeyUsage DigitalSignature `
+            -FriendlyName "Madi MSIX CI test" -CertStoreLocation "Cert:\CurrentUser\My" `
+            -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3", "2.5.29.19={text}")
+          $password = [guid]::NewGuid().ToString()
+          $pfx = Join-Path $env:RUNNER_TEMP "madi-test.pfx"
+          $cer = Join-Path $env:RUNNER_TEMP "madi-test.cer"
+          Export-PfxCertificate -Cert $cert -FilePath $pfx -Password (ConvertTo-SecureString $password -AsPlainText -Force) | Out-Null
+          Export-Certificate -Cert $cert -FilePath $cer | Out-Null
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\10.*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1
+          & $signtool.FullName sign /fd SHA256 /f $pfx /p $password $test
+          if ($LASTEXITCODE -ne 0) { throw "signtool 실패 — $LASTEXITCODE" }
+          Import-Certificate -FilePath $cer -CertStoreLocation Cert:\LocalMachine\TrustedPeople | Out-Null
+          try {
+            Add-AppxPackage -Path $test
+            $package = Get-AppxPackage -Name $env:MSIX_IDENTITY_NAME
+            if (-not $package) { throw "깔리지 않았다" }
+            Write-Host "깔림: $($package.PackageFullName) · $($package.InstallLocation)"
+
+            $alias = Join-Path $env:LOCALAPPDATA "Microsoft\WindowsApps\madi.exe"
+            if (-not (Test-Path $alias)) { throw "터미널 별칭이 없다: $alias" }
+            $out = Join-Path $env:RUNNER_TEMP "smoke-msix"
+            $process = Start-Process -FilePath $alias -ArgumentList @("--smoke", "`"$out`"") -PassThru
+            $null = $process.Handle
+            $deadline = (Get-Date).AddMinutes(4)
+            while (-not (Test-Path "$out/result.json") -and -not $process.HasExited -and (Get-Date) -lt $deadline) {
+              Start-Sleep -Milliseconds 500
+            }
+            if (-not $process.WaitForExit(90000)) { $process.Kill(); throw "꾸러미 안의 마디가 끝나지 않았다" }
+            if (-not (Test-Path "$out/result.json")) { throw "꾸러미 안의 확인 실행이 결과를 남기지 않았다 — 끝 코드 $($process.ExitCode)" }
+            $result = Get-Content "$out/result.json" -Raw -Encoding utf8 | ConvertFrom-Json
+            $passed = @($result.scenarios | Where-Object pass).Count
+            Write-Host "꾸러미 안의 확인 실행: ok=$($result.ok), $passed/$(@($result.scenarios).Count), 꾸러미=$($result.packageFamilyName), 끝 코드 $($process.ExitCode)"
+            @($result.scenarios | Where-Object { -not $_.pass }) | ForEach-Object { Write-Warning "$($_.name): $($_.detail | ConvertTo-Json -Compress -Depth 6)" }
+            if (-not $result.packageFamilyName -or $result.packageFamilyName -notlike "$($env:MSIX_IDENTITY_NAME)_*") { throw "꾸러미 밖에서 돌았다" }
+            if (-not $result.ok -or $process.ExitCode -ne 0) { throw "꾸러미 안의 확인 실행 실패" }
+          }
+          finally {
+            Get-AppxPackage -Name $env:MSIX_IDENTITY_NAME | Remove-AppxPackage
+          }
+          if (Get-AppxPackage -Name $env:MSIX_IDENTITY_NAME) { throw "지우고도 남았다" }
+          # 다음 단계(WACK)가 같은 사본을 깐다 — 시험 인증서는 그 뒤에 거둔다.
+          "MSIX_TEST=$test" >> $env:GITHUB_ENV
+          "MSIX_TEST_CERT=$($cert.Thumbprint)" >> $env:GITHUB_ENV
+
+      # Windows App Certification Kit — Store가 제출 전에 돌려 보라고 하는 검사. 지금은 결과를 적고 남기기만 한다(실패해도 멈추지 않는다).
+      - name: MSIX 인증 키트(WACK)
+        run: |
+          $appcert = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\App Certification Kit\appcert.exe"
+          $report = Join-Path $env:RUNNER_TEMP "smoke-msix\wack.xml"
+          try {
+            if (-not (Test-Path $appcert)) { Write-Warning "WACK가 없다: $appcert"; return }
+            & $appcert reset | Out-Host
+            & $appcert test -appxpackagepath $env:MSIX_TEST -reportoutputpath $report | Out-Host
+            if (-not (Test-Path $report)) { Write-Warning "WACK가 보고서를 남기지 않았다 — 끝 코드 $LASTEXITCODE"; return }
+            [xml]$xml = Get-Content $report -Raw
+            Write-Host "WACK 전체: $($xml.REPORT.OVERALL_RESULT)"
+            foreach ($test in $xml.SelectNodes("//TEST")) {
+              $result = $test.RESULT.InnerText.Trim()
+              $line = "$result  $($test.NAME)"
+              if ($result -eq "FAIL") {
+                $messages = @($test.SelectNodes(".//MESSAGE") | ForEach-Object { $_.TEXT }) -join " / "
+                Write-Warning "$line — $messages"
+              } else {
+                Write-Host $line
+              }
+            }
+          }
+          finally {
+            Get-AppxPackage -Name "${{ vars.MSIX_IDENTITY_NAME || 'Madi.Test' }}" | Remove-AppxPackage
+            Get-ChildItem Cert:\LocalMachine\TrustedPeople | Where-Object Thumbprint -eq $env:MSIX_TEST_CERT | Remove-Item
+          }
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Madi-windows-x64-msix
+          path: |
+            out/msix/*.msix
+            ${{ runner.temp }}/smoke-msix/result.json
+            ${{ runner.temp }}/smoke-msix/wack.xml
+            ${{ runner.temp }}/smoke-msix/*.png
+          if-no-files-found: warn
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke
+          path: |
+            ${{ runner.temp }}/smoke/*.png
+            ${{ runner.temp }}/smoke/result.json
+            ${{ runner.temp }}/smoke/*.md
+            ${{ runner.temp }}/smoke/*.txt
+            ${{ runner.temp }}/smoke/*.log
+            ${{ runner.temp }}/smoke/*.pdf
+            ${{ runner.temp }}/smoke/blocks/*.md
+            ${{ runner.temp }}/smoke/links/*.md
+            ${{ runner.temp }}/smoke/settings/*.json
+          if-no-files-found: warn
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Madi-windows-x64
+          path: out/Madi

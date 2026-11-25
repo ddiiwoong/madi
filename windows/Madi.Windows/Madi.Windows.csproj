@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    마디 Windows판의 껍데기 — WPF 창 하나와 WebView2. 편집기와 문서 로직은 ../editor(TypeScript · CodeMirror 6)에 있고,
+    여기는 파일 · 창 · (다음 단계의) 메뉴 · 대화상자만 맡는다. XAML은 쓰지 않는다 — 창이 하나라 코드로 짓는 편이 짧다.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <!-- WPF 꾸러미는 System.IO를 저절로 들이지 않는다(System.Windows.Shapes.Path와 겹친다) — 파일마다 적는다. -->
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>Madi</AssemblyName>
+    <RootNamespace>Madi</RootNamespace>
+    <Product>마디</Product>
+    <Version>0.1.4</Version>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- macOS판 아이콘에서 만든 것(windows/msix/make-assets.py). 창 제목 줄 · 작업 표시줄 · 탐색기 · 설치 파일이 쓴다. -->
+    <ApplicationIcon>Madi.ico</ApplicationIcon>
+    <!-- WPF가 언어마다 싣는 리소스 어셈블리 — 한국어와 영어만. -->
+    <SatelliteResourceLanguages>ko;en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4370.26" />
+  </ItemGroup>
+
+  <!-- 편집기 묶음(`npm run build`의 dist/)을 exe 옆의 editor/로. 먼저 빌드하지 않으면 빈 창이 뜬다. -->
+  <ItemGroup>
+    <Content Include="..\editor\dist\**\*"
+             Link="editor\%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Target Name="RequireEditorBundle" BeforeTargets="Build">
+    <Error Condition="!Exists('..\editor\dist\index.html')"
+           Text="편집기 묶음이 없습니다 — windows\editor에서 npm ci 와 npm run build 를 먼저 돌립니다." />
+  </Target>
+
+</Project>

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<!-- 앱에 든 것만 읽는다. CodeMirror는 스타일을 <style>로 넣으므로 style-src만 inline을 연다. 원격 그림(https)은 설정을
+     켰을 때만 편집기가 만든다(`src/editor/blocks.ts`) — CSP는 그 길만 열어 둔다. KaTeX · Mermaid는 `diagrams/`에서. -->
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: https:">
+<title>마디</title>
+<link rel="stylesheet" href="style.css">
+<script type="module" src="main.js"></script>
+</head>
+<body>
+<div id="app">
+  <div id="picker" role="dialog" aria-label="고르기" hidden>
+    <input type="text" spellcheck="false" autocomplete="off" aria-label="거르기">
+    <ol role="listbox"></ol>
+    <p class="empty" hidden>맞는 것이 없습니다</p>
+  </div>
+  <div id="band" class="band" role="alert" hidden>
+    <span class="band-text">이 파일이 다른 곳에서 바뀌었습니다. 여기서 고친 것은 아직 저장하지 않았습니다. ‘다시 읽기’는 여기서 고친 것을 버리고,
+      ‘내 것 지키기’는 다른 곳에서 바뀐 것을 덮어씁니다.</span>
+    <button id="band-reload" type="button">다시 읽기</button>
+    <button id="band-keep" type="button">내 것 지키기</button>
+  </div>
+  <div id="body">
+    <nav id="outline" aria-label="목차" hidden>
+      <h2>목차</h2>
+      <ol></ol>
+      <p class="empty">제목이 없습니다</p>
+    </nav>
+    <div id="editor"></div>
+  </div>
+  <div id="formatbar" role="toolbar" aria-label="서식" hidden></div>
+  <div id="formatbar-headings" role="menu" aria-label="제목 단계" hidden></div>
+  <button id="codecopy" type="button" hidden></button>
+  <button id="newlines" class="pill" type="button" hidden></button>
+  <div id="toast" role="status" aria-live="polite" hidden></div>
+</div>
+</body>
+</html>

@@ -6,6 +6,29 @@
 `make release`는 `project.yml`의 `MARKETING_VERSION`과 같은 판의 절(`## [x.y.z]`)이 여기 있어야
 만들고, 그 절을 그대로 릴리스 노트로 씁니다. 순서는 [릴리스하기](docs/releasing.md).
 
+## [0.1.4-windows.1] - 2026-11-26
+
+처음 내는 **Windows판**(미리 보기). macOS판 0.1.4의 편집 기능을 옮겼다 — 같은 글을 같은 규칙으로 그리고 고친다.
+Windows 10 · 11, x64(ARM64 PC에서는 Windows의 x64 에뮬레이션으로 돈다 — Windows 11 ARM64 가상 머신에서 써 봤다).
+WPF 창 + WebView2 + CodeMirror 6이고, macOS판과 다른 점은 [windows/README.md](windows/README.md).
+
+### 더한 것
+
+- 라이브 프리뷰 — 캐럿이 없는 줄은 표식을 숨긴다. 표 · 할 일 상자 · 알림 · Mermaid · KaTeX · 그림 · 메타데이터 카드, 코드 블록의
+  문법 색(12개 언어)과 복사 단추.
+- 글을 고르면 뜨는 서식 막대, 서식 단축키(macOS판의 ⌘를 Ctrl로), 제목 막대 하나(메뉴는 `…` · F10).
+- 자동 저장(닫을 때 묻지 않는다), 바깥에서 바뀐 파일 — 끝에 붙은 줄은 따라 들이고, 부딪치면 띠로 묻는다. 로그 따라 보기.
+- 테마 여덟 · 다크 · 글꼴 · 글자 크기 · 줄 사이 · 글 폭, 빠른 열기(`Ctrl+Alt+O`) · 명령 팔레트(`Ctrl+Shift+P`) · 목차.
+- PDF 내보내기 · 프린트, `madi://` 링크, `.md` 연결, 한 번만 켜기, 새 판 확인(받는 페이지를 연다).
+- UTF-8 · UTF-16 문서는 BOM · 줄 끝(CRLF · LF)을 그대로 저장한다. EUC-KR 문서는 읽고, 저장하면 UTF-8이 된다(제목 옆에 알린다).
+
+### 알아 둘 것
+
+- **서명하지 않은 설치 파일**이다. 처음 실행하면 SmartScreen이 "Windows의 PC 보호"를 띄운다 — `추가 정보` ▸ `실행`. Microsoft Store판을
+  준비하고 있다(Store가 서명한다).
+- 사용자별로 깔린다(관리자 권한 없이, `%LOCALAPPDATA%\Programs\Madi`). Microsoft Edge WebView2 런타임이 있어야 한다(Windows 11에는 들어 있다).
+- 새 판 확인은 앱을 바꿔 넣지 않고 받는 페이지만 연다(서명하지 않아 받은 것이 진짜인지 가릴 수 없다 — macOS판의 서명하지 않은 빌드와 같은 규칙).
+
 ## [0.1.4] - 2026-11-21
 
 ### 더한 것

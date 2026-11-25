@@ -18,11 +18,120 @@
   끌기 선택의 굴러가는 속도 · 2026-11-06~07 기능의 앱 확인(검증하지 못한 것) · Notion · Confluence · Obsidian 테마를
   그 앱과 나란히 놓고 견주기(색은 공개 자료로 맞췄다).
 - **결정이 필요한 것**: 문서를 바깥 LLM으로 보낼지(교정) · `web-prototype/`
-  남길지 · Windows · EPUB이 이 앱의 일인지 · 문서 변환 가져오기 · 코드 블록 주석 번역.
+  남길지 · EPUB이 이 앱의 일인지 · 문서 변환 가져오기 · 코드 블록 주석 번역. (Windows는 정했다 — 아래 '끝난 것'의 Windows판 0단계.)
 - **이 Mac에서는 잴 수 없는 것**: 언어 팩 받기(모든 쌍이 설치돼 있다) · Intel 실기 · 스크린샷 4~5번
   (2배율 화면이 필요하다).
 
 ## 끝난 것
+
+- **Windows판 모양 다시**(2026-11-25, 사용자 — "윈도우 버전 디자인이 별로인데... https://loomm.ai/mark 이거 느낌"). 가지
+  `windows/design`(MSIX 위), 자세한 것은 `windows/README.md`. Mark의 로고 · 그림은 쓰지 않았다 — 느낌(조용한 창, 문서 같은 글)만.
+  - 창: 메뉴 막대 · 아래 상태 줄을 걷고 제목 막대 하나(`TitleBar.cs` · `WindowFrame.cs` — WindowChrome, Windows 11 둥근 모서리, 테마 색,
+    최대화 때 테두리 폭만큼 안으로). 목차 · 찾기 · 원본 보기 · 열기 · 메뉴(…, F10) · 창 단추(Segoe Fluent Icons). 메뉴 · 대화상자는 WPF의
+    Fluent 테마(`ThemeMode`, 아직 '실험' 표시 WPF0001)로 Windows 11 모양 — 밝기는 편집기 테마를 따른다. 알림은 아래 가운데에 잠깐(자동 저장은
+    알리지 않음), 인코딩 · 줄 끝은 보기 ▸ 문서 정보와 제목 옆 표시(알아야 할 때만).
+  - 편집기: 서식 막대(`editor/formatbar.ts`, 아이콘 lucide 1.79.0 ISC) · 서식 명령(`core/formatting.ts` — macOS판 `MarkdownFormatting`을
+    옮기고 시험도 옮겼다) · 서식 단축키와 메뉴 ▸ 서식. 큰 제목, 둥근 코드 블록(울타리는 블록 밖에 캐럿이 있으면 숨김 — macOS판과 같다) ·
+    표(둥근 테두리, 글 폭 다) · 알림, 조용한 할 일 상자 · 인용 막대, 얇은 스크롤 막대, 찾기 칸 · 고르는 칸 · 목차 다듬기.
+  - 고치며 찾은 버그: **붙여 넣은 글의 줄 끝** — CodeMirror는 정한 줄 끝만 줄로 나눠, LF 문서에 CRLF 클립보드 글을 붙이면 `\r`이, CRLF
+    문서에 LF 글을 붙이면 `\n`이 줄 안에 남아 저장하면 줄 끝이 섞였다(1단계부터). 3단계의 링크 `append`도 CRLF 문서에서 같았다.
+    `clipboardInputFilter`와 `normalizeLineBreaks`로 맞췄다. 그리고 서식 막대가 확인 실행의 만든 mousedown(뗌 없음) 뒤로 다시는 뜨지 않았다 —
+    누름을 포인터 이벤트로 센다.
+  - 시험: Node 54개(새 규칙을 열여섯 군데 망가뜨려 보니 처음엔 열넷이 빨갰다 — macOS판에서 옮긴 시험이 비워 둔 둘(표식만 고름 · 바깥 항목 뒤
+    번호)을 더했고 다시 열여섯 다, 기준선 앞뒤 초록), xunit 25개. 확인 실행 34/34(실행 45550653685 — 모양 일곱: 서식 막대가 뜸 · 굵게 · 메뉴 ·
+    제목 막대의 판정 2/1/12 · 최대화 · EUC-KR 표시 · 다크 제목 막대 #0D1117), 꾸러미 안에서도 34/34, WACK PASS.
+  - 못 본 것: 실제 마우스로 끌기 · 두 번 눌러 최대화 · Windows 11의 스냅 배치(최대화 단추에 올리면 뜨는 것 — 마디가 그린 단추라 아직 안
+    뜬다. `HTMAXBUTTON`을 답하면 된다), 고배율 화면, 한글 조합 중 서식 막대.
+  - **코드 복사 단추**(2026-11-25, 사용자가 UTM의 Windows 11 ARM64 VM에서 써 보고 — "코드 부분 복사 버튼이 없음"). macOS판에는 0.1.0부터
+    있었는데 옮기지 않았다. `core/codecopy.ts`(macOS판 `CodeBlockCopy`의 규칙 — 펜스 빼기 · 펜스 들여쓰기만큼 빼기 · 닫지 않은 블록) ·
+    `editor/codecopy.ts`(마우스가 회색 상자 위면 오른쪽 위에, 가려지면 보이는 칸 맨 위에) · 껍데기 `copyText`(클립보드에 CRLF로). 인용 안의
+    블록은 줄마다 붙은 `>`를 빼는 규칙이 없어 단추를 달지 않는다. 시험: Node 7개(규칙 여덟 군데를 망가뜨려 여덟 다 빨강, 기준선 초록),
+    헤드리스 Chromium으로 마우스 · 누르기 · 클립보드 · 굴려서 맨 위에 붙기, 확인 실행에 실제 클립보드를 읽는 항목 하나.
+  - **앞머리의 닫는 `---`**(2026-11-25, 같은 VM에서 — "프론트매터 보여주는것도 아래 --- 부분이 이상해"). 파일을 열면 캐럿이 맨 처음이라
+    앞머리가 카드가 아닌 원문으로 펼쳐졌고, 그 원문을 **마크다운으로** 꾸몄다 — 목록 뒤의 닫는 `---`는 가로줄, `key: 값` 뒤의 `---`는 위
+    줄들을 제목으로 만드는 밑줄(굵게 · 목차의 첫 제목 · 다른 이름으로 저장할 때의 이름까지), `  - 항목`은 글머리 ●(2단계부터). 이제 열면
+    캐럿이 앞머리 다음 줄(macOS판처럼 카드로 보인다), 카드를 눌러 펼치면 YAML 원문 그대로 한 장의 고정폭 상자(`---`는 흐리게, 문법 색 끔),
+    목차는 앞머리를 건너뛴다. 시험: Node 3개(고침을 여섯 군데 되돌려 여섯 다 빨강, 기준선 초록), 확인 실행에 '열면 카드' 하나.
+- **Windows판 Store용 MSIX 준비**(2026-11-23, 사용자 — "Store용 MSIX 묶기를 준비해줘"). 가지 `windows/msix`(3단계 위), 자세한 것은
+  `windows/msix/README.md`. 고른 까닭: 개인 · 한국에서 서명 없이 SmartScreen 경고를 없애는 길은 Store뿐이다(Azure Artifact Signing은 개인이면
+  미국 · 캐나다만, EV는 2024년부터 경고를 없애 주지 않는다 — 2026-11-23 Microsoft 문서).
+  - 꾸러미: `AppxManifest.xml`(연결 프로그램 · `madi://` · 터미널 별칭 `madi.exe`를 선언으로, 언어 ko-KR, runFullTrust), `build.ps1`(makepri ·
+    makeappx, 서명 없음), 로고 25장과 `Madi.ico`(`make-assets.py`가 macOS판 아이콘에서 — exe · 창 · 설치 파일도 이제 마디 아이콘).
+  - 앱: `PackageIdentity` — Store판이면 새 판 확인을 하지 않고(메뉴 · 명령 팔레트에서 빠짐, Store가 업데이트), 기본 앱 설정을 꾸러미의 앱 ID로.
+  - CI: MSIX를 만들고, 그 실행에서 만든 시험 인증서로 사본을 서명해 깔아 확인 실행을 **꾸러미 안에서** 다시 돌린다(27/27, 결과의
+    `packageFamilyName`으로 꾸러미 안이었는지 본다). Windows App Certification Kit 전체 PASS — 선택 검사 `Blocked executables` 하나만 FAIL
+    (런타임 dll의 글자와 마디의 `ShellExecute`를 적는다). 실행 45130508987.
+  - 고치며 안 것: 매니페스트 머리 주석에 적은 `{{…}}`를 채우지 못한 자리로 읽어 첫 CI가 멈췄다 — 이름이 든 자리(`{{\w+}}`)만 본다.
+  - 사람이 할 것: Store 개발자 계정(개인, 무료) · 이름 예약 · 제품 ID 값 셋을 저장소 변수로(`MSIX_IDENTITY_NAME` · `MSIX_PUBLISHER` ·
+    `MSIX_PUBLISHER_DISPLAY_NAME`) · 스크린샷(1366×768 이상) · 연령 등급 · 제출. 개인정보처리방침 URL이 반드시 있어야 해서
+    `windows/PRIVACY.md`를 썼다(master에 머지된 뒤의 주소를 쓴다).
+  - 못 본 것: 실제 Store 제출과 인증, ARM64 꾸러미, Windows 10에서의 설치(CI는 Windows Server 2025).
+- **Windows판 3단계**(2026-11-23, 사용자 — "3단계 진행해줘"). 가지 `windows/stage-3`(2단계 위), 자세한 것은 `windows/README.md`.
+  - 편집기: 코드 블록의 문법 색(macOS판 `CodeHighlighter`의 이름 · 별명 + TypeScript, 언어 꾸러미는 처음 보일 때 — esbuild 나눠 묶기),
+    내보내기(흰 종이 · 기본 테마 · 캐럿 줄도 꾸밈 · 메타데이터 숨김 · 문서 전체 — CodeMirror의 `viewState.printing`을 내내 켠다),
+    Ctrl+P = 프린트(`window.print()`, macOS판 ⌘P — 2단계의 Ctrl+P 빠른 열기는 Ctrl+Alt+O로), 링크 명령(줄 · 찾기 · 끝에 더하기 — macOS판
+    `appendEdit` 규칙), 설정에 프린트 여백 · 방향 · 용지와 새 판 확인(기본 켜짐).
+  - 껍데기: `MadiUrl`(macOS판 `MadiURL`과 같은 세 명령 — 다른 점 하나, **네트워크 경로를 받지 않는다**: Windows는 `\\서버\…`를 여는
+    순간 NTLM 로그인 정보를 보낸다), `SingleInstance`(뮤텍스 + 그 사용자만 여는 파이프, 두 번째 마디는 넘기고 끝남), PDF(`PrintToPdfAsync`,
+    `PrintLayout` — macOS판과 같은 여백 · 용지), `ReleaseFeed` · `Updates`(하루 한 번, 그 판에 Windows판 설치 파일이 있을 때만 알림, 서명이
+    없어 바꿔 넣지 않고 받는 페이지만), LLM 키(macOS판처럼 확인까지 — 자격 증명 관리자, 문서는 보내지 않음), 설치 파일(Inno Setup, 사용자별,
+    연결 프로그램 · `madi://` · 기본 앱 목록), 메뉴 파일 ▸ PDF · 프린트 · 프린트 설정, 도구, 도움말.
+  - 시험: Node 39개(3단계 규칙을 열세 군데 망가뜨려 보니 열셋 다 빨개졌다 — 기준선이 앞뒤로 초록인 것도 봤다), xunit 25개(건너뜀 0 —
+    자격 증명 관리자 시험도 돌았다). 확인 실행 스물일곱 가지 모두 통과(실행 45046642431) — 2단계의 열여섯에 코드 색 · 한 번만 켜기 ·
+    madi:// open · append · new · new?path · 덮지 않음 · 네트워크 거절 · PDF 셋(흰 종이 · 177/196줄 · 블록 다섯 그림, 여섯 쪽, 다크로 돌아옴).
+    CI가 설치 파일(49.9MB)을 깔아 여섯 항목이 놓이고, 지우면 다섯 항목이 다 없어지는 것도 본다. PDF 첫 쪽은 이 Mac에서 `sips`로 그려 봤다.
+  - 고치며 안 것: 처음 PDF 시험 문서를 그림 폴더 밖에 두어 PDF에 "그림이 없습니다"가 찍혔다 — 시험은 통과했다(블록 수만 셌다). 문서를
+    옮기고, 블록 다섯이 다 그려졌는지(`ready`)까지 보게 했다.
+  - 못 본 것: 껍데기(C#) 규칙의 망가뜨려 보기(이 Mac에 .NET이 없다 — xunit만), 실제 키보드(Ctrl+P 프린트 창, 한글 조합), 실제 프린터,
+    탐색기에서 두 번 눌러 열기 · 브라우저에서 madi:// 누르기, 고배율 화면 — 사용자의 Windows PC에서.
+  - 사람이 정할 것: **서명**(Authenticode 인증서 — 돈이 든다. 있어야 SmartScreen 경고가 줄고 업데이트를 바꿔 넣을 수 있다), Windows판을
+    **언제 · 어떤 판 번호로 낼지**(지금 0.0.1, macOS판과 같은 태그에 설치 파일을 함께 올리면 새 판 확인이 찾는다), **winget**(판을 낸 뒤).
+- **Windows판 2단계**(2026-11-22, 사용자 — "2단계 진행해줘"). 가지 `windows/stage-2`(1단계 위), 자세한 것은 `windows/README.md`.
+  - 편집기: 블록 그림(`core/blocks.ts`가 찾고 `editor/blocks.ts`의 StateField가 위젯으로 — 줄을 통째로 갈아 끼우는 장식은 ViewPlugin이
+    낼 수 없다) — 메타데이터 카드 · 표 · Mermaid · KaTeX · 그림, 캐럿이 닿으면 원문. 할 일 상자(누르면 글자 하나) · 알림 다섯 · 끝낸 일.
+    테마 여덟 × 라이트 · 다크(macOS판 `ThemePalette.swift`에서 기계로 옮긴 `core/palette.ts`, CSS 변수), 글꼴 · 크기 · 줄 사이 · 글 폭,
+    빠른 열기 · 명령 팔레트(`core/fuzzy.ts` — macOS판 `FuzzyMatch` 그대로, `core/catalog.ts`의 명령 표).
+  - 껍데기: `SettingsStore`(`%APPDATA%\Madi\settings.json` · `recent.json`, 받은 설정을 그대로 저장하고 모든 창에), `QuickOpenSources`
+    (macOS판과 같은 상한 · 건너뛰는 폴더), `ImageFiles`(문서 폴더 기준, 그림 확장자만 25MB까지), 보기 메뉴(테마 · 모양 · 글꼴 · 크기 · 줄 사이 ·
+    글 폭 · 원격 그림 · 메타데이터 접기), 파일 ▸ 빠른 열기 · 최근 문서. 첫 화면부터 설정의 테마(페이지 전에 넣는 스크립트). 브라우저 확대는 껐다.
+  - 시험: Node 35개(2단계 규칙을 스물네 군데 망가뜨려 보니 처음엔 스물이 빨개졌다 — 놓친 넷은 시험이 비어 있던 자리라 시험을 더했고,
+    다시 해 보니 스물넷 다), xunit 14개. 확인 실행 열여섯 가지 모두 통과(실행 45036964070) — 1단계의 아홉에 블록 그림(여섯 모두 그려짐,
+    오류 없음) · 할 일 상자 · 명령 팔레트 · 빠른 열기 · 설정(GitHub 다크의 계산된 색 `rgb(13, 17, 23)` · 16px · `settings.json`).
+  - 고치며 안 것: (1) 거르기 시험 둘의 기대가 틀렸다 — macOS판의 점수로는 `회 사 의 견`(21)이 `2026 회의록`(16)보다 높다. 알고리즘이
+    아니라 시험을 고쳤다. (2) CI 화면에서 메타데이터 카드에 테두리가 없었다 — 위젯에 `md-card`를 붙이지 않았다(규칙만 있었다).
+  - 못 본 것: 실제 키보드(한글 조합, Ctrl+P · Ctrl+= 등이 WebView2 안에서 닿는지, 메뉴의 Alt), 원격 그림을 켠 뒤의 받기, 글꼴 목록에서
+    고른 글꼴의 이름이 Edge와 맞는지, 고배율 화면 — 사용자의 Windows PC에서. 코드 블록의 언어별 색은 아직 없다(3단계 후보).
+- **Windows판 1단계**(2026-11-22, 사용자 — "1단계 진행해줘"). 가지 `windows/stage-1`(0단계 위), 자세한 것은 `windows/README.md`.
+  - 편집기: 라이브 프리뷰(구문 트리 → `core/marks.ts` → CodeMirror 장식, 캐럿 줄은 원문), 원본 보기 · 따라 보기 · 목차 · 찾기(한국어 문구),
+    상태 줄, 고친 상태(`Text.eq`) · 자동 저장 1.5초, 끌어다 놓기, Ctrl+클릭 링크. 바깥 변경은 `TextStream`이 이어 읽고(덜 쓴 UTF-8 · UTF-16
+    끝은 기다리고, EUC-KR은 브라우저의 이어 읽기), 다르게 바뀌면 다른 가운데만(`docSplice`). 고친 것이 있으면 띠 · 자동 저장 멈춤.
+  - 껍데기: 메뉴 · 열기 · 저장 창, 창 여럿(WebView2 환경 하나), `DiskBaseline`(끝 4KB · 이어 세는 SHA-256) · `FileWatcher`(첫 신호에서 0.3초) ·
+    `AtomicFile`(임시 파일 → `File.Replace`). 쓴 바이트를 그 자리에서 기준으로 삼는다. 닫기: 이름 있는 문서는 저장하고 닫고, 아니면 묻는다.
+  - 시험: Node 24개(Core를 스물다섯 군데 망가뜨려 보니 스물다섯 다 빨개졌다), xunit 7개(CI). 확인 실행 다섯 가지 모두 통과(실행
+    45028999359) — 바이트 그대로 · 저장(BOM · CRLF 그대로, 내가 쓴 것을 바깥 변경으로 안 읽음) · 로그(따라감, 나눠 쓴 한 글자) ·
+    부딪침(띠, 자동 저장 멈춤, 내 것 지키기) · 화면.
+  - 고치며 안 것: (1) CodeMirror는 줄 끝을 한 자리로 센다 — CRLF 문서에서 글자 수로 센 바꿔 끼우기 자리를 그대로 쓰면 줄마다 한 자리씩
+    어긋난다. `docSplice`가 옮긴다(시험이 붙잡는다). (2) Node의 글 꼴 시험은 매개변수 속성(`constructor(readonly x)`)을 못 읽는다 —
+    풀어 썼다. (3) .NET 10의 `dotnet test`는 xunit v3의 VSTest 길을 받지 않는다 — 시험 프로젝트를 `dotnet run`으로 돌린다. (4) CI 화면에서
+    제목에 밑줄이 있었다 — CodeMirror 기본 색이 제목에 밑줄을 긋는다. 그 한 줄만 뺀 색을 쓴다.
+  - 못 본 것: 한글 조합 입력과 단축키가 WebView2 안에서 실제 키보드로 닿는지, 메뉴의 Alt 단축키(편집기에 초점이 있을 때), 고배율 화면 —
+    사용자의 Windows PC에서. 표 · 체크박스 · 그림 · 다이어그램 · 앞머리 카드 · 어두운 테마는 2단계.
+- **Windows판 0단계**(2026-11-22, 사용자 — "윈도우 버전 만들어줘 기능 동일하고", 고른 것: "번역 빼고 C안으로 0단계부터 시작해줘",
+  Windows PC 있음). 가지 `windows/stage-0`, 자세한 것은 `windows/README.md`.
+  - 구조(C안): 껍데기 C# · WPF(.NET 10) + WebView2, 편집기 · 로직 TypeScript + CodeMirror 6(`windows/editor`). macOS판의 Swift Core는
+    쓰지 않는다 — 그래서 전에 0단계에 적었던 'Core의 Windows 막힘 고치기'는 이 구조에 필요 없어 하지 않았다.
+  - 파일은 바이트로 넘기고 편집기가 읽는다. 줄 끝을 파일마다 골라(`EditorState.lineSeparator`) CRLF가 열기만 해도 LF가 되지 않게 했다 —
+    CodeMirror의 기본은 CRLF를 LF로 잇는다(시험이 그 사실도 붙잡는다). 인코딩은 UTF-8(BOM) · UTF-16(BOM) · EUC-KR · windows-1252 —
+    macOS판의 Latin-1 대신 EUC-KR을 먼저 본다(한국어 Windows의 옛 파일).
+  - 시험: Node 9개(이 Mac · CI 둘 다). Core를 열한 군데 망가뜨려 보니 열하나 다 빨개졌다. CI(`windows.yml`, `windows-latest`,
+    WebView2 157)의 확인 실행이 시험 문서 다섯(CP949 · UTF-16LE BOM · 섞인 줄 끝 · UTF-8 BOM CRLF · UTF-8 LF)을 열어 넷은 SHA-256이
+    파일과 같고 CP949는 `converted`. 실행 45026604256.
+  - 처음 빌드: WPF 꾸러미가 `System.IO`를 저절로 들이지 않아 실패(`Path` · `File` 없음) — 파일마다 적었다. 둘째: 통과했지만 CI 화면에서
+    편집기가 고정폭 기본 글꼴 · 여백 없음이었다. `style.css`의 `.cm-scroller`가 CodeMirror 기본 테마(클래스 둘)에 밀렸다 — 글꼴 · 글 폭을
+    `EditorView.theme`으로 옮기고, 확인 실행이 계산된 글꼴(`Pretendard, …`)까지 보게 했다. 셋째: Pretendard, 왼쪽 여백 43px, 통과.
+  - 이 Mac에서 편집기를 headless Chrome으로 찍으려 했으나 Chrome이 자기 샌드박스를 이 셸 안에서 열지 못했다 — CI의 WebView2 화면으로 봤다.
+    npm은 Node가 이 셸에서 인증서를 찾지 못해 `NODE_EXTRA_CA_CERTS=/etc/ssl/cert.pem`으로 돌렸다(설정 파일은 건드리지 않음).
+  - 못 본 것: 한글 조합 입력(CI에는 키보드가 없다 — 사용자가 Windows PC에서), 고배율 화면, Windows on ARM(x64만 빌드).
 
 - **0.1.4**(2026-11-21, 사용자 — "0.1.4 내줘"). 바깥 변경 다시 읽기 · 따라 보기 · 글 파일(`.txt` · `.log`). `make release` 3분 남짓
   (시험 1037개, 커밋 `53eeacb`, 빌드 116), 공증 `Accepted`, 앱 · DMG 둘 다 `Notarized Developer ID`. 태그 `v0.1.4`, Release에
@@ -31,7 +140,11 @@
   - CHANGELOG: 0.1.4에서 새로 생긴 것(`새 줄 N개 ↓`, 따라 보기)을 고친 항목은 '고친 것'에서 빼 '더한 것'에 합쳤다 — 0.1.3을 쓰던
     사람에게는 고친 것이 아니다. `.txt`를 쓴 그대로 여는 것은 '바꾼 것'(전에는 마크다운으로 그렸다).
   - 탭: `ddiiwoong/homebrew-tap` 가지 `madi-0.1.4`에 `make release`가 만든 `madi.rb`를 그대로 옮기고 PR #4를 올렸다(이번에는 `gh pr
-    create`가 됐다). 머지는 아직.
+    create`가 됐다). 사용자 — "탭 PR 머지하고 brew에 등록해줘": 머지했다(`eea9b0b`, `brew info`가 0.1.4). 등록(`brew install --cask
+    --adopt`)은 이 셸에서 막혔다 — Homebrew 7이 DMG를 `sandbox-exec` 안에서 풀고, 이미 샌드박스 안인 셸은 그것을 못 건다
+    (`sandbox_apply: Operation not permitted`, 끄는 `HOMEBREW_NO_SANDBOX_CASK`는 없어졌다). 앱 · Caskroom은 그대로. 사용자의 터미널에서 돌린다.
+    `/Applications/Madi.app`은 brew가 설치하지 않아(0.1.3을 DMG에서 복사해 넣었다) `brew install`이 'already an App'으로 멈췄던 것 —
+    `--adopt`는 cask가 `auto_updates true`라 판을 견주지 않고 있는 앱을 그대로 받는다.
   - 못 한 것: 다른 Mac(또는 새 계정)에서 DMG를 받아 여는 확인. `/Applications/Madi.app`(0.1.3)은 건드리지 않았다 — 자동 업데이트가
     하루 안에 받아 두었다가 끌 때 바꿔 넣는다. master는 아직 올리지 않았다(태그는 올렸다).
 
