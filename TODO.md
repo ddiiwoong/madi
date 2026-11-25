@@ -24,6 +24,24 @@
 
 ## 끝난 것
 
+- **Windows판 모양 다시**(2026-11-25, 사용자 — "윈도우 버전 디자인이 별로인데... https://loomm.ai/mark 이거 느낌"). 가지
+  `windows/design`(MSIX 위), 자세한 것은 `windows/README.md`. Mark의 로고 · 그림은 쓰지 않았다 — 느낌(조용한 창, 문서 같은 글)만.
+  - 창: 메뉴 막대 · 아래 상태 줄을 걷고 제목 막대 하나(`TitleBar.cs` · `WindowFrame.cs` — WindowChrome, Windows 11 둥근 모서리, 테마 색,
+    최대화 때 테두리 폭만큼 안으로). 목차 · 찾기 · 원본 보기 · 열기 · 메뉴(…, F10) · 창 단추(Segoe Fluent Icons). 메뉴 · 대화상자는 WPF의
+    Fluent 테마(`ThemeMode`, 아직 '실험' 표시 WPF0001)로 Windows 11 모양 — 밝기는 편집기 테마를 따른다. 알림은 아래 가운데에 잠깐(자동 저장은
+    알리지 않음), 인코딩 · 줄 끝은 보기 ▸ 문서 정보와 제목 옆 표시(알아야 할 때만).
+  - 편집기: 서식 막대(`editor/formatbar.ts`, 아이콘 lucide 1.79.0 ISC) · 서식 명령(`core/formatting.ts` — macOS판 `MarkdownFormatting`을
+    옮기고 시험도 옮겼다) · 서식 단축키와 메뉴 ▸ 서식. 큰 제목, 둥근 코드 블록(울타리는 블록 밖에 캐럿이 있으면 숨김 — macOS판과 같다) ·
+    표(둥근 테두리, 글 폭 다) · 알림, 조용한 할 일 상자 · 인용 막대, 얇은 스크롤 막대, 찾기 칸 · 고르는 칸 · 목차 다듬기.
+  - 고치며 찾은 버그: **붙여 넣은 글의 줄 끝** — CodeMirror는 정한 줄 끝만 줄로 나눠, LF 문서에 CRLF 클립보드 글을 붙이면 `\r`이, CRLF
+    문서에 LF 글을 붙이면 `\n`이 줄 안에 남아 저장하면 줄 끝이 섞였다(1단계부터). 3단계의 링크 `append`도 CRLF 문서에서 같았다.
+    `clipboardInputFilter`와 `normalizeLineBreaks`로 맞췄다. 그리고 서식 막대가 확인 실행의 만든 mousedown(뗌 없음) 뒤로 다시는 뜨지 않았다 —
+    누름을 포인터 이벤트로 센다.
+  - 시험: Node 54개(새 규칙을 열여섯 군데 망가뜨려 보니 처음엔 열넷이 빨갰다 — macOS판에서 옮긴 시험이 비워 둔 둘(표식만 고름 · 바깥 항목 뒤
+    번호)을 더했고 다시 열여섯 다, 기준선 앞뒤 초록), xunit 25개. 확인 실행 34/34(실행 45550653685 — 모양 일곱: 서식 막대가 뜸 · 굵게 · 메뉴 ·
+    제목 막대의 판정 2/1/12 · 최대화 · EUC-KR 표시 · 다크 제목 막대 #0D1117), 꾸러미 안에서도 34/34, WACK PASS.
+  - 못 본 것: 실제 마우스로 끌기 · 두 번 눌러 최대화 · Windows 11의 스냅 배치(최대화 단추에 올리면 뜨는 것 — 마디가 그린 단추라 아직 안
+    뜬다. `HTMAXBUTTON`을 답하면 된다), 고배율 화면, 한글 조합 중 서식 막대.
 - **Windows판 Store용 MSIX 준비**(2026-11-23, 사용자 — "Store용 MSIX 묶기를 준비해줘"). 가지 `windows/msix`(3단계 위), 자세한 것은
   `windows/msix/README.md`. 고른 까닭: 개인 · 한국에서 서명 없이 SmartScreen 경고를 없애는 길은 Store뿐이다(Azure Artifact Signing은 개인이면
   미국 · 캐나다만, EV는 2024년부터 경고를 없애 주지 않는다 — 2026-11-23 Microsoft 문서).
