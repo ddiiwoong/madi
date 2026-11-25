@@ -1,4 +1,4 @@
-// 편집기 둘레의 것 — 바깥 변경 띠, `새 줄 N개 ↓`, 목차 칸, 아래 상태 줄. index.html에 자리가 있다.
+// 편집기 둘레의 것 — 바깥 변경 띠, `새 줄 N개 ↓`, 목차 칸, 잠깐 뜨는 알림. index.html에 자리가 있다.
 
 import type { Heading } from "../core/outline.ts";
 
@@ -73,17 +73,39 @@ export class OutlinePanel {
   }
 }
 
-export class StatusBar {
-  private readonly message = element<HTMLSpanElement>("status-message");
-  private readonly info = element<HTMLSpanElement>("status-info");
+/**
+ * 잠깐 뜨는 알림 — 저장했다 · 설정이 바뀌었다 · 바깥에서 바뀌었다. 아래 가운데에 떴다가 사라진다(오류는 누를 때까지 남는다). 전의 아래
+ * 상태 줄을 대신한다 — 늘 보이던 인코딩 · 줄 끝은 제목 막대(바뀌는 꼴일 때만)와 `문서 정보`로 옮겼다.
+ */
+export class Toast {
+  private readonly root = element<HTMLDivElement>("toast");
   private timer: number | undefined;
-  say(text: string, isError = false): void {
-    this.message.textContent = text;
-    this.message.classList.toggle("error", isError);
-    window.clearTimeout(this.timer);
-    if (!isError) this.timer = window.setTimeout(() => { this.message.textContent = ""; }, 3000);
+  private last = "";
+
+  constructor() {
+    this.root.addEventListener("click", () => this.hide());
   }
-  describe(parts: string[]): void {
-    this.info.textContent = parts.filter(Boolean).join(" · ");
+
+  say(text: string, isError = false): void {
+    this.last = text;
+    this.root.textContent = text;
+    this.root.classList.toggle("error", isError);
+    this.root.hidden = false;
+    // 다시 띄우면 처음부터 — 나타나는 움직임을 다시 건다.
+    this.root.classList.remove("show");
+    void this.root.offsetWidth;
+    this.root.classList.add("show");
+    window.clearTimeout(this.timer);
+    if (!isError) this.timer = window.setTimeout(() => this.hide(), 2600);
+  }
+
+  hide(): void {
+    this.root.classList.remove("show");
+    this.root.hidden = true;
+  }
+
+  /** 확인 실행이 본다 — 마지막으로 띄운 글. */
+  get message(): string {
+    return this.last;
   }
 }

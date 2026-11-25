@@ -45,6 +45,7 @@ test("캐럿이 없는 줄 — 표식을 숨긴다", () => {
     "**", "**", "*", "*", "`", "`", "~~", "~~",
     "[", "](https://a.b \"t\")", "<", ">",
     "> ",
+    "```", "```",
   ]);
   const list = marks(state);
   assert.ok(list.some((mark) => mark.type === "line" && mark.style === "h1" && mark.at === 0));
@@ -71,6 +72,10 @@ test("캐럿이 있는 줄은 원문 그대로 — 꾸밈은 남는다", () => {
   assert.ok(marks(state).some((mark) => mark.type === "inline" && mark.style === "strong"));
   const onBullet = stateOf(doc, doc.indexOf("- 하나") + 2);
   assert.equal(marks(onBullet).filter((mark) => mark.type === "bullet").length, 1, "캐럿 줄의 - 는 그대로");
+  // 코드 블록은 블록째 — 캐럿이 블록의 어느 줄에 있든(가운데 줄이어도) 울타리가 드러난다.
+  const inCode = stateOf(doc, doc.indexOf("# 코드 안"));
+  assert.ok(!hidden(inCode).includes("```"), "블록 안에 캐럿 — 울타리는 원문");
+  assert.ok(hidden(stateOf(doc, 0)).includes("```"), "블록 밖 — 울타리를 숨긴다");
 });
 
 test("보이는 구간이 둘이어도 겹친 마디는 한 번만", () => {

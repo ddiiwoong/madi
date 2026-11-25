@@ -163,6 +163,15 @@ export function previewMarks(state: EditorState, ranges: readonly Range[], caret
             return;
           case "FencedCode": {
             lineStyle(node.from, node.to, "code");
+            // 캐럿이 블록에 닿지 않으면 울타리(```)를 숨긴다 — 여는 줄에는 언어 이름만 흐리게, 닫는 줄은 빈 줄(블록의 아래 여백)로
+            // 남는다(macOS판과 같다). 블록 안에 캐럿이 있으면 원문 그대로 — 울타리를 고칠 수 있게.
+            const first = doc.lineAt(node.from).number;
+            const last = doc.lineAt(node.to).number;
+            let touched = false;
+            for (let line = first; line <= last && !touched; line++) touched = caret.has(line);
+            if (!touched) {
+              for (const fence of node.node.getChildren("CodeMark")) marks.push({ type: "hide", from: fence.from, to: fence.to });
+            }
             return;
           }
           case "CodeInfo":

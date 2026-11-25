@@ -4,6 +4,18 @@ namespace Madi;
 
 public static class Program
 {
+    private static bool? darkMenus;
+
+    /// <summary>메뉴(…) · 대화상자의 밝기를 편집기의 테마에 맞춘다. 창마다 부르지만 바뀔 때만 한다(자원 사전을 다시 싣는다).</summary>
+    public static void UseDarkMenus(bool dark)
+    {
+        if (darkMenus == dark || Application.Current is not { } app) return;
+        darkMenus = dark;
+#pragma warning disable WPF0001
+        app.ThemeMode = dark ? ThemeMode.Dark : ThemeMode.Light;
+#pragma warning restore WPF0001
+    }
+
     [STAThread]
     public static int Main(string[] args)
     {
@@ -24,8 +36,12 @@ public static class Program
             // 켜진 마디가 답하지 않는다 — 따로 켠다(파일을 못 여는 것보다 낫다).
         }
 
-        // 창마다 문서 하나. 마지막 창을 닫으면 끝난다.
+        // 창마다 문서 하나. 마지막 창을 닫으면 끝난다. 메뉴 · 단추 · 대화상자는 Windows 11의 모양(Fluent)으로 — 밝기는 편집기의 테마를
+        // 따른다(`UseDarkMenus`).
         var app = new Application { ShutdownMode = ShutdownMode.OnLastWindowClose };
+#pragma warning disable WPF0001 // ThemeMode는 아직 '실험' 표시다(.NET 9부터).
+        app.ThemeMode = ThemeMode.Light;
+#pragma warning restore WPF0001
         var window = new MainWindow(options);
         if (instance.IsPrimary)
         {

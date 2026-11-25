@@ -7,6 +7,7 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Unicode;
 using System.Threading.Channels;
+using System.Windows;
 using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
 
@@ -25,7 +26,9 @@ namespace Madi;
 /// <item>명령 팔레트 · 빠른 열기가 거르는지(<c>palette.png</c> · <c>quickopen.png</c>)</item>
 /// <item>한 번만 켜기 · <c>madi://</c> — 두 번째로 켠 마디가 넘기고 끝나는지, open(줄) · append(묻고) · new(제목 · 경로) ·
 /// 네트워크 경로 거절</item>
-/// <item>설정 — 테마 · 다크 · 글자 크기가 편집기에 쓰이고 <c>settings.json</c>에 남는지(<c>blocks-dark.png</c>)</item>
+/// <item>모양 — 서식 막대가 뜨고 누르면 고치는지, 제목 막대가 끌기 · 누르기 · 크기 바꾸기를 맞게 답하는지, 최대화해도 단추가 화면 안인지
+/// (<c>design.png</c>)</item>
+/// <item>설정 — 테마 · 다크 · 글자 크기가 편집기와 제목 막대에 쓰이고 <c>settings.json</c>에 남는지(<c>blocks-dark.png</c> · <c>design-dark.png</c>)</item>
 /// <item>PDF — 다크에서 내보내도 흰 종이 · 문서 전체(쪽 수), 끝나면 다크로 돌아오는지(<c>output.png</c> · <c>export.pdf</c>, 마지막 화면)</item>
 /// </list>
 /// CI(<c>.github/workflows/windows.yml</c>)가 이것을 돌린다. 처음 다섯 문서는 <c>windows/editor/test/cases.ts</c>와 같은 바이트다.
@@ -456,6 +459,64 @@ internal sealed class SmokeRun(MainWindow window, string directory)
                 written.Length);
         });
 
+        // 6½. 모양 — 제목 막대(메뉴 막대 대신)와 서식 막대. 창째 찍는다(`design.png` — 제목 막대까지).
+        await Scenario("모양", async () =>
+        {
+            var path = Path.Combine(directory, "blocks", "blocks.md");
+            var text = Encoding.UTF8.GetString(await File.ReadAllBytesAsync(path));
+            var word = text.IndexOf("첫 일", StringComparison.Ordinal);
+            window.Activate();
+            window.Post(new { type = "smoke", action = "select", from = word, to = word + "첫 일".Length });
+            var shown = await DigestUntil(message => Flag(Child(message, "formatBar"), "shown"), seconds: 10);
+            var bar = Child(shown, "formatBar");
+            var buttons = Child(bar, "buttons").ValueKind == JsonValueKind.Array
+                ? Child(bar, "buttons").EnumerateArray().Select(item => item.GetString()).ToList() : [];
+            Check("서식 막대 — 글을 고르면 위에 뜬다(제목 ▾ · 꾸밈 다섯 · 목록 · 인용 · 블록)",
+                Flag(bar, "shown") && buttons.Contains("bold") && buttons.Contains("heading") && buttons.Contains("table"), bar);
+            await Task.Delay(300);
+            WindowFrame.Capture(window, Path.Combine(directory, "design.png"));
+
+            Drain();
+            window.Post(new { type = "smoke", action = "formatPress", command = "bold" });
+            await WaitFor("state", message => Flag(message, "dirty"));
+            await WaitFor("state", message => !Flag(message, "dirty"), seconds: 10); // 자동 저장
+            var bolded = Encoding.UTF8.GetString(await File.ReadAllBytesAsync(path));
+            var toast = Field(await Digest(), "toast");
+            Check("서식 막대 — 굵게를 누르면 고른 글만 **로 감싸고 자동 저장, 알림이 뜬다",
+                bolded == text.Replace("첫 일", "**첫 일**", StringComparison.Ordinal) && toast == "저장했습니다", new { toast });
+
+            // 제목 막대 — 빈 자리는 창 끌기(2), 단추는 누르기(1), 맨 위 끝은 크기 바꾸기(12).
+            var bar2 = window.Chrome;
+            Point Screen(FrameworkElement element, double x, double y) => element.PointToScreen(new Point(x, y));
+            var empty = WindowFrame.HitTest(window, Screen(bar2, bar2.ActualWidth * 0.55, 20));
+            var search = WindowFrame.HitTest(window, Screen(bar2.Search, bar2.Search.ActualWidth / 2, bar2.Search.ActualHeight / 2));
+            var top = WindowFrame.HitTest(window, Screen(bar2, bar2.ActualWidth * 0.55, 2));
+            Check("제목 막대 — 빈 자리는 창을 끌고, 단추는 누르고, 맨 위 끝은 크기를 바꾼다", empty == 2 && search == 1 && top == 12,
+                new { empty, search, top });
+
+            // 최대화 — 화면 밖으로 나간 테두리만큼 안으로. 닫기 단추가 작업 영역 안에 다 보인다.
+            window.WindowState = WindowState.Maximized;
+            await Task.Delay(800);
+            var close = bar2.CloseButton;
+            var corner = Screen(close, close.ActualWidth, 0);
+            var area = WindowFrame.WorkArea(window);
+            var draggable = WindowFrame.HitTest(window, Screen(bar2, bar2.ActualWidth * 0.55, TitleBar.BarHeight - 4));
+            Check("제목 막대 — 최대화해도 창 단추가 화면 안에, 막대 아래쪽까지 창을 끈다",
+                corner.X <= area.Right + 0.5 && corner.Y >= area.Top - 0.5 && draggable == 2,
+                new { corner = $"{corner.X},{corner.Y}", area = area.ToString(System.Globalization.CultureInfo.InvariantCulture), draggable });
+            window.WindowState = WindowState.Normal;
+            await Task.Delay(500);
+
+            // 제목 옆의 작은 표시 — UTF-8이 아닌 인코딩은 늘 보인다(전의 상태 줄 대신).
+            await window.LoadFileAsync(Path.Combine(directory, "cp949.txt"));
+            await Task.Delay(300);
+            Check("제목 막대 — EUC-KR 문서는 '저장하면 UTF-8'을 제목 옆에", window.Chrome.Notes.Any(note => note.StartsWith("EUC-KR", StringComparison.Ordinal)),
+                window.Chrome.Notes);
+            // 다음 시나리오(설정의 다크 화면)가 블록 문서를 본다.
+            await window.LoadFileAsync(path);
+            window.Post(new { type = "smoke", action = "caret", at = 1_000_000 });
+        });
+
         // 7. 명령 팔레트 · 빠른 열기
         await Scenario("고르기", async () =>
         {
@@ -588,6 +649,11 @@ internal sealed class SmokeRun(MainWindow window, string directory)
                 saved.GetRawText());
             await DigestUntil(message => Counts(Child(Child(message, "blocks"), "states")).GetValueOrDefault("ready") >= 6, seconds: 20);
             await Capture("blocks-dark.png");
+            var titleColor = ChromeColors.Hex(window.Chrome.Colors.Background);
+            Check("설정 — 제목 막대도 GitHub 다크(편집기와 같은 바탕)", titleColor == "#0D1117", titleColor);
+            window.Activate();
+            await Task.Delay(300);
+            WindowFrame.Capture(window, Path.Combine(directory, "design-dark.png"));
         });
 
         // 10. PDF — 다크에서 내보내도 흰 종이 · 문서 전체. 끝나면 다크로 돌아온다. 마지막 화면.

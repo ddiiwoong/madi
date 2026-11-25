@@ -34,6 +34,24 @@ const margins: [PrintMargin, string][] = [["narrow", "좁게"], ["normal", "보�
 const orientations: [PrintOrientation, string][] = [["portrait", "세로"], ["landscape", "가로"]];
 const papers: [PrintPaper, string][] = [["system", "시스템 기본"], ["a4", "A4"], ["letter", "Letter"]];
 
+/** 서식(`core/formatting.ts`) — macOS판 서식 메뉴와 같은 차례 · 같은 단축키(⌘ → Ctrl). */
+const formatEntries: CatalogEntry[] = [
+  { id: "heading0", title: "본문", menu: "서식 ▸ 제목", shortcut: "Ctrl+Alt+0" },
+  ...[1, 2, 3, 4, 5, 6].map((level) => ({ id: `heading${level}`, title: `제목 ${level}`, menu: "서식 ▸ 제목", shortcut: `Ctrl+${level}` })),
+  { id: "bold", title: "굵게", menu: "서식", shortcut: "Ctrl+B" },
+  { id: "italic", title: "기울임", menu: "서식", shortcut: "Ctrl+I" },
+  { id: "strikethrough", title: "취소선", menu: "서식", shortcut: "Ctrl+Shift+X" },
+  { id: "code", title: "인라인 코드", menu: "서식", shortcut: "Ctrl+Shift+C" },
+  { id: "link", title: "링크", menu: "서식", shortcut: "Ctrl+K" },
+  { id: "bullet", title: "글머리 목록", menu: "서식", shortcut: "Ctrl+Shift+8" },
+  { id: "numbered", title: "번호 목록", menu: "서식", shortcut: "Ctrl+Shift+7" },
+  { id: "task", title: "할 일 목록", menu: "서식", shortcut: "Ctrl+Shift+9" },
+  { id: "quote", title: "인용", menu: "서식", shortcut: "Ctrl+Alt+Q" },
+  { id: "codeBlock", title: "코드 블록", menu: "서식", shortcut: "Ctrl+Alt+C" },
+  { id: "table", title: "표", menu: "서식" },
+  { id: "rule", title: "구분선", menu: "서식" },
+];
+
 export function catalog(context: CatalogContext): CatalogEntry[] {
   const { settings } = context;
   return [
@@ -51,6 +69,7 @@ export function catalog(context: CatalogContext): CatalogEntry[] {
     ...papers.map(([value, title]) =>
       ({ id: "setPrintPaper", arg: value, title, menu: "파일 ▸ 프린트 설정 ▸ 용지", checked: settings.printPaper === value })),
     { id: "close", title: "닫기", menu: "파일", shortcut: "Ctrl+W" },
+    ...formatEntries,
     { id: "undo", title: "실행 취소", menu: "편집", shortcut: "Ctrl+Z" },
     { id: "redo", title: "다시 실행", menu: "편집", shortcut: "Ctrl+Y" },
     { id: "selectAll", title: "모두 선택", menu: "편집", shortcut: "Ctrl+A" },
@@ -58,6 +77,7 @@ export function catalog(context: CatalogContext): CatalogEntry[] {
     { id: "toggleOutline", title: "목차", menu: "보기", shortcut: "Ctrl+Shift+O", checked: context.outline },
     { id: "toggleSource", title: "원본 보기", menu: "보기", shortcut: "Ctrl+E", checked: context.source },
     { id: "toggleFollow", title: "따라 보기", menu: "보기", shortcut: "Ctrl+Alt+L", checked: context.follow },
+    { id: "docInfo", title: "문서 정보", menu: "보기" },
     ...themeIds.map((id) => ({ id: "setTheme", arg: id, title: themeLabels[id], menu: "보기 ▸ 테마", checked: settings.theme === id })),
     ...appearances.map(([value, title]) =>
       ({ id: "setAppearance", arg: value, title, menu: "보기 ▸ 모양", checked: settings.appearance === value })),

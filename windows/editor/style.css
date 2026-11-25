@@ -19,113 +19,170 @@
   color-scheme: light; font-family: var(--md-font-body);
 }
 html, body { height: 100%; margin: 0; }
-body { background: var(--md-background); color: var(--md-text); overflow: hidden; }
+body { background: var(--md-background); color: var(--md-text); overflow: hidden; -webkit-font-smoothing: antialiased; }
+button { font-family: var(--md-font-body); }
+
+/* 스크롤 막대 — 얇고 둥글게, 화살표 없이(창의 기본 막대는 화살표 단추가 달린 회색 막대다). */
+::-webkit-scrollbar { width: 12px; height: 12px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--md-text) 18%, transparent); border-radius: 999px;
+  border: 3px solid transparent; background-clip: padding-box; min-height: 40px;
+}
+::-webkit-scrollbar-thumb:hover { background-color: color-mix(in srgb, var(--md-text) 32%, transparent); }
+::-webkit-scrollbar-button, ::-webkit-scrollbar-corner { display: none; background: transparent; }
 
 /* 편집기의 글꼴 · 글 폭 · 꾸밈은 src/editor/setup.ts의 `look` 테마에 있다 — 여기 적으면 CodeMirror의 기본 테마에 밀린다. */
 #app { display: flex; flex-direction: column; height: 100%; position: relative; }
 #body { flex: 1; min-height: 0; display: flex; }
 #editor { flex: 1; min-width: 0; }
+[hidden] { display: none !important; }
 
+/* 바깥 변경 띠 — 글 위의 둥근 알림 카드. */
 .band {
-  display: flex; align-items: center; gap: 8px; margin: 8px 12px 4px; padding: 6px 10px; font-size: 12px;
-  border: 1px solid var(--md-warning); border-radius: 6px;
-  background: color-mix(in srgb, var(--md-warning) 12%, var(--md-background));
+  display: flex; align-items: center; gap: 10px; margin: 10px auto 2px; padding: 10px 12px 10px 16px; font-size: 13px;
+  width: min(820px, calc(100% - 48px)); box-sizing: border-box; line-height: 1.5;
+  border: 1px solid color-mix(in srgb, var(--md-warning) 45%, var(--md-background)); border-radius: 10px;
+  background: color-mix(in srgb, var(--md-warning) 9%, var(--md-background));
 }
-.band[hidden], .pill[hidden], #outline[hidden], #picker[hidden] { display: none; }
 .band-text { flex: 1; }
-.band button { font: inherit; padding: 3px 10px; white-space: nowrap; }
-
-#outline {
-  width: 220px; flex: none; overflow: auto; border-right: 1px solid var(--md-rule); padding: 12px 0; font-size: 13px;
+.band button {
+  font-size: 12.5px; padding: 5px 12px; white-space: nowrap; border-radius: 7px; cursor: pointer;
+  border: 1px solid color-mix(in srgb, var(--md-text) 16%, var(--md-background)); background: var(--md-background); color: var(--md-text);
 }
-#outline h2 { font-size: 12px; font-weight: 700; color: var(--md-dim); margin: 0 12px 8px; }
+.band button:hover { background: var(--md-tint); }
+
+/* 목차 — 조용한 옆 칸. */
+#outline {
+  width: 240px; flex: none; overflow: auto; padding: 18px 10px; font-size: 13px; box-sizing: border-box;
+  background: color-mix(in srgb, var(--md-text) 3%, var(--md-background));
+}
+#outline h2 { font-size: 11.5px; font-weight: 700; letter-spacing: 0.04em; color: var(--md-dim); margin: 0 10px 10px; }
 #outline ol { list-style: none; margin: 0; padding: 0; }
 #outline button {
   display: block; width: 100%; text-align: left; border: 0; background: none; font: inherit; color: inherit;
-  padding-block: 3px; padding-inline-end: 8px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding-block: 5px; padding-inline-end: 8px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  border-radius: 6px; line-height: 1.35;
 }
-#outline button:hover { background: var(--md-tint); }
-#outline .empty { color: var(--md-dim); margin: 0 12px; }
-#outline .empty[hidden] { display: none; }
-
-#status {
-  display: flex; gap: 12px; justify-content: space-between; padding: 3px 12px; font-size: 12px; color: var(--md-dim);
-  border-top: 1px solid var(--md-rule); background: var(--md-tint); white-space: nowrap;
-}
-#status .error { color: var(--md-caution); }
+#outline button:hover { background: color-mix(in srgb, var(--md-text) 7%, var(--md-background)); }
+#outline .empty { color: var(--md-dim); margin: 0 10px; }
 
 /* 위를 읽는 동안 끝에 붙은 줄 — 강조색으로 꽉 칠한다(반투명하면 빽빽한 로그 위에서 읽을 수 없다 — macOS판에서 겪었다). */
 .pill {
-  position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%); z-index: 5;
-  border: 0; border-radius: 999px; padding: 4px 14px;
+  position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 5;
+  border: 0; border-radius: 999px; padding: 6px 16px;
   background: #0067c0; color: #fff; background: AccentColor; color: AccentColorText; /* 앞의 둘은 AccentColor를 모르는 엔진용 */
-  font: 600 12px var(--md-font-body); cursor: pointer; box-shadow: 0 1px 4px rgb(0 0 0 / 25%);
+  font: 600 12.5px var(--md-font-body); cursor: pointer; box-shadow: 0 4px 14px rgb(0 0 0 / 22%);
 }
 
+/* 잠깐 뜨는 알림(`Toast`) — 아래 가운데, 짙은 알약. */
+#toast {
+  position: absolute; left: 50%; bottom: 28px; transform: translate(-50%, 8px); z-index: 6; max-width: min(640px, calc(100% - 48px));
+  padding: 8px 16px; border-radius: 999px; font-size: 12.5px; line-height: 1.4; cursor: default;
+  background: color-mix(in srgb, var(--md-text) 88%, var(--md-background)); color: var(--md-background);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 22%); opacity: 0; transition: opacity 160ms, transform 160ms;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#toast.show { opacity: 1; transform: translate(-50%, 0); }
+#toast.error { background: var(--md-caution); color: #fff; white-space: normal; cursor: pointer; }
+
+/* 서식 막대(`src/editor/formatbar.ts`) — 고른 글 위에 뜨는 둥근 막대. */
+#formatbar {
+  position: absolute; z-index: 8; display: flex; align-items: center; gap: 1px; padding: 4px;
+  background: color-mix(in srgb, var(--md-text) 3%, var(--md-background)); color: var(--md-text);
+  border: 1px solid color-mix(in srgb, var(--md-text) 10%, var(--md-background)); border-radius: 12px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 14%), 0 1px 3px rgb(0 0 0 / 8%);
+}
+#formatbar button, #formatbar-headings button {
+  display: inline-flex; align-items: center; justify-content: center; border: 0; background: none; color: inherit; cursor: pointer;
+}
+#formatbar button { width: 32px; height: 30px; border-radius: 8px; }
+#formatbar button:hover, #formatbar-headings button:hover { background: color-mix(in srgb, var(--md-text) 8%, var(--md-background)); }
+#formatbar svg { display: block; }
+#formatbar .gap { width: 1px; height: 18px; margin: 0 4px; background: color-mix(in srgb, var(--md-text) 12%, var(--md-background)); }
+#formatbar-headings {
+  position: absolute; z-index: 9; display: flex; flex-direction: column; padding: 4px; min-width: 132px;
+  background: var(--md-background); color: var(--md-text); border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--md-text) 10%, var(--md-background)); box-shadow: 0 8px 24px rgb(0 0 0 / 16%);
+}
+#formatbar-headings button { justify-content: flex-start; padding: 6px 10px; border-radius: 6px; font-weight: 700; text-align: left; }
+#formatbar-headings .level-0 { font-weight: 400; font-size: 13px; }
+#formatbar-headings .level-1 { font-size: 17px; }
+#formatbar-headings .level-2 { font-size: 15.5px; }
+#formatbar-headings .level-3 { font-size: 14.5px; }
+#formatbar-headings .level-4, #formatbar-headings .level-5, #formatbar-headings .level-6 { font-size: 13.5px; }
+
 /* MARK: 그림으로 바꾼 블록(`src/editor/blocks.ts`) — 편집기 글 안에 놓이지만 CodeMirror의 기본 테마가 손대지 않는 이름이다. */
-.md-block { margin: 6px 0; cursor: text; }
+.md-block { margin: 8px 0; cursor: text; }
 .md-block[data-state="pending"] { color: var(--md-dim); font-size: 0.85em; padding: 12px 0; }
 .md-block-error-title { color: var(--md-caution); font-weight: 700; font-size: 0.85em; }
 pre.md-block-error {
   margin: 4px 0 0; white-space: pre-wrap; font: 0.8em/1.5 var(--md-font-code); color: var(--md-dim);
   max-height: 12em; overflow: auto;
 }
-.md-mermaid, .md-math { text-align: center; padding: 6px 0; overflow-x: auto; }
+.md-mermaid, .md-math { text-align: center; padding: 10px 0; overflow-x: auto; }
 .md-mermaid[data-state="error"], .md-math[data-state="error"] {
-  text-align: left; padding: 8px 12px; border-left: 3px solid var(--md-caution);
+  text-align: left; padding: 10px 14px; border-left: 3px solid var(--md-caution); border-radius: 4px 8px 8px 4px;
   background: color-mix(in srgb, var(--md-caution) 6%, var(--md-background));
 }
 .md-mermaid svg { max-width: 100%; height: auto; }
 .md-math .katex-display { margin: 0.4em 0; }
-.md-image img { display: block; max-width: 100%; height: auto; border-radius: 4px; }
+.md-image img { display: block; max-width: 100%; height: auto; border-radius: 8px; }
 .md-image-note {
-  display: inline-block; padding: 6px 10px; border: 1px dashed var(--md-rule); border-radius: 6px;
+  display: inline-block; padding: 8px 12px; border: 1px dashed var(--md-rule); border-radius: 8px;
   color: var(--md-dim); font-size: 0.85em;
 }
 
-.md-table-scroll { overflow-x: auto; }
-.md-table table { border-collapse: collapse; font-size: 0.95em; line-height: 1.45; }
-.md-table th, .md-table td { border: 1px solid var(--md-table-line); padding: 5px 12px; vertical-align: top; text-align: left; }
+/* 표 — 둥근 테두리 안에 칸, 머리는 옅게 칠한다. 글 폭을 다 쓰고, 넓으면 옆으로 굴린다. */
+.md-table-scroll { overflow-x: auto; border-radius: 10px; }
+.md-table table {
+  border-collapse: separate; border-spacing: 0; min-width: 100%; font-size: 0.95em; line-height: 1.5;
+  border: 1px solid var(--md-table-line); border-radius: 10px; overflow: hidden;
+}
+.md-table th, .md-table td {
+  border-right: 1px solid var(--md-table-line); border-bottom: 1px solid var(--md-table-line);
+  padding: 9px 16px; vertical-align: top; text-align: left;
+}
+.md-table th:last-child, .md-table td:last-child { border-right: 0; }
+.md-table tbody tr:last-child td { border-bottom: 0; }
 .md-table th { background: var(--md-table-header-background); font-weight: 700; }
 
 .md-card {
-  border: 1px solid var(--md-rule); border-radius: 8px; padding: 6px 12px 8px; font-size: 0.8em; line-height: 1.5;
-  background: var(--md-tint); margin: 2px 0 14px;
+  border: 1px solid color-mix(in srgb, var(--md-text) 9%, var(--md-background)); border-radius: 10px; padding: 8px 14px 10px;
+  font-size: 0.82em; line-height: 1.55; background: color-mix(in srgb, var(--md-text) 3%, var(--md-background)); margin: 2px 0 16px;
 }
 .md-card-head {
   border: 0; background: none; padding: 2px 0; font: 600 1em var(--md-font-body); color: var(--md-dim); cursor: pointer;
 }
-.md-card-grid { display: grid; grid-template-columns: max-content 1fr; gap: 3px 14px; margin: 6px 0 0; }
+.md-card-grid { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 8px 0 0; }
 .md-card-grid dt { font-family: var(--md-font-code); color: var(--md-dim); }
 .md-card-grid dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .md-chip {
-  display: inline-block; margin: 0 4px 3px 0; padding: 0 6px; border-radius: 4px; font-size: 0.92em;
-  background: color-mix(in srgb, var(--md-text) 9%, var(--md-background)); color: var(--md-dim);
+  display: inline-block; margin: 0 4px 3px 0; padding: 0 7px; border-radius: 6px; font-size: 0.92em;
+  background: color-mix(in srgb, var(--md-text) 8%, var(--md-background)); color: var(--md-dim);
 }
-.md-chip[hidden] { display: none; }
 .md-chip-more { border: 0; background: none; padding: 0; font: 600 0.9em var(--md-font-body); color: var(--md-link); cursor: pointer; }
-.md-block code { font-family: var(--md-font-code); font-size: 0.92em; background: var(--md-code-background); border-radius: 3px; padding: 0 2px; }
-.md-block a[data-url] { color: var(--md-link); text-decoration: underline; text-underline-offset: 2px; }
+.md-block code { font-family: var(--md-font-code); font-size: 0.88em; background: var(--md-code-background); border-radius: 5px; padding: 0.1em 0.35em; }
+.md-block a[data-url] { color: var(--md-link); text-decoration: underline; text-underline-offset: 3px; }
 
 /* MARK: 고르는 칸 — 빠른 열기 · 명령 팔레트 · 글꼴(`src/editor/picker.ts`) */
 #picker {
-  position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 10; width: min(640px, calc(100% - 32px));
-  background: var(--md-background); color: var(--md-text); border: 1px solid var(--md-rule); border-radius: 8px;
-  box-shadow: 0 8px 28px rgb(0 0 0 / 28%); font-size: 13px; overflow: hidden;
+  position: absolute; top: 14px; left: 50%; transform: translateX(-50%); z-index: 10; width: min(620px, calc(100% - 32px));
+  background: var(--md-background); color: var(--md-text); border: 1px solid color-mix(in srgb, var(--md-text) 10%, var(--md-background));
+  border-radius: 14px; box-shadow: 0 18px 48px rgb(0 0 0 / 22%), 0 2px 6px rgb(0 0 0 / 8%); font-size: 13px; overflow: hidden;
 }
 #picker input {
-  box-sizing: border-box; width: 100%; border: 0; border-bottom: 1px solid var(--md-rule); outline: none;
-  padding: 10px 12px; font: 14px var(--md-font-body); background: transparent; color: inherit;
+  box-sizing: border-box; width: 100%; border: 0; border-bottom: 1px solid color-mix(in srgb, var(--md-text) 9%, var(--md-background));
+  outline: none; padding: 14px 18px; font: 15px var(--md-font-body); background: transparent; color: inherit;
 }
-#picker ol { list-style: none; margin: 0; padding: 4px 0; max-height: min(420px, 60vh); overflow: auto; }
-#picker li { display: flex; align-items: baseline; gap: 10px; padding: 5px 12px; cursor: pointer; white-space: nowrap; }
-#picker li.selected { background: var(--md-selection); }
+#picker ol { list-style: none; margin: 0; padding: 6px; max-height: min(420px, 60vh); overflow: auto; }
+#picker li { display: flex; align-items: baseline; gap: 10px; padding: 7px 12px; cursor: pointer; white-space: nowrap; border-radius: 8px; }
+#picker li.selected { background: color-mix(in srgb, var(--md-link) 14%, var(--md-background)); }
 #picker li:hover:not(.selected) { background: var(--md-tint); }
 #picker .title { flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; }
 #picker .detail { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--md-dim); font-size: 12px; }
 #picker .hint { margin-left: auto; color: var(--md-dim); font-size: 12px; }
-#picker .empty { margin: 8px 12px 10px; color: var(--md-dim); }
-#picker .empty[hidden] { display: none; }
+#picker .empty { margin: 10px 18px 14px; color: var(--md-dim); }
 
 /*
  * MARK: 내보내기(PDF · 프린트) — 편집기만, 쪽을 따라 길게. 색 · 캐럿 줄 · 메타데이터는 편집기가 맡는다(`enterOutput`, 흰 종이에 기본
@@ -135,7 +192,7 @@ pre.md-block-error {
   :root { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   html, body { height: auto !important; overflow: visible !important; background: #fff; }
   #app, #body { display: block !important; height: auto !important; }
-  #band, #outline, #status, #picker, .pill { display: none !important; }
+  #band, #outline, #picker, .pill, #toast, #formatbar, #formatbar-headings { display: none !important; }
   #editor .cm-editor { height: auto !important; }
   #editor .cm-scroller { overflow: visible !important; height: auto !important; }
   #editor .cm-content { padding: 0 !important; }

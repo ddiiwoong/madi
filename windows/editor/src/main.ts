@@ -5,7 +5,8 @@ import { EditorView, drawSelection, highlightSpecialChars, keymap, placeholder }
 import { defaultKeymap, history, historyKeymap, redo, selectAll, undo } from "@codemirror/commands";
 import { findNext, openSearchPanel, search, searchKeymap, SearchQuery, setSearchQuery } from "@codemirror/search";
 import { base64ToBytes, bytesForSave, bytesToBase64, documentBytes, openDocument, sha256Hex } from "./core/document.ts";
-import { lineSeparatorName } from "./core/lines.ts";
+import { lineSeparatorName, normalizeLineBreaks } from "./core/lines.ts";
+import { formatEdit } from "./core/formatting.ts";
 import { TextStream, type TextEncodingName } from "./core/text.ts";
 import { appendSplice, countNewLines, docSplice } from "./core/splice.ts";
 import { fileKind, type FileKind } from "./core/kind.ts";
@@ -21,7 +22,9 @@ import { linkAt, livePreview } from "./editor/preview.ts";
 import { blockReport, blockServices, forgetImages, type BlockEnv } from "./editor/blocks.ts";
 import { applyTheme, onSystemAppearanceChange } from "./editor/theme.ts";
 import { Picker, type PickItem } from "./editor/picker.ts";
-import { ConflictBand, NewLinesPill, OutlinePanel, StatusBar } from "./editor/ui.ts";
+import { ConflictBand, NewLinesPill, OutlinePanel, Toast } from "./editor/ui.ts";
+import { FormatBar } from "./editor/formatbar.ts";
+import { cssVariables } from "./core/settings.ts";
 
 declare global {
   interface Window {
@@ -58,6 +61,14 @@ let autosaveTimer: number | undefined;
 let lastAtEnd = true;
 let settings: Settings = normalizeSettings(window.madiSettings ?? null);
 let dark = applyTheme(settings);
+/** 제목 막대(껍데기가 그린다)의 색 — 편집기와 한 판이게. 테마가 바뀔 때마다 보낸다. */
+function postChrome(): void {
+  const colors = cssVariables(settings, dark);
+  post({
+    type: "chrome", dark, background: colors["--md-background"]!, text: colors["--md-text"]!, dim: colors["--md-dim"]!,
+    rule: colors["--md-rule"]!, accent: colors["--md-link"]!,
+  });
+}
 /** PDF · 프린트로 내보내는 중(`enterOutput`) — 흰 종이에 기본 테마, 캐럿 줄도 꾸민 대로, 문서 전체를 그린다. */
 let outputting = false;
 
@@ -67,7 +78,8 @@ function environment(): BlockEnv {
   };
 }
 
-const status = new StatusBar();
+const status = new Toast();
+const formatBar = new FormatBar((command) => applyFormat(command));
 const band = new ConflictBand(() => post({ type: "reload" }), () => save());
 const pill = new NewLinesPill(() => scrollToEnd());
 const outlinePanel = new OutlinePanel((heading) => {
@@ -104,6 +116,8 @@ const commands: Record<string, (arg?: string) => void> = {
   llmKeys: () => post({ type: "command", name: "llmKeys" }),
   checkForUpdates: () => post({ type: "command", name: "checkForUpdates" }),
   print: () => void printDocument(),
+  docInfo: () => status.say(documentInfo()),
+  menu: () => post({ type: "command", name: "menu" }),
   // `madi://` 링크(껍데기가 읽어 보낸다) — 줄로 가기 · 찾기 · 끝에 더하기 · 끝으로.
   goToLine: (arg) => goToLine(Number(arg)),
   search: (arg) => startSearch(arg ?? ""),
@@ -113,6 +127,13 @@ const commands: Record<string, (arg?: string) => void> = {
   },
 };
 // 설정 명령(테마 · 모양 · 글자 크기 · 줄 사이 · 글 폭 · 글꼴 · 원격 그림 · 앞머리 접기) — 값은 `core/catalog.ts`가 정한다.
+// 서식(`core/formatting.ts`) — 막대 · 단축키 · 메뉴 · 명령 팔레트가 같은 이름을 부른다.
+for (const id of [
+  "bold", "italic", "strikethrough", "code", "link", "bullet", "numbered", "task", "quote", "codeBlock", "table", "rule",
+  "heading0", "heading1", "heading2", "heading3", "heading4", "heading5", "heading6",
+]) {
+  commands[id] = () => applyFormat(id);
+}
 for (const id of [
   "setTheme", "setAppearance", "setLineSpacing", "setDocumentWidth", "textBigger", "textSmaller", "textStandard",
   "setBodyFont", "setCodeFont", "toggleRemoteImages", "toggleFrontMatter",
@@ -141,6 +162,21 @@ const shortcuts = Prec.highest(keymap.of([
   { key: "Mod-+", run: () => (commands.textBigger!(), true) },
   { key: "Mod--", run: () => (commands.textSmaller!(), true) },
   { key: "Mod-0", run: () => (commands.textStandard!(), true) },
+  // 서식 — macOS판의 단축키를 Ctrl로(⌘B → Ctrl+B …). 본문은 Ctrl+Alt+0(Ctrl+0은 글자 기본 크기).
+  { key: "Mod-b", run: () => (commands.bold!(), true) },
+  { key: "Mod-i", run: () => (commands.italic!(), true) },
+  { key: "Mod-Shift-x", run: () => (commands.strikethrough!(), true) },
+  { key: "Mod-Shift-c", run: () => (commands.code!(), true) },
+  { key: "Mod-k", run: () => (commands.link!(), true) },
+  { key: "Mod-Shift-8", run: () => (commands.bullet!(), true) },
+  { key: "Mod-Shift-7", run: () => (commands.numbered!(), true) },
+  { key: "Mod-Shift-9", run: () => (commands.task!(), true) },
+  { key: "Mod-Alt-q", run: () => (commands.quote!(), true) },
+  { key: "Mod-Alt-c", run: () => (commands.codeBlock!(), true) },
+  { key: "Mod-Alt-0", run: () => (commands.heading0!(), true) },
+  ...[1, 2, 3, 4, 5, 6].map((level) => ({ key: `Mod-${level}`, run: () => (commands[`heading${level}`]!(), true) })),
+  // 메뉴 막대가 없다 — F10은 Windows의 약속대로 메뉴(제목 막대의 …)를 연다.
+  { key: "F10", run: () => (commands.menu!(), true) },
 ]));
 
 function baseExtensions() {
@@ -157,6 +193,8 @@ function baseExtensions() {
     koreanPhrases,
     look,
     EditorView.contentAttributes.of({ lang: "ko", spellcheck: "false" }),
+    // 붙여 넣기 · 끌어다 놓기의 줄 끝을 문서의 줄 끝으로 — Windows의 클립보드는 CRLF라 LF 문서에 \r이 섞였다.
+    EditorView.clipboardInputFilter.of((text, state) => normalizeLineBreaks(text, state.lineBreak)),
     EditorView.updateListener.of((update) => {
       if (update.docChanged) {
         const byUser = update.transactions.some((tr) => tr.docChanged && !tr.annotation(fromDisk));
@@ -164,6 +202,9 @@ function baseExtensions() {
         scheduleOutline();
       }
       if (update.docChanged || update.transactions.some((tr) => tr.reconfigured)) postState();
+      if (update.selectionSet || update.docChanged || update.geometryChanged || update.focusChanged || update.viewportChanged) {
+        formatBar.schedule();
+      }
     }),
     EditorView.domEventHandlers({
       // Ctrl+클릭 — 링크를 기본 브라우저로(호스트가 http · https · mailto만 연다). 그냥 클릭은 캐럿을 놓는다(그 줄이 원문이 된다).
@@ -189,6 +230,8 @@ if (!parent) throw new Error("편집기를 놓을 자리(#editor)가 없다");
 const view = new EditorView({ state: makeState(""), parent });
 savedDoc = view.state.doc;
 view.focus();
+
+formatBar.attach(view);
 
 blockServices.openUrl = (url) => post({ type: "openUrl", url });
 blockServices.loadImage = async (path) => {
@@ -258,18 +301,47 @@ function postState(): void {
     source: mode.source,
     follow: mode.follow,
     outline: outlinePanel.shown,
+    // 제목 막대의 작은 표시 — 늘 같은 것(UTF-8)은 적지 않고, 알아야 할 것만.
+    notes: [
+      mode.follow ? "따라 보기" : "",
+      info.stream.encoding === "utf-8" ? "" : encodingNames[info.stream.encoding],
+      mode.separator === "\r" ? "CR 줄 끝" : "",
+    ].filter(Boolean),
   };
   const json = JSON.stringify(state);
   if (json !== lastState) {
     lastState = json;
     post(state);
   }
-  status.describe([
-    mode.follow ? "따라 보기" : "",
-    mode.source ? "원본 보기" : "",
+}
+
+/** 문서 정보 — 보기 ▸ 문서 정보 · 명령 팔레트. 전에 아래 상태 줄에 늘 있던 것. */
+function documentInfo(): string {
+  const parts = [
+    info.name,
     encodingNames[info.stream.encoding] + (info.stream.bom ? " BOM" : ""),
     lineSeparatorName(mode.separator),
-  ]);
+    `${view.state.doc.lines.toLocaleString("ko-KR")}줄`,
+    `${view.state.doc.length.toLocaleString("ko-KR")}자`,
+    mode.follow ? "따라 보기" : mode.source ? "원본 보기" : "",
+  ];
+  return parts.filter(Boolean).join(" · ");
+}
+
+/** 서식 명령 — 고른 글(없으면 캐럿)에. 고칠 수 없는 보기면 하지 않는다. */
+function applyFormat(command: string): void {
+  if (view.state.readOnly) return;
+  const range = view.state.selection.main;
+  // 편집기의 글은 줄 끝이 `\n`(자리를 한 칸으로 센다) — 넣는 글만 문서의 줄 끝으로 바꾼다.
+  const edit = formatEdit(command, view.state.doc.toString(), { from: range.from, to: range.to });
+  if (!edit) return;
+  view.dispatch({
+    changes: { from: edit.from, to: edit.to, insert: normalizeLineBreaks(edit.insert, view.state.lineBreak) },
+    selection: EditorSelection.range(edit.selection.from, edit.selection.to),
+    scrollIntoView: true,
+    userEvent: "input.format",
+  });
+  view.focus();
 }
 
 function setMode(change: Partial<Pick<Mode, "source" | "follow">>): void {
@@ -309,6 +381,7 @@ function applySettings(next: Settings): void {
   if (outputting) return;
   const wasDark = dark;
   dark = applyTheme(settings);
+  postChrome();
   if (!changed && wasDark === dark) return;
   view.dispatch({ effects: reconfigureEnvironment(environment()) });
   // 글자 크기 · 줄 높이가 바뀌면 줄의 높이를 다시 잰다.
@@ -365,6 +438,7 @@ async function settled(timeout = 20000): Promise<void> {
 async function enterOutput(): Promise<void> {
   if (outputting) return;
   outputting = true;
+  formatBar.hidden = true;
   picker.close();
   // macOS판처럼 고른 테마와 상관없이 흰 종이에 기본 색 — 다이어그램도 라이트로 다시 그린다.
   dark = applyTheme({ ...settings, theme: "standard", appearance: "light" });
@@ -379,6 +453,7 @@ async function enterOutput(): Promise<void> {
 function exitOutput(): void {
   if (!outputting) return;
   outputting = false;
+  formatBar.hidden = false;
   document.documentElement.classList.remove("md-output");
   dark = applyTheme(settings);
   view.dispatch({ effects: reconfigureEnvironment(environment()) });
@@ -423,9 +498,11 @@ function startSearch(text: string): void {
 
 /** `madi://new`(경로 없이) — 받은 글로 새 문서. 사람이 쓴 것처럼 들여 고친 상태가 된다(닫을 때 묻는다). 캐럿은 끝. */
 function compose(text: string): void {
+  const body = normalizeLineBreaks(text, "\n");
   view.dispatch({
-    changes: { from: 0, to: view.state.doc.length, insert: text.replace(/\r\n?/g, "\n") },
-    selection: EditorSelection.cursor(text.replace(/\r\n?/g, "\n").length),
+    // 넣는 글은 문서의 줄 끝으로(CodeMirror는 정한 줄 끝만 줄로 나눈다), 자리는 줄 끝을 한 칸으로 센다.
+    changes: { from: 0, to: view.state.doc.length, insert: normalizeLineBreaks(body, view.state.lineBreak) },
+    selection: EditorSelection.cursor(body.length),
     scrollIntoView: true,
     userEvent: "input.link",
   });
@@ -434,11 +511,12 @@ function compose(text: string): void {
 
 function appendText(text: string): void {
   if (text === "" || view.state.readOnly) return;
-  // 편집기의 글은 줄 끝이 늘 `\n`이다 — 받은 글의 CRLF도 그렇게(쓸 때 문서의 줄 끝으로 돌아간다).
-  const piece = appendPiece(text.replace(/\r\n?/g, "\n"), view.state.doc.toString());
+  // 규칙(`appendPiece`)은 줄 끝이 `\n`인 글로 따진다. 넣을 때는 문서의 줄 끝으로 — CRLF 문서에 `\n`을 그대로 넣으면 CodeMirror가
+  // 줄로 나누지 않아 줄 안에 LF가 남는다.
+  const piece = appendPiece(normalizeLineBreaks(text, "\n"), view.state.doc.toString());
   const end = view.state.doc.length;
   view.dispatch({
-    changes: { from: end, insert: piece },
+    changes: { from: end, insert: normalizeLineBreaks(piece, view.state.lineBreak) },
     selection: EditorSelection.cursor(end + piece.length),
     scrollIntoView: true,
     userEvent: "input.link",
@@ -448,6 +526,15 @@ function appendText(text: string): void {
 
 // MARK: 고르는 칸 — 빠른 열기 · 명령 팔레트 · 글꼴
 
+/** 고르는 칸이 열린 동안은 서식 막대를 띄우지 않는다. */
+function openPicker(placeholder: string, items: Parameters<Picker["open"]>[1]): void {
+  formatBar.hidden = true;
+  picker.open(placeholder, items, () => {
+    formatBar.hidden = false;
+    view.focus();
+  });
+}
+
 function quickOpen(): void {
   const items = ask<"files">({ type: "listFiles" })
     .then((reply) => reply.items.map((item): PickItem => ({
@@ -456,19 +543,19 @@ function quickOpen(): void {
       run: () => post({ type: "openPath", path: item.path }),
     })))
     .catch(() => []);
-  picker.open("파일 이름으로 열기 — 열린 문서 · 최근 문서 · 이 폴더", items, () => view.focus());
+  openPicker("파일 이름으로 열기 — 열린 문서 · 최근 문서 · 이 폴더", items);
 }
 
 function commandPalette(): void {
   const entries = catalog({
     settings, source: mode.source, follow: mode.follow, outline: outlinePanel.shown, packaged: window.madiHost?.packaged === true,
   });
-  picker.open("명령", entries.map((entry): PickItem => ({
+  openPicker("명령", entries.map((entry): PickItem => ({
     title: entry.title,
     detail: entry.menu,
     hint: [entry.checked ? "✓" : "", entry.shortcut ?? ""].filter(Boolean).join("  "),
     run: () => commands[entry.id]?.(entry.arg),
-  })), () => view.focus());
+  })));
 }
 
 function pickFont(which: "body" | "code"): void {
@@ -487,7 +574,7 @@ function pickFont(which: "body" | "code"): void {
       run: () => commands[command]!(family),
     }))])
     .catch(() => [builtIn]);
-  picker.open(which === "body" ? "본문 글꼴" : "코드 글꼴", items, () => view.focus());
+  openPicker(which === "body" ? "본문 글꼴" : "코드 글꼴", items);
 }
 
 // MARK: 열기
@@ -738,6 +825,15 @@ async function runSmoke(message: Extract<HostMessage, { type: "smoke" }>): Promi
     case "pickerClose":
       picker.close();
       break;
+    case "select":
+      view.dispatch({ selection: EditorSelection.range(message.from, message.to), scrollIntoView: true });
+      break;
+    case "formatPress": {
+      // 사람이 막대의 단추를 누른 것처럼 — 막대가 떠 있어야 누를 수 있다.
+      const button = document.querySelector<HTMLElement>(`#formatbar:not([hidden]) [data-command="${message.command}"]`);
+      button?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
+      break;
+    }
     case "scrollEnd":
       scrollToEnd();
       break;
@@ -754,6 +850,8 @@ async function runSmoke(message: Extract<HostMessage, { type: "smoke" }>): Promi
         blocks: blockReport(view),
         tasks: view.dom.querySelectorAll(".cm-md-task").length,
         picker: picker.report,
+        formatBar: formatBar.report,
+        toast: status.message,
         colors: {
           background: getComputedStyle(view.dom).backgroundColor,
           text: getComputedStyle(view.contentDOM).color,
@@ -783,6 +881,7 @@ async function loaded(family: string): Promise<boolean> {
 }
 
 postState();
+postChrome();
 if (hasHost) {
   void (async () => {
     const fonts = { pretendard: await loaded("Pretendard"), plexMono: await loaded("IBM Plex Mono") };

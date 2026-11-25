@@ -30,6 +30,15 @@ export function lineSeparatorFor(text: string): LineSeparator {
   return "\n";
 }
 
+/**
+ * 바깥에서 들어오는 글(붙여 넣기 · 끌어다 놓기 · 링크 · 서식)의 줄 끝을 문서의 줄 끝 하나로. CodeMirror는 정한 줄 끝(`lineSeparator`)만
+ * 줄로 나누므로, 그대로 넣으면 CRLF 문서에 들어온 `\n`이나 LF 문서에 들어온 `\r\n`의 `\r`이 줄 안의 글자로 남아 저장하면 줄 끝이 섞인다
+ * (Windows의 클립보드 글은 CRLF다).
+ */
+export function normalizeLineBreaks(text: string, lineBreak: string): string {
+  return text.replace(/\r\n|\r|\n/g, lineBreak);
+}
+
 /** 사람이 읽을 이름 — 호스트 · 기록에 쓴다. */
 export function lineSeparatorName(separator: LineSeparator): "LF" | "CRLF" | "CR" {
   return separator === "\r\n" ? "CRLF" : separator === "\r" ? "CR" : "LF";

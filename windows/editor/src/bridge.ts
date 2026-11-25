@@ -33,7 +33,11 @@ export type HostMessage =
   | { type: "smoke"; action: "pickerType"; query: string }
   | { type: "smoke"; action: "pickerClose" }
   /** 끝까지 굴린다(화면을 찍으려고 — 캐럿만 옮기면 굴리지 않는다). */
-  | { type: "smoke"; action: "scrollEnd" };
+  | { type: "smoke"; action: "scrollEnd" }
+  /** 글을 고른다(서식 막대가 뜨게). */
+  | { type: "smoke"; action: "select"; from: number; to: number }
+  /** 서식 막대의 단추를 사람이 누른 것처럼. */
+  | { type: "smoke"; action: "formatPress"; command: string };
 
 /** 편집기가 물은 것의 답 — `id`로 짝을 짓는다. */
 export type Reply =
@@ -84,12 +88,16 @@ export type EditorMessage =
       source: boolean;
       follow: boolean;
       outline: boolean;
+      /** 제목 막대에 작게 — 따라 보기, UTF-8이 아닌 인코딩, CR 줄 끝. */
+      notes: string[];
     }
   /** 지금 자리에 쓴다(호스트가 아는 파일). `autosave`면 실패해도 대화상자를 띄우지 않는다. */
   | { type: "save"; bytes: string; autosave: boolean }
   /** 저장하지 않은 문서 · 다른 이름으로 — 호스트가 저장 창을 띄운다. */
   | { type: "saveAs"; bytes: string; suggestedName: string }
-  | { type: "command"; name: "new" | "open" | "close" | "exportPdf" | "llmKeys" | "checkForUpdates" }
+  | { type: "command"; name: "new" | "open" | "close" | "exportPdf" | "llmKeys" | "checkForUpdates" | "menu" }
+  /** 제목 막대(껍데기)의 색 — 편집기와 한 판이게. 모두 `#RRGGBB`. */
+  | { type: "chrome"; dark: boolean; background: string; text: string; dim: string; rule: string; accent: string }
   | { type: "outputReady"; id: number; lines: number }
   | { type: "openUrl"; url: string }
   /** 파일을 디스크에서 다시 읽어 `open`으로 보내 달라(띠의 '다시 읽기'). */
@@ -114,6 +122,8 @@ export type EditorMessage =
       /** 지금 DOM에 그려진 줄 — 내보내는 동안은 문서 전체여야 한다. */
       renderedLines: number;
       codeKeyword: string | null;
+      formatBar: { shown: boolean; buttons: string[] };
+      toast: string;
     }
   | { type: "settings"; settings: unknown }
   | { type: "openPath"; path: string }

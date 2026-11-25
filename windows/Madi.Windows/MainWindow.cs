@@ -4,7 +4,9 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Media;
+using System.Windows.Shell;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 using Win32 = Microsoft.Win32;
@@ -44,6 +46,12 @@ public sealed partial class MainWindow : Window
     private readonly List<(MenuItem Item, string Field, string Value, string Default)> choiceItems = [];
     private readonly List<(MenuItem Item, string Field, bool Fallback)> flagItems = [];
     private readonly MenuItem recentMenu;
+    /// <summary>제목 막대 — 메뉴 막대 · 상태 줄 대신(<see cref="TitleBar"/>).</summary>
+    private readonly TitleBar titleBar = new();
+    /// <summary>메뉴 — 제목 막대의 <c>…</c>(F10). 전의 메뉴 막대 전체와, 맨 위에 자주 쓰는 것(macOS판의 버거 메뉴와 같은 차례).</summary>
+    private readonly ContextMenu burger = new();
+    private readonly Border frame = new();
+    private readonly WindowChrome chrome;
 
     private readonly WebView2 webView = new();
     private readonly LaunchOptions options;
@@ -84,7 +92,18 @@ public sealed partial class MainWindow : Window
             Top = previous.Top + 28;
         }
 
-        var menu = new Menu();
+        // 창 테두리 안을 다 쓴다 — 제목 막대를 마디가 그린다. 위 테두리 6은 크기 바꾸기, 그 아래 제목 막대 높이는 창 끌기.
+        WindowChrome.SetWindowChrome(this, chrome = new WindowChrome
+        {
+            CaptionHeight = TitleBar.BarHeight - 6,
+            ResizeBorderThickness = new Thickness(6),
+            // 한 줄만 남겨 Windows의 그림자를 받는다(0이면 Windows 10에서 그림자가 사라진다).
+            GlassFrameThickness = new Thickness(0, 0, 0, 1),
+            CornerRadius = new CornerRadius(0),
+            UseAeroCaptionButtons = false,
+        });
+        var menu = burger;
+        AddBurgerPicks();
         var file = Heading("파일(_F)");
         file.Items.Add(Item("새로 만들기(_N)", "Ctrl+N", () => OpenWindow(null)));
         file.Items.Add(Item("열기(_O)…", "Ctrl+O", ShowOpenDialog));
@@ -123,6 +142,31 @@ public sealed partial class MainWindow : Window
         edit.Items.Add(new Separator());
         edit.Items.Add(Item("모두 선택(_A)", "Ctrl+A", () => Run("selectAll")));
         edit.Items.Add(Item("찾기(_F)…", "Ctrl+F", () => Run("find")));
+        // 서식 — macOS판의 서식 메뉴와 같은 차례 · 같은 단축키(⌘ → Ctrl). 글을 고르면 위에 뜨는 서식 막대(편집기)도 같은 명령이다.
+        var format = Heading("서식(_O)");
+        var headings = Heading("제목(_H)");
+        headings.Items.Add(Item("본문(_0)", "Ctrl+Alt+0", () => Run("heading0")));
+        for (var level = 1; level <= 6; level++)
+        {
+            var command = $"heading{level}";
+            headings.Items.Add(Item($"제목 {level}(_{level})", $"Ctrl+{level}", () => Run(command)));
+        }
+        format.Items.Add(headings);
+        format.Items.Add(new Separator());
+        format.Items.Add(Item("굵게(_B)", "Ctrl+B", () => Run("bold")));
+        format.Items.Add(Item("기울임(_I)", "Ctrl+I", () => Run("italic")));
+        format.Items.Add(Item("취소선(_S)", "Ctrl+Shift+X", () => Run("strikethrough")));
+        format.Items.Add(Item("인라인 코드(_C)", "Ctrl+Shift+C", () => Run("code")));
+        format.Items.Add(Item("링크(_K)", "Ctrl+K", () => Run("link")));
+        format.Items.Add(new Separator());
+        format.Items.Add(Item("글머리 목록(_U)", "Ctrl+Shift+8", () => Run("bullet")));
+        format.Items.Add(Item("번호 목록(_N)", "Ctrl+Shift+7", () => Run("numbered")));
+        format.Items.Add(Item("할 일 목록(_T)", "Ctrl+Shift+9", () => Run("task")));
+        format.Items.Add(Item("인용(_Q)", "Ctrl+Alt+Q", () => Run("quote")));
+        format.Items.Add(new Separator());
+        format.Items.Add(Item("코드 블록(_D)", "Ctrl+Alt+C", () => Run("codeBlock")));
+        format.Items.Add(Item("표(_A)", "", () => Run("table")));
+        format.Items.Add(Item("구분선(_R)", "", () => Run("rule")));
         var viewMenu = Heading("보기(_V)");
         viewMenu.Items.Add(Item("명령 팔레트(_P)…", "Ctrl+Shift+P", () => Run("commandPalette")));
         viewMenu.Items.Add(new Separator());
@@ -132,10 +176,9 @@ public sealed partial class MainWindow : Window
         viewMenu.Items.Add(outlineItem);
         viewMenu.Items.Add(sourceItem);
         viewMenu.Items.Add(followItem);
+        viewMenu.Items.Add(Item("문서 정보(_I)", "", () => Run("docInfo")));
         viewMenu.Items.Add(new Separator());
-        var themeMenu = Heading("테마(_T)");
-        foreach (var (id, label) in Themes) themeMenu.Items.Add(Choice(label, "setTheme", "theme", id, "standard"));
-        viewMenu.Items.Add(themeMenu);
+        viewMenu.Items.Add(ThemeMenu());
         var appearanceMenu = Heading("모양(_M)");
         appearanceMenu.Items.Add(Choice("시스템 따라(_S)", "setAppearance", "appearance", "system", "system"));
         appearanceMenu.Items.Add(Choice("밝게(_L)", "setAppearance", "appearance", "light", "system"));
@@ -175,17 +218,44 @@ public sealed partial class MainWindow : Window
         }
         help.Items.Add(Item("마디 정보(_A)", "", ShowAbout));
         UpdateSettingsMenu();
+        menu.Items.Add(new Separator());
         menu.Items.Add(file);
         menu.Items.Add(edit);
+        menu.Items.Add(format);
         menu.Items.Add(viewMenu);
         menu.Items.Add(tools);
         menu.Items.Add(help);
 
-        var dock = new DockPanel();
-        DockPanel.SetDock(menu, Dock.Top);
-        dock.Children.Add(menu);
-        dock.Children.Add(webView);
-        Content = dock;
+        // 제목 막대의 단추.
+        titleBar.Outline.Click += (_, _) => Press(() => Run("toggleOutline"));
+        titleBar.Search.Click += (_, _) => Press(() => Run("find"));
+        titleBar.Source.Click += (_, _) => Press(() => Run("toggleSource"));
+        titleBar.Open.Click += (_, _) => Press(ShowOpenDialog);
+        titleBar.More.Click += (_, _) => OpenMenu(byKeyboard: false);
+        titleBar.Minimize.Click += (_, _) => SystemCommands.MinimizeWindow(this);
+        titleBar.Maximize.Click += (_, _) =>
+        {
+            if (WindowState == WindowState.Maximized) SystemCommands.RestoreWindow(this);
+            else SystemCommands.MaximizeWindow(this);
+        };
+        titleBar.CloseButton.Click += (_, _) => SystemCommands.CloseWindow(this);
+        burger.PlacementTarget = titleBar.More;
+        burger.Placement = PlacementMode.Custom;
+        // 오른쪽 끝을 단추에 맞춘다(창의 오른쪽 위 — 화면 밖으로 나가지 않게).
+        burger.CustomPopupPlacementCallback = (popup, target, _) =>
+            [new CustomPopupPlacement(new Point(target.Width - popup.Width, target.Height + 4), PopupPrimaryAxis.Horizontal)];
+
+        var grid = new Grid();
+        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(TitleBar.BarHeight) });
+        grid.RowDefinitions.Add(new RowDefinition());
+        Grid.SetRow(webView, 1);
+        grid.Children.Add(titleBar);
+        grid.Children.Add(webView);
+        frame.Child = grid;
+        Content = frame;
+        ApplyChrome(ChromeColors.Load(Store.HostText("chrome")));
+        StateChanged += (_, _) => FitFrame();
+        SourceInitialized += (_, _) => WindowFrame.Apply(this, titleBar.Colors);
 
         if (options.SmokeDirectory is { } directory) smoke = new SmokeRun(this, directory);
         Windows.Add(this);
@@ -200,6 +270,28 @@ public sealed partial class MainWindow : Window
         };
 
         MenuItem Heading(string header) => new() { Header = header };
+        // 맨 위의 자주 쓰는 것 — macOS판 버거 메뉴(`AppMenu.burgerPicks`)와 같은 차례. 아래에 메뉴 막대 전체가 하위 메뉴로 온다.
+        void AddBurgerPicks()
+        {
+            menu.Items.Add(Item("새로 만들기", "Ctrl+N", () => OpenWindow(null)));
+            menu.Items.Add(Item("열기…", "Ctrl+O", ShowOpenDialog));
+            menu.Items.Add(Item("빠른 열기…", "Ctrl+Alt+O", () => Run("quickOpen")));
+            menu.Items.Add(new Separator());
+            menu.Items.Add(Item("저장", "Ctrl+S", () => Run("save")));
+            menu.Items.Add(Item("다른 이름으로 저장…", "Ctrl+Shift+S", () => Run("saveAs")));
+            menu.Items.Add(new Separator());
+            menu.Items.Add(Item("PDF 내보내기…", "", () => _ = ExportPdfAsync()));
+            menu.Items.Add(Item("프린트하기…", "Ctrl+P", () => Run("print")));
+            menu.Items.Add(new Separator());
+            menu.Items.Add(ThemeMenu());
+            menu.Items.Add(Item("명령 팔레트…", "Ctrl+Shift+P", () => Run("commandPalette")));
+        }
+        MenuItem ThemeMenu()
+        {
+            var themeMenu = Heading("테마(_T)");
+            foreach (var (id, label) in Themes) themeMenu.Items.Add(Choice(label, "setTheme", "theme", id, "standard"));
+            return themeMenu;
+        }
         MenuItem Choice(string header, string command, string field, string value, string fallback)
         {
             var item = Item(header, "", () => Run(command, value));
@@ -225,6 +317,50 @@ public sealed partial class MainWindow : Window
     }
 
     internal CoreWebView2 Core => webView.CoreWebView2;
+
+    // MARK: 제목 막대
+
+    internal TitleBar Chrome => titleBar;
+
+    /// <summary>제목 막대의 단추 — 하고 나서 초점을 편집기로(단추는 초점을 가져가지 않지만 대화상자가 가져갈 수 있다).</summary>
+    private void Press(Action action)
+    {
+        action();
+        webView.Focus();
+    }
+
+    /// <summary>메뉴(…) — 단추로, 또는 F10(편집기가 알린다). 키보드로 열었으면 첫 항목에 초점을 둬 화살표로 고른다.</summary>
+    internal void OpenMenu(bool byKeyboard)
+    {
+        burger.IsOpen = true;
+        if (byKeyboard)
+        {
+            Dispatcher.InvokeAsync(() => burger.Items.OfType<MenuItem>().FirstOrDefault()?.Focus(),
+                System.Windows.Threading.DispatcherPriority.Input);
+        }
+    }
+
+    /// <summary>편집기의 테마 색으로 — 제목 막대, 창 바탕(크기를 바꾸는 동안 보인다), 창 테두리, 메뉴의 밝기.</summary>
+    private void ApplyChrome(ChromeColors colors)
+    {
+        titleBar.Apply(colors);
+        Background = new SolidColorBrush(colors.Background);
+        WindowFrame.Apply(this, colors);
+        // 편집기가 그리기 전의 바탕 — 어두운 테마에서 흰 화면이 번쩍이지 않게.
+        webView.DefaultBackgroundColor = System.Drawing.Color.FromArgb(colors.Background.R, colors.Background.G, colors.Background.B);
+        Program.UseDarkMenus(colors.Dark);
+    }
+
+    /// <summary>최대화하면 화면 밖으로 나간 테두리만큼 안으로 — 제목 막대의 단추가 잘리지 않게.</summary>
+    private void FitFrame()
+    {
+        var maximized = WindowState == WindowState.Maximized;
+        var inset = maximized ? WindowFrame.MaximizedInset(this) : new Thickness(0);
+        frame.Margin = inset;
+        // 제목 영역은 창의 위 끝(최대화하면 화면 밖)에서 잰다 — 밀려 내려간 만큼 늘린다.
+        chrome.CaptionHeight = TitleBar.BarHeight - chrome.ResizeBorderThickness.Top + inset.Top;
+        titleBar.SetMaximized(maximized);
+    }
 
     // MARK: 띄우기
 
@@ -335,6 +471,13 @@ public sealed partial class MainWindow : Window
                 case "state":
                     UpdateState(message);
                     break;
+                case "chrome":
+                    if (ChromeColors.From(message) is { } colors)
+                    {
+                        ApplyChrome(colors);
+                        Store.SetHostText("chrome", colors.ToJson());
+                    }
+                    break;
                 case "save":
                     await SaveAsync(Bytes(message), autosave: message.TryGetProperty("autosave", out var auto) && auto.ValueKind == JsonValueKind.True);
                     break;
@@ -350,6 +493,7 @@ public sealed partial class MainWindow : Window
                         case "exportPdf": _ = ExportPdfAsync(); break;
                         case "llmKeys": new LlmKeysWindow(this).ShowDialog(); break;
                         case "checkForUpdates": _ = Updates.CheckAsync(this, interactive: true); break;
+                        case "menu": OpenMenu(byKeyboard: true); break;
                     }
                     break;
                 case "outputReady":
@@ -407,6 +551,12 @@ public sealed partial class MainWindow : Window
         sourceItem.IsChecked = State.Source;
         followItem.IsChecked = State.Follow;
         outlineItem.IsChecked = State.Outline;
+        var notes = message.TryGetProperty("notes", out var list) && list.ValueKind == JsonValueKind.Array
+            ? list.EnumerateArray().Select(item => item.GetString()).OfType<string>().ToList()
+            : [];
+        titleBar.SetTitle(State.Name, State.Dirty, notes);
+        titleBar.Source.IsOn = State.Source;
+        titleBar.Outline.IsOn = State.Outline;
     }
 
     /// <summary>메뉴에서 고른 명령을 편집기에 — 단축키는 편집기가 직접 받는다. 설정 명령은 값을 <paramref name="arg"/>로.</summary>
