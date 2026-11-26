@@ -24,6 +24,13 @@
 
 ## 끝난 것
 
+- **Windows판 서식 있는 글 붙여 넣기**(2026-11-26, 사용자 — "외부 서식있는 문서를 복사하면 다 풀려서 붙여짐"). 가지 `windows/rich-paste`.
+  클립보드의 HTML을 마크다운으로(`editor/src/core/richpaste.ts` · `editor/src/editor/paste.ts`). Google 문서(스타일로 굵게, 전체를 감싼
+  `<b style="font-weight:normal">`) · Word(`mso-list` 문단 목록, 번호 붙은 제목, 표) · 웹(Chromium이 붙이는 인라인 스타일, GitHub · ChatGPT의
+  코드 블록) · Excel(맞춤 · 합친 칸). 코드 편집기에서 복사한 것 · 서식 없는 글 · 코드 블록 안 · `Ctrl+Shift+V`는 글만. 시험: Node 14개(마디의
+  GFM 파서로 다시 읽어 굵게 · 표 · 목록이 정말 그것으로 읽히는지도), 확인 실행 넷(실제 클립보드의 HTML Format까지).
+  - 못 본 것: 실제 Word · 한글 · Google 문서에서의 복사(시험의 HTML은 그들이 두는 꼴을 본떠 썼다), 한글(HWP)의 클립보드 HTML.
+  - macOS판은 아직 글만 붙는다(`NSTextView` 글 모드) — 같은 규칙을 옮길지는 따로.
 - **Windows판 모양 다시**(2026-11-25, 사용자 — "윈도우 버전 디자인이 별로인데... https://loomm.ai/mark 이거 느낌"). 가지
   `windows/design`(MSIX 위), 자세한 것은 `windows/README.md`. Mark의 로고 · 그림은 쓰지 않았다 — 느낌(조용한 창, 문서 같은 글)만.
   - 창: 메뉴 막대 · 아래 상태 줄을 걷고 제목 막대 하나(`TitleBar.cs` · `WindowFrame.cs` — WindowChrome, Windows 11 둥근 모서리, 테마 색,

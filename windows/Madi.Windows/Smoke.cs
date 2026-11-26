@@ -38,6 +38,22 @@ internal sealed class SmokeRun(MainWindow window, string directory)
     private sealed record Case(string Name, byte[] Bytes, string Encoding, bool Bom, string LineSeparator, string RoundTrip);
 
     private static byte[] Utf8(string text) => new UTF8Encoding(false).GetBytes(text);
+
+    /// <summary>
+    /// Windows 클립보드의 "HTML Format"(CF_HTML) — 머리의 네 숫자는 UTF-8 바이트 자리다. Word · 브라우저가 두는 꼴과 같이 문서로 감싸고
+    /// 조각을 <c>StartFragment</c> · <c>EndFragment</c> 주석으로 표시한다. WPF는 이 형식의 글을 UTF-8로 넣는다.
+    /// </summary>
+    private static string ClipboardHtml(string fragment)
+    {
+        const string header = "Version:0.9\r\nStartHTML:{0:D10}\r\nEndHTML:{1:D10}\r\nStartFragment:{2:D10}\r\nEndFragment:{3:D10}\r\n";
+        const string before = "<html><body>\r\n<!--StartFragment-->";
+        const string after = "<!--EndFragment-->\r\n</body>\r\n</html>";
+        var startHtml = Encoding.UTF8.GetByteCount(string.Format(header, 0, 0, 0, 0));
+        var startFragment = startHtml + Encoding.UTF8.GetByteCount(before);
+        var endFragment = startFragment + Encoding.UTF8.GetByteCount(fragment);
+        var endHtml = endFragment + Encoding.UTF8.GetByteCount(after);
+        return string.Format(header, startHtml, endHtml, startFragment, endFragment) + before + fragment + after;
+    }
     private static byte[] Join(params byte[][] parts) => parts.SelectMany(part => part).ToArray();
 
     private static readonly byte[] CrlfBom = Join([0xef, 0xbb, 0xbf], Utf8("# 메모장에서 저장한 글\r\n\r\n- 줄 끝은 CRLF\r\n- 맨 앞에 BOM\r\n"));
@@ -353,6 +369,75 @@ internal sealed class SmokeRun(MainWindow window, string directory)
             await Task.Delay(1500);
             var echoed = Drain().Where(message => Field(message, "type") == "applied").Select(message => Field(message, "change")).ToList();
             Check("저장 — 내가 쓴 것을 바깥 변경으로 읽지 않는다", echoed.Count == 0, echoed);
+        });
+
+        // 2½. 서식 붙여넣기 — 다른 앱에서 복사한 서식 있는 글(HTML)은 마크다운으로(`core/richpaste.ts`). Ctrl+Shift+V · 코드 블록 안은 글만.
+        //     끝으로 진짜 클립보드 — Word처럼 "HTML Format"을 Windows 클립보드에 두고 Ctrl+V(개발자 도구 프로토콜의 키와 Paste 명령)를
+        //     보내 Chromium이 클립보드의 HTML을 붙여넣기 이벤트에 실어 주는지까지 본다.
+        await Scenario("서식 붙여넣기", async () =>
+        {
+            var path = Path.Combine(directory, "paste.md");
+            await File.WriteAllBytesAsync(path, Utf8("앞 글\n\n```\n코드\n```\n"));
+            await window.LoadFileAsync(path);
+            async Task<string> Text()
+            {
+                Drain();
+                window.Post(new { type = "smoke", action = "digest" });
+                return Field(await WaitFor("digest"), "text") ?? "";
+            }
+            async Task<string> TextAfterChange(string before)
+            {
+                var text = before;
+                for (var tries = 0; tries < 30 && text == before; tries++)
+                {
+                    await Task.Delay(100);
+                    text = await Text();
+                }
+                return text;
+            }
+
+            const string web = "<meta charset=\"utf-8\"><h2>제목</h2><p><b>굵게</b>와 <a href=\"https://example.com/\">링크</a></p>"
+                + "<ul><li>하나</li><li>둘</li></ul>";
+            var start = await Text();
+            window.Post(new { type = "smoke", action = "caret", at = 3 });
+            window.Post(new { type = "smoke", action = "pasteHtml", html = web, text = "제목\r\n굵게와 링크\r\n하나\r\n둘" });
+            var converted = await TextAfterChange(start);
+            Check("서식 붙여넣기 — HTML은 마크다운으로(제목 · 굵게 · 링크 · 목록), 글 줄 뒤면 빈 줄 하나 두고",
+                converted == "앞 글\n\n## 제목\n\n**굵게**와 [링크](https://example.com/)\n\n- 하나\n- 둘\n\n```\n코드\n```\n", converted);
+
+            window.Post(new { type = "smoke", action = "caret", at = 1_000_000 });
+            window.Post(new { type = "smoke", action = "pasteHtml", html = "<b>굵게만</b>", text = "굵게만", plain = true });
+            var plain = await TextAfterChange(converted);
+            Check("서식 붙여넣기 — Ctrl+Shift+V는 글만", plain == converted + "굵게만", plain);
+
+            var code = plain.IndexOf("코드\n", StringComparison.Ordinal) + "코드".Length;
+            window.Post(new { type = "smoke", action = "caret", at = code });
+            window.Post(new { type = "smoke", action = "pasteHtml", html = "<b>x</b>", text = "x" });
+            var inCode = await TextAfterChange(plain);
+            Check("서식 붙여넣기 — 코드 블록 안은 글만", inCode == plain.Insert(code, "x"), inCode);
+
+            // 진짜 클립보드 — Word가 두는 것과 같은 꼴(HTML Format의 머리 · 앞뒤를 감싼 문서 · 조각 표시)과 글.
+            var fragment = "<p class=MsoNormal><b>워드</b>에서 <i>복사</i><o:p></o:p></p>";
+            var data = new DataObject();
+            data.SetData(DataFormats.Html, ClipboardHtml(fragment));
+            data.SetData(DataFormats.UnicodeText, "워드에서 복사");
+            Clipboard.SetDataObject(data, true);
+            window.Post(new { type = "smoke", action = "type", at = inCode.Length, text = "\n" });
+            var typed = await TextAfterChange(inCode);
+            window.Post(new { type = "smoke", action = "caret", at = 1_000_000 });
+            window.Activate();
+            // 창이 앞에 오지 못해도(CI) 페이지는 초점이 있다고 여기게 — 편집 명령(Paste)은 초점 있는 편집 칸에만 간다.
+            await window.Core.CallDevToolsProtocolMethodAsync("Emulation.setFocusEmulationEnabled", "{\"enabled\":true}");
+            window.Post(new { type = "smoke", action = "focus" });
+            await Task.Delay(300);
+            string Key(string kind) => JsonSerializer.Serialize(kind == "keyDown"
+                ? new { type = kind, modifiers = 2, key = "v", code = "KeyV", windowsVirtualKeyCode = 86, commands = new[] { "Paste" } }
+                : (object)new { type = kind, modifiers = 2, key = "v", code = "KeyV", windowsVirtualKeyCode = 86 });
+            await window.Core.CallDevToolsProtocolMethodAsync("Input.dispatchKeyEvent", Key("keyDown"));
+            await window.Core.CallDevToolsProtocolMethodAsync("Input.dispatchKeyEvent", Key("keyUp"));
+            var fromClipboard = await TextAfterChange(typed);
+            Check("서식 붙여넣기 — 진짜 클립보드(Word의 HTML Format)에서 Ctrl+V도 마크다운으로",
+                fromClipboard == typed + "**워드**에서 *복사*", new { fromClipboard, typed = typed.Length });
         });
 
         // 3. 로그 — 따라 보기, 끝에 붙는 줄, 둘로 나눠 쓴 한 글자

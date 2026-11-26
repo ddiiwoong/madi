@@ -27,6 +27,7 @@ import { Picker, type PickItem } from "./editor/picker.ts";
 import { ConflictBand, NewLinesPill, OutlinePanel, Toast } from "./editor/ui.ts";
 import { FormatBar } from "./editor/formatbar.ts";
 import { CodeCopyButton } from "./editor/codecopy.ts";
+import { richPaste } from "./editor/paste.ts";
 import { cssVariables } from "./core/settings.ts";
 
 declare global {
@@ -215,6 +216,8 @@ function baseExtensions() {
     EditorView.contentAttributes.of({ lang: "ko", spellcheck: "false" }),
     // 붙여 넣기 · 끌어다 놓기의 줄 끝을 문서의 줄 끝으로 — Windows의 클립보드는 CRLF라 LF 문서에 \r이 섞였다.
     EditorView.clipboardInputFilter.of((text, state) => normalizeLineBreaks(text, state.lineBreak)),
+    // 서식 있는 글(Word · 웹 페이지 …)은 마크다운으로 — 마크다운 문서에서만.
+    richPaste(() => mode.kind === "markdown"),
     EditorView.updateListener.of((update) => {
       if (update.docChanged) {
         const byUser = update.transactions.some((tr) => tr.docChanged && !tr.annotation(fromDisk));
@@ -891,6 +894,21 @@ async function runSmoke(message: Extract<HostMessage, { type: "smoke" }>): Promi
       }));
       break;
     }
+    case "pasteHtml": {
+      // 사람이 붙여 넣은 것처럼 — 클립보드의 HTML · 글을 실은 붙여넣기 이벤트. `plain`이면 앞서 Ctrl+Shift+V를 누른 것.
+      view.focus();
+      if (message.plain) {
+        view.contentDOM.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ctrlKey: true, shiftKey: true, key: "V", code: "KeyV" }));
+      }
+      const data = new DataTransfer();
+      data.setData("text/html", message.html);
+      data.setData("text/plain", message.text);
+      view.contentDOM.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: data }));
+      break;
+    }
+    case "focus":
+      view.focus();
+      break;
     case "codeCopyPress":
       document.querySelector<HTMLElement>("#codecopy:not([hidden])")
         ?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));

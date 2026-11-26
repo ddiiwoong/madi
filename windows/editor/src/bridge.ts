@@ -41,7 +41,11 @@ export type HostMessage =
   /** 첫(`last`면 마지막) 코드 블록을 보이게 굴리고 그 둘째 줄에 마우스를 올린 것처럼(mousemove). */
   | { type: "smoke"; action: "hoverCode"; last?: boolean }
   /** 코드 복사 단추를 사람이 누른 것처럼(mousedown). */
-  | { type: "smoke"; action: "codeCopyPress" };
+  | { type: "smoke"; action: "codeCopyPress" }
+  /** 클립보드의 HTML · 글을 붙여 넣은 것처럼(`plain`이면 Ctrl+Shift+V). */
+  | { type: "smoke"; action: "pasteHtml"; html: string; text: string; plain?: boolean }
+  /** 편집기에 초점 — 개발자 도구 프로토콜로 보낸 키가 편집기에 가게. */
+  | { type: "smoke"; action: "focus" };
 
 /** 편집기가 물은 것의 답 — `id`로 짝을 짓는다. */
 export type Reply =
