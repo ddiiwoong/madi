@@ -30,6 +30,11 @@ export interface Settings {
   printPaper: PrintPaper;
   /** 켤 때 하루 한 번 GitHub에 새 판을 묻는다. 기본 켜짐(macOS판 — 2026-11-09 사용자가 골랐다). 보내는 것은 판을 묻는 GET 하나. */
   checksForUpdates: boolean;
+  /**
+   * 제목 막대 아래의 메뉴 막대(파일 · 편집 · 서식 · 보기 · 도구 · 도움말과 서식 단추 — 껍데기의 `MenuBar.cs`). 기본 꺼짐 — 메뉴는 제목 막대의
+   * `…`에 다 있다(2026-11-26 사용자 — "기본값은 현재 처럼 하고, 옵션을 키면 메뉴바가 보이게"). 켜면 Alt · Alt+글자가 그 메뉴를 연다.
+   */
+  showsMenuBar: boolean;
 }
 
 export const sizeRange = { min: 10, max: 28 } as const;
@@ -48,6 +53,7 @@ export const defaultSettings: Settings = {
   printOrientation: "portrait",
   printPaper: "system",
   checksForUpdates: true,
+  showsMenuBar: false,
 };
 
 /** 여백(pt) — macOS판 `PrintMargin.points`. */
@@ -82,6 +88,7 @@ export function normalizeSettings(raw: unknown): Settings {
     printPaper: pick("printPaper", ["system", "a4", "letter"] as const, defaultSettings.printPaper),
     // 끄는 것만 받는다 — 깨진 값이 확인을 끄지 않게(기본이 켜짐).
     checksForUpdates: value.checksForUpdates !== false,
+    showsMenuBar: value.showsMenuBar === true,
   };
 }
 
