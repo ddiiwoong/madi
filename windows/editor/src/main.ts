@@ -273,7 +273,6 @@ new ResizeObserver(() => {
   if (mode.follow && lastAtEnd) scrollToEnd();
 }).observe(view.scrollDOM);
 
-// 끌어다 놓은 파일은 연다 — CodeMirror가 글로 넣지 않게 먼저 받는다.
 // 메뉴 막대의 키 — 막대가 보일 때만(`core/menukeys.ts`). 편집기보다 먼저 받는다(CodeMirror의 키맵이 Alt 조합을 먹지 않게).
 const altTap = new AltTap();
 window.addEventListener("keydown", (event) => {
@@ -297,6 +296,7 @@ window.addEventListener("keyup", (event) => {
 window.addEventListener("pointerdown", () => altTap.cancel(), true);
 window.addEventListener("blur", () => altTap.cancel());
 
+// 끌어다 놓은 파일은 연다 — CodeMirror가 글로 넣지 않게 먼저 받는다.
 window.addEventListener("dragover", (event) => {
   if (event.dataTransfer?.types.includes("Files")) event.preventDefault();
 }, true);
