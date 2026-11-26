@@ -34,6 +34,8 @@ export type HostMessage =
   | { type: "smoke"; action: "pickerClose" }
   /** 끝까지 굴린다(화면을 찍으려고 — 캐럿만 옮기면 굴리지 않는다). */
   | { type: "smoke"; action: "scrollEnd" }
+  /** 그 줄(1부터)이 맨 위에 오게 굴린다 — Store 화면을 찍으려고. */
+  | { type: "smoke"; action: "scrollTo"; line: number }
   /** 글을 고른다(서식 막대가 뜨게). */
   | { type: "smoke"; action: "select"; from: number; to: number }
   /** 서식 막대의 단추를 사람이 누른 것처럼. */
