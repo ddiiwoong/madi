@@ -52,6 +52,10 @@ public sealed class MenuBar : Grid
         menu.HorizontalAlignment = HorizontalAlignment.Left;
         foreach (var item in menus)
         {
+            // Fluent의 위 단계 메뉴를 막대 높이에 맞게 줄인다 — 템플릿이 다시 붙으면(밝기를 바꾸면 테마 사전이 바뀐다) 다시.
+            item.Loaded += (_, _) => Tighten(item);
+            TemplateChanges.AddValueChanged(item, (_, _) =>
+                Dispatcher.InvokeAsync(() => Tighten(item), System.Windows.Threading.DispatcherPriority.Loaded));
             // 하위 메뉴의 닫힘도 여기로 올라온다 — 다른 메뉴로 옮겨 가는 중이면 곧 다른 것이 열린다. 다 닫힌 뒤에 알린다.
             item.SubmenuClosed += (_, _) => Dispatcher.InvokeAsync(() =>
             {
@@ -165,17 +169,30 @@ public sealed class MenuBar : Grid
         foreach (var gap in gaps) gap.Background = new SolidColorBrush(next.Tint(0.14));
     }
 
+    private static readonly System.ComponentModel.DependencyPropertyDescriptor TemplateChanges =
+        System.ComponentModel.DependencyPropertyDescriptor.FromProperty(Control.TemplateProperty, typeof(MenuItem));
+
+    /// <summary>
+    /// Fluent 테마의 위 단계 메뉴는 49px 남짓이다 — 템플릿(<c>TopLevelHeaderTemplateKey</c>)의 테두리 바깥 여백 4 · 테두리 1 · 안쪽 여백 10이
+    /// 위아래로 붙고, 바꿀 속성이 없다. 그대로 두면 44px 막대에서 위가 잘린다(처음 확인 실행의 menubar.png). 템플릿 안의 두 여백을 줄여
+    /// 39px로 — 메모장의 메뉴 막대와 비슷한 키. 템플릿이 정한 값보다 여기서 정한 값이 먼저다.
+    /// </summary>
+    private static void Tighten(MenuItem item)
+    {
+        item.ApplyTemplate();
+        if (item.Template is not { } template || template.FindName("Border", item) is not Border border) return;
+        border.Margin = new Thickness(2, 3, 2, 3);
+        if (template.FindName("HeaderPresenter", item) is FrameworkElement header && VisualTreeHelper.GetParent(header) is Grid inner)
+        {
+            inner.Margin = new Thickness(10, 6, 10, 6);
+        }
+    }
+
     /// <summary>
     /// 서식 단추는 창 가운데에(메모장처럼). 창이 좁아 메뉴와 겹치면 메뉴 바로 오른쪽에 붙인다 — 그래도 모자라면 오른쪽이 잘린다.
     /// </summary>
     private void PlaceTools()
     {
-        // Fluent 테마의 위 단계 메뉴는 47px 남짓이다(바깥 여백 4 + 안쪽 여백 10, 위아래로 — 바꿀 속성이 없다). 칸보다 크면 WPF가 위에 붙여
-        // 글자가 아래로 밀려 잘렸다(확인 실행의 menubar.png). 메뉴가 잰 높이만큼 위아래로 넓혀 가운데에 두고, 넘친 만큼은 투명한 바깥 여백이
-        // 막대 밖으로 잘리게 한다.
-        menu.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        var spill = Math.Max(0, Math.Ceiling(menu.DesiredSize.Height - BarHeight) / 2);
-        if (Math.Abs(menu.Margin.Top + spill) > 0.1) menu.Margin = new Thickness(6, -spill, 0, -spill);
         tools.Measure(new Size(double.PositiveInfinity, BarHeight));
         var width = tools.DesiredSize.Width;
         var menuRight = menu.Margin.Left + menu.ActualWidth + 16;
