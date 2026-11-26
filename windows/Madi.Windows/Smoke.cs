@@ -772,8 +772,6 @@ internal sealed class SmokeRun(MainWindow window, string directory)
             Note($"Store 화면을 찍지 못했다: {error.Message}");
         }
 
-        var fonts = ready.TryGetProperty
-
         var fonts = ready.TryGetProperty("fonts", out var fontsValue) ? fontsValue : default;
         var fontsLoaded = fonts.ValueKind == JsonValueKind.Object && Flag(fonts, "pretendard") && Flag(fonts, "plexMono");
         // 실렸어도 다른 규칙에 밀리면 쓰이지 않는다 — 0단계의 처음 빌드가 그랬다(고정폭 기본 글꼴, 여백 없음).
