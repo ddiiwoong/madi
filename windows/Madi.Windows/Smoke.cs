@@ -845,6 +845,8 @@ internal sealed class SmokeRun(MainWindow window, string directory)
 
         async Task Shot(string name)
         {
+            // 테마를 바꾸면 아래에 알림('설정: Notion · 15px')이 2.6초 뜬다 — 사라진 뒤에 찍는다.
+            await Settle(message => !Flag(Child(message, "toast"), "shown"), 6);
             var file = Path.Combine(directory, name);
             WindowFrame.Capture(window, file);
             // 보이는 테두리(DWM)가 창 크기와 조금 다를 수 있다 — 한 번 맞춘다.
