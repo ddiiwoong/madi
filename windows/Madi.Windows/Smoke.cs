@@ -595,10 +595,13 @@ internal sealed class SmokeRun(MainWindow window, string directory)
             Point Screen(FrameworkElement element, double x, double y) => element.PointToScreen(new Point(x, y));
             var menuHit = WindowFrame.HitTest(window, Screen(bar, 30, MenuBar.BarHeight / 2));
             var titleStill = WindowFrame.HitTest(window, Screen(window.Chrome, window.Chrome.ActualWidth * 0.55, 20));
-            Check("메뉴 막대 — 켜면 제목 막대 아래에 메뉴 여섯 · 서식 단추, 막대는 누르는 자리(창을 끌지 않는다)",
-                bar.IsShown && names.SequenceEqual(["파일", "편집", "서식", "보기", "도구", "도움말"])
+            // 메뉴 이름이 다 보이는가 — 메뉴 항목 · 글자 칸이 바라는 높이만큼 자리를 받았고 막대 안에 든다. 처음엔 47px 메뉴를 38px 막대에
+            // 넣어 글자의 위가 잘렸다(그림으로 봄 — 그때의 확인은 이것을 보지 않아 통과했다).
+            var clipped = bar.ClippedMenuNames();
+            Check("메뉴 막대 — 켜면 제목 막대 아래에 메뉴 여섯 · 서식 단추(이름이 잘리지 않게), 막대는 누르는 자리(창을 끌지 않는다)",
+                bar.IsShown && names.SequenceEqual(["파일", "편집", "서식", "보기", "도구", "도움말"]) && clipped.Count == 0
                 && tools.Contains("bold") && tools.Contains("heading") && tools.Contains("table") && menuHit == 1 && titleStill == 2,
-                new { names, tools, menuHit, titleStill });
+                new { names, clipped, tools, menuHit, titleStill });
 
             // 서식 단추 — 고른 글을 굵게(편집기의 서식 명령), 자동 저장.
             var text = Encoding.UTF8.GetString(await File.ReadAllBytesAsync(path));

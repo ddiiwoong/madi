@@ -15,7 +15,7 @@ namespace Madi;
 /// </summary>
 public sealed class MenuBar : Grid
 {
-    public const double BarHeight = 38;
+    public const double BarHeight = 44;
 
     /// <summary>서식 단추 — 명령은 편집기의 서식 명령(<c>core/formatting.ts</c>), <c>null</c>은 칸막이.</summary>
     private static readonly (string Command, string Icon, string Tip)?[] FormatButtons =
@@ -105,6 +105,32 @@ public sealed class MenuBar : Grid
 
     public bool IsShown => Visibility == Visibility.Visible;
 
+    /// <summary>
+    /// 이름이 잘린 위 단계 메뉴 — 확인 실행이 본다. 둘을 잰다: 메뉴 항목과 그 글자 칸(템플릿의 <c>HeaderPresenter</c>)이 바라는 높이보다
+    /// 좁은 자리를 받았는가(WPF는 좁은 자리에 넣으면 그 자리로 잘라 그린다 — 처음엔 47px 메뉴가 38px 막대에서 그렇게 위가 잘렸다), 그리고
+    /// 글자 칸이 막대의 위아래 안에 드는가.
+    /// </summary>
+    public IReadOnlyList<string> ClippedMenuNames()
+    {
+        var clipped = new List<string>();
+        foreach (var item in menu.Items.OfType<MenuItem>())
+        {
+            var header = item.Template?.FindName("HeaderPresenter", item) as FrameworkElement;
+            foreach (var element in new[] { item, header }.OfType<FrameworkElement>())
+            {
+                var slot = LayoutInformation.GetLayoutSlot(element);
+                if (slot.Height + 0.5 < element.DesiredSize.Height)
+                {
+                    clipped.Add($"{item.Header}: {element.GetType().Name} {slot.Height:0.#} < {element.DesiredSize.Height:0.#}");
+                }
+            }
+            if (header is null || header.ActualHeight <= 0) continue;
+            var box = header.TransformToAncestor(this).TransformBounds(new Rect(0, 0, header.ActualWidth, header.ActualHeight));
+            if (box.Top < -0.5 || box.Bottom > ActualHeight + 0.5) clipped.Add($"{item.Header}: {box.Top:0.#}~{box.Bottom:0.#}/{ActualHeight:0.#}");
+        }
+        return clipped;
+    }
+
     /// <summary>확인 실행 — 단추를 사람이 누른 것처럼(드롭다운이면 그 메뉴를 연다).</summary>
     public void Press(string command) => byCommand[command].RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent, byCommand[command]));
 
@@ -144,6 +170,12 @@ public sealed class MenuBar : Grid
     /// </summary>
     private void PlaceTools()
     {
+        // Fluent 테마의 위 단계 메뉴는 47px 남짓이다(바깥 여백 4 + 안쪽 여백 10, 위아래로 — 바꿀 속성이 없다). 칸보다 크면 WPF가 위에 붙여
+        // 글자가 아래로 밀려 잘렸다(확인 실행의 menubar.png). 메뉴가 잰 높이만큼 위아래로 넓혀 가운데에 두고, 넘친 만큼은 투명한 바깥 여백이
+        // 막대 밖으로 잘리게 한다.
+        menu.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        var spill = Math.Max(0, Math.Ceiling(menu.DesiredSize.Height - BarHeight) / 2);
+        if (Math.Abs(menu.Margin.Top + spill) > 0.1) menu.Margin = new Thickness(6, -spill, 0, -spill);
         tools.Measure(new Size(double.PositiveInfinity, BarHeight));
         var width = tools.DesiredSize.Width;
         var menuRight = menu.Margin.Left + menu.ActualWidth + 16;
