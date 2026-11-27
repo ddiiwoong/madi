@@ -24,6 +24,11 @@
 
 ## 끝난 것
 
+- **Windows판 창 가장자리 크기 바꾸기**(2026-11-27, 사용자 — "위아래 늘리고 줄이고 되는데 가로세로 늘리는게 안된다"). 가지
+  `windows/resize-edges`. 편집기(WebView2)가 창 끝까지 덮어, 그 위의 점은 Windows가 편집기 창에 물었다 — WindowChrome의 테두리 판정까지
+  가지 않아 위 끝(제목 막대 — WPF)만 크기가 바뀌었다(모양 다시부터). 창 단추 위의 테두리는 단추가 누르기로 답했다. 편집기를 테두리 폭만큼
+  안으로 들이고 창 단추 위에 투명한 띠를 얹었다(`MainWindow.FitFrame`). 확인 실행의 제목 막대 확인은 껍데기 창에 바로 물어(`HitTest`) 이것을
+  놓쳤다 — 이제 Windows처럼 묻고(`SystemHitTest`) 진짜 마우스로 모서리를 끈다. 확인만 넣고 고치지 않은 커밋(`08432aa`)도 CI에 돌려 견준다.
 - **Windows판 서식 있는 글 붙여 넣기**(2026-11-26, 사용자 — "외부 서식있는 문서를 복사하면 다 풀려서 붙여짐"). 가지 `windows/rich-paste`.
   클립보드의 HTML을 마크다운으로(`editor/src/core/richpaste.ts` · `editor/src/editor/paste.ts`). Google 문서(스타일로 굵게, 전체를 감싼
   `<b style="font-weight:normal">`) · Word(`mso-list` 문단 목록, 번호 붙은 제목, 표) · 웹(Chromium이 붙이는 인라인 스타일, GitHub · ChatGPT의

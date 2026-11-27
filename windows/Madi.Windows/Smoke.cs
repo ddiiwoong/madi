@@ -836,6 +836,85 @@ internal sealed class SmokeRun(MainWindow window, string directory)
             }
         });
 
+        // 8½. 창 크기 — 가장자리 여덟 곳(위 · 아래 · 왼쪽 · 오른쪽 · 네 모서리)에서 크기를 바꾼다. 편집기(WebView2)는 따로 된 창이라 그 위의
+        //     점은 Windows가 껍데기가 아니라 편집기 창에 묻는다 — 껍데기 창에 바로 묻던 제목 막대 확인은 그것을 보지 못해, 위 끝만 되고 왼쪽 ·
+        //     오른쪽 · 아래 · 모서리는 안 되는 것을 놓쳤다(사용자 — "위아래 늘리고 줄이고 되는데 가로세로 늘리는게 안된다"). 그래서 Windows처럼
+        //     묻고(그 점의 맨 위 창에 WM_NCHITTEST), 진짜 마우스로 오른쪽 아래 모서리를 끌어 본다.
+        await Scenario("창 크기", async () =>
+        {
+            window.WindowState = WindowState.Normal;
+            window.Activate();
+            await Task.Delay(500);
+            var scale = System.Windows.Media.VisualTreeHelper.GetDpi(window).DpiScaleX;
+            var bounds = WindowFrame.Bounds(window);
+            const double inside = 2;
+            var left = bounds.Left + inside;
+            var right = bounds.Right - 1 - inside;
+            var top = bounds.Top + inside;
+            var bottom = bounds.Bottom - 1 - inside;
+            var middleX = Math.Round(bounds.Left + bounds.Width / 2);
+            var middleY = Math.Round(bounds.Top + bounds.Height / 2);
+            var close = window.Chrome.CloseButton;
+            var closeCenter = close.PointToScreen(new Point(close.ActualWidth / 2, close.ActualHeight / 2));
+            // HTLEFT 10 · HTRIGHT 11 · HTTOP 12 · HTTOPLEFT 13 · HTTOPRIGHT 14 · HTBOTTOM 15 · HTBOTTOMLEFT 16 · HTBOTTOMRIGHT 17, 글 영역 1
+            var spots = new (string Name, Point At, int Expected)[]
+            {
+                ("왼쪽", new Point(left, middleY), 10),
+                ("오른쪽", new Point(right, middleY), 11),
+                ("아래", new Point(middleX, bottom), 15),
+                ("위 — 닫기 단추 위", new Point(closeCenter.X, top), 12),
+                ("왼쪽 위", new Point(left, top), 13),
+                ("오른쪽 위 — 닫기 단추 모서리", new Point(right, top), 14),
+                ("왼쪽 아래", new Point(left, bottom), 16),
+                ("오른쪽 아래", new Point(right, bottom), 17),
+                ("오른쪽 — 제목 막대 높이(닫기 단추 옆)", new Point(right, closeCenter.Y), 11),
+                ("편집기 — 왼쪽 끝에서 조금 안", new Point(bounds.Left + Math.Ceiling(14 * scale), middleY), 1),
+                ("닫기 단추 가운데", closeCenter, 1),
+            };
+            var answers = spots.Select(spot =>
+            {
+                var (code, shell, owner) = WindowFrame.SystemHitTest(window, spot.At);
+                return new { spot.Name, at = $"{spot.At.X},{spot.At.Y}", code, spot.Expected, shell, owner };
+            }).ToList();
+            // 조금 안쪽은 편집기 창이 받는다(껍데기의 빈 띠가 아니라 — 띠가 너무 넓으면 편집기 끝을 누를 수 없다).
+            Check("창 크기 — 가장자리 여덟 곳은 크기 바꾸기(편집기 위도), 조금 안쪽은 편집기, 닫기 단추는 누르기",
+                answers.All(answer => answer.code == answer.Expected) && answers.Single(answer => answer.Name.StartsWith("편집기")).shell == false,
+                answers);
+
+            // 진짜 마우스 — 오른쪽 아래 모서리를 왼쪽 위로 끈다. 가로 · 세로가 함께 줄고 창의 왼쪽 위는 그대로.
+            var (width, height) = (window.ActualWidth, window.ActualHeight);
+            var from = new Point(right, bottom);
+            await Task.Run(() => WindowFrame.Drag(from, new Point(from.X - 80, from.Y - 60)));
+            await Task.Delay(500);
+            var dragged = WindowFrame.Bounds(window);
+            string Box(System.Windows.Rect rect) => $"{rect.Left},{rect.Top} {rect.Width}x{rect.Height}";
+            Check("창 크기 — 진짜 마우스로 오른쪽 아래 모서리를 끌면 가로 · 세로가 함께 바뀐다",
+                Math.Abs(bounds.Width - dragged.Width - 80) <= 3 && Math.Abs(bounds.Height - dragged.Height - 60) <= 3
+                && dragged.Left == bounds.Left && dragged.Top == bounds.Top,
+                new { before = Box(bounds), after = Box(dragged) });
+            window.Width = width;
+            window.Height = height;
+            await Task.Delay(300);
+
+            // 최대화 — 띠를 거두고 편집기는 화면 끝까지. 화면 맨 위 줄의 닫기 단추는 누르기(띠가 남으면 창 끌기다).
+            window.WindowState = WindowState.Maximized;
+            await Task.Delay(800);
+            var area = WindowFrame.WorkArea(window);
+            var closeX = close.PointToScreen(new Point(close.ActualWidth / 2, 0)).X;
+            var closeAtTop = WindowFrame.SystemHitTest(window, new Point(closeX, area.Top));
+            var editorAtEdge = WindowFrame.SystemHitTest(window, new Point(area.Left, Math.Round(area.Top + area.Height / 2)));
+            window.WindowState = WindowState.Normal;
+            await Task.Delay(500);
+            Check("창 크기 — 최대화하면 띠가 없다: 화면 맨 위 줄의 닫기 단추는 누르기, 편집기는 화면 왼쪽 끝까지",
+                closeAtTop.Code == 1 && editorAtEdge.Code == 1 && !editorAtEdge.Shell,
+                // 튜플은 JSON에 이름이 남지 않는다 — 풀어서 적는다.
+                new
+                {
+                    closeAtTop = new { closeAtTop.Code, closeAtTop.Shell, closeAtTop.Class },
+                    editorAtEdge = new { editorAtEdge.Code, editorAtEdge.Shell, editorAtEdge.Class },
+                });
+        });
+
         // 9. 설정 — 테마 · 다크 · 글자 크기. 편집기가 정한 값을 껍데기가 저장한다. 마지막 화면(CI가 창째 한 장 더 찍는다).
         await Scenario("설정", async () =>
         {

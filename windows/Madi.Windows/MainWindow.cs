@@ -53,6 +53,11 @@ public sealed partial class MainWindow : Window
     private readonly MenuBar menuBar;
     private readonly Border frame = new();
     private readonly WindowChrome chrome;
+    /// <summary>
+    /// 제목 막대 위의 크기 바꾸기 띠(위 · 왼쪽 · 오른쪽) — 창 단추는 누르는 자리라(<c>IsHitTestVisibleInChrome</c>) 그 위의 테두리를 WindowChrome이
+    /// 누르기로 답했다. 투명한 띠를 단추 위에 얹어 테두리는 테두리로 답하게 한다. 최대화하면 숨는다(화면 맨 위의 단추를 누를 수 있게).
+    /// </summary>
+    private readonly Grid resizeEdges = new();
 
     private readonly WebView2 webView = new();
     private readonly LaunchOptions options;
@@ -140,8 +145,14 @@ public sealed partial class MainWindow : Window
         grid.Children.Add(titleBar);
         grid.Children.Add(menuBar);
         grid.Children.Add(webView);
+        var edge = chrome.ResizeBorderThickness;
+        resizeEdges.Children.Add(new Border { Background = Brushes.Transparent, Height = edge.Top, VerticalAlignment = VerticalAlignment.Top });
+        resizeEdges.Children.Add(new Border { Background = Brushes.Transparent, Width = edge.Left, HorizontalAlignment = HorizontalAlignment.Left });
+        resizeEdges.Children.Add(new Border { Background = Brushes.Transparent, Width = edge.Right, HorizontalAlignment = HorizontalAlignment.Right });
+        grid.Children.Add(resizeEdges);
         frame.Child = grid;
         Content = frame;
+        FitFrame();
         ApplyChrome(ChromeColors.Load(Store.HostText("chrome")));
         StateChanged += (_, _) => FitFrame();
         SourceInitialized += (_, _) => WindowFrame.Apply(this, titleBar.Colors);
@@ -383,12 +394,19 @@ public sealed partial class MainWindow : Window
         Program.UseDarkMenus(colors.Dark);
     }
 
-    /// <summary>최대화하면 화면 밖으로 나간 테두리만큼 안으로 — 제목 막대의 단추가 잘리지 않게.</summary>
+    /// <summary>
+    /// 최대화하면 화면 밖으로 나간 테두리만큼 안으로 — 제목 막대의 단추가 잘리지 않게. 최대화하지 않았으면 편집기를 왼쪽 · 오른쪽 · 아래 테두리
+    /// 폭만큼 안으로 — 편집기(WebView2)는 따로 된 창이라 그 위에서는 Windows가 편집기 창에 물어 WindowChrome이 테두리로 답하지 못한다(위 끝만
+    /// 크기가 바뀌었다 — 사용자, "가로세로 늘리는게 안된다"). 그 띠에는 창 바탕(편집기와 같은 색)이 보인다.
+    /// </summary>
     private void FitFrame()
     {
         var maximized = WindowState == WindowState.Maximized;
         var inset = maximized ? WindowFrame.MaximizedInset(this) : new Thickness(0);
         frame.Margin = inset;
+        var edge = chrome.ResizeBorderThickness;
+        webView.Margin = maximized ? new Thickness(0) : new Thickness(edge.Left, 0, edge.Right, edge.Bottom);
+        resizeEdges.Visibility = maximized ? Visibility.Collapsed : Visibility.Visible;
         // 제목 영역은 창의 위 끝(최대화하면 화면 밖)에서 잰다 — 밀려 내려간 만큼 늘린다.
         chrome.CaptionHeight = TitleBar.BarHeight - chrome.ResizeBorderThickness.Top + inset.Top;
         titleBar.SetMaximized(maximized);
