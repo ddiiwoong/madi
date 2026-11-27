@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EditorSelection, EditorState } from "@codemirror/state";
 import { ensureSyntaxTree } from "@codemirror/language";
+import { fullyParsed } from "./parsed.ts";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { parseAlign, parseTable, splitRow } from "../src/core/table.ts";
 import { parseFrontMatter } from "../src/core/frontmatter.ts";
@@ -16,8 +17,7 @@ import { catalog, settingsChange } from "../src/core/catalog.ts";
 
 function stateOf(doc: string, caret = doc.length): EditorState {
   const state = EditorState.create({ doc, selection: EditorSelection.cursor(caret), extensions: markdown({ base: markdownLanguage }) });
-  ensureSyntaxTree(state, doc.length, 5000);
-  return state;
+  return fullyParsed(state);
 }
 
 test("표 — 칸 나누기 · 맞춤 · 열 수", () => {
