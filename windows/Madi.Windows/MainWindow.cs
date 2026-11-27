@@ -45,20 +45,27 @@ public sealed partial class MainWindow : Window
     /// <summary>메뉴의 ✓ — 설정의 어느 값이 이 항목인가. 설정이 바뀌면 다시 단다.</summary>
     private readonly List<(MenuItem Item, string Field, string Value, string Default)> choiceItems = [];
     private readonly List<(MenuItem Item, string Field, bool Fallback)> flagItems = [];
-    private readonly MenuItem recentMenu;
     /// <summary>제목 막대 — 메뉴 막대 · 상태 줄 대신(<see cref="TitleBar"/>).</summary>
     private readonly TitleBar titleBar = new();
     /// <summary>메뉴 — 제목 막대의 <c>…</c>(F10). 전의 메뉴 막대 전체와, 맨 위에 자주 쓰는 것(macOS판의 버거 메뉴와 같은 차례).</summary>
     private readonly ContextMenu burger = new();
+    /// <summary>메뉴 막대 — 제목 막대 아래, 기본은 숨김(설정 <c>showsMenuBar</c>). 메뉴는 <c>…</c>와 같은 항목의 사본이다.</summary>
+    private readonly MenuBar menuBar;
     private readonly Border frame = new();
     private readonly WindowChrome chrome;
+    /// <summary>
+    /// 제목 막대 위의 크기 바꾸기 띠(위 · 왼쪽 · 오른쪽) — 창 단추는 누르는 자리라(<c>IsHitTestVisibleInChrome</c>) 그 위의 테두리를 WindowChrome이
+    /// 누르기로 답했다. 투명한 띠를 단추 위에 얹어 테두리는 테두리로 답하게 한다. 최대화하면 숨는다(화면 맨 위의 단추를 누를 수 있게).
+    /// </summary>
+    private readonly Grid resizeEdges = new();
 
     private readonly WebView2 webView = new();
     private readonly LaunchOptions options;
     private readonly SmokeRun? smoke;
-    private readonly MenuItem sourceItem;
-    private readonly MenuItem followItem;
-    private readonly MenuItem outlineItem;
+    /// <summary>✓를 다는 보기 항목 — 메뉴가 두 벌(… · 메뉴 막대)이라 둘씩.</summary>
+    private readonly List<MenuItem> sourceItems = [];
+    private readonly List<MenuItem> followItems = [];
+    private readonly List<MenuItem> outlineItems = [];
 
     private string? path;
     private DiskBaseline? baseline;
@@ -104,127 +111,11 @@ public sealed partial class MainWindow : Window
         });
         var menu = burger;
         AddBurgerPicks();
-        var file = Heading("파일(_F)");
-        file.Items.Add(Item("새로 만들기(_N)", "Ctrl+N", () => OpenWindow(null)));
-        file.Items.Add(Item("열기(_O)…", "Ctrl+O", ShowOpenDialog));
-        file.Items.Add(Item("빠른 열기(_Q)…", "Ctrl+Alt+O", () => Run("quickOpen")));
-        recentMenu = Heading("최근 문서(_R)");
-        recentMenu.Items.Add(new MenuItem { Header = "(없음)", IsEnabled = false });
-        recentMenu.SubmenuOpened += (_, _) => FillRecentMenu();
-        file.Items.Add(recentMenu);
-        file.Items.Add(new Separator());
-        file.Items.Add(Item("저장(_S)", "Ctrl+S", () => Run("save")));
-        file.Items.Add(Item("다른 이름으로 저장(_A)…", "Ctrl+Shift+S", () => Run("saveAs")));
-        file.Items.Add(new Separator());
-        file.Items.Add(Item("PDF 내보내기(_E)…", "", () => _ = ExportPdfAsync()));
-        file.Items.Add(Item("프린트하기(_P)…", "Ctrl+P", () => Run("print")));
-        var printMenu = Heading("프린트 설정(_T)");
-        var marginMenu = Heading("여백(_M)");
-        marginMenu.Items.Add(Choice("좁게", "setPrintMargin", "printMargin", "narrow", "normal"));
-        marginMenu.Items.Add(Choice("보통", "setPrintMargin", "printMargin", "normal", "normal"));
-        marginMenu.Items.Add(Choice("넓게", "setPrintMargin", "printMargin", "wide", "normal"));
-        var orientationMenu = Heading("방향(_O)");
-        orientationMenu.Items.Add(Choice("세로", "setPrintOrientation", "printOrientation", "portrait", "portrait"));
-        orientationMenu.Items.Add(Choice("가로", "setPrintOrientation", "printOrientation", "landscape", "portrait"));
-        var paperMenu = Heading("용지(_P)");
-        paperMenu.Items.Add(Choice("시스템 기본", "setPrintPaper", "printPaper", "system", "system"));
-        paperMenu.Items.Add(Choice("A4", "setPrintPaper", "printPaper", "a4", "system"));
-        paperMenu.Items.Add(Choice("Letter", "setPrintPaper", "printPaper", "letter", "system"));
-        printMenu.Items.Add(marginMenu);
-        printMenu.Items.Add(orientationMenu);
-        printMenu.Items.Add(paperMenu);
-        file.Items.Add(printMenu);
-        file.Items.Add(new Separator());
-        file.Items.Add(Item("닫기(_C)", "Ctrl+W", Close));
-        var edit = Heading("편집(_E)");
-        edit.Items.Add(Item("실행 취소(_U)", "Ctrl+Z", () => Run("undo")));
-        edit.Items.Add(Item("다시 실행(_R)", "Ctrl+Y", () => Run("redo")));
-        edit.Items.Add(new Separator());
-        edit.Items.Add(Item("모두 선택(_A)", "Ctrl+A", () => Run("selectAll")));
-        edit.Items.Add(Item("찾기(_F)…", "Ctrl+F", () => Run("find")));
-        // 서식 — macOS판의 서식 메뉴와 같은 차례 · 같은 단축키(⌘ → Ctrl). 글을 고르면 위에 뜨는 서식 막대(편집기)도 같은 명령이다.
-        var format = Heading("서식(_O)");
-        var headings = Heading("제목(_H)");
-        headings.Items.Add(Item("본문(_0)", "Ctrl+Alt+0", () => Run("heading0")));
-        for (var level = 1; level <= 6; level++)
-        {
-            var command = $"heading{level}";
-            headings.Items.Add(Item($"제목 {level}(_{level})", $"Ctrl+{level}", () => Run(command)));
-        }
-        format.Items.Add(headings);
-        format.Items.Add(new Separator());
-        format.Items.Add(Item("굵게(_B)", "Ctrl+B", () => Run("bold")));
-        format.Items.Add(Item("기울임(_I)", "Ctrl+I", () => Run("italic")));
-        format.Items.Add(Item("취소선(_S)", "Ctrl+Shift+X", () => Run("strikethrough")));
-        format.Items.Add(Item("인라인 코드(_C)", "Ctrl+Shift+C", () => Run("code")));
-        format.Items.Add(Item("링크(_K)", "Ctrl+K", () => Run("link")));
-        format.Items.Add(new Separator());
-        format.Items.Add(Item("글머리 목록(_U)", "Ctrl+Shift+8", () => Run("bullet")));
-        format.Items.Add(Item("번호 목록(_N)", "Ctrl+Shift+7", () => Run("numbered")));
-        format.Items.Add(Item("할 일 목록(_T)", "Ctrl+Shift+9", () => Run("task")));
-        format.Items.Add(Item("인용(_Q)", "Ctrl+Alt+Q", () => Run("quote")));
-        format.Items.Add(new Separator());
-        format.Items.Add(Item("코드 블록(_D)", "Ctrl+Alt+C", () => Run("codeBlock")));
-        format.Items.Add(Item("표(_A)", "", () => Run("table")));
-        format.Items.Add(Item("구분선(_R)", "", () => Run("rule")));
-        var viewMenu = Heading("보기(_V)");
-        viewMenu.Items.Add(Item("명령 팔레트(_P)…", "Ctrl+Shift+P", () => Run("commandPalette")));
-        viewMenu.Items.Add(new Separator());
-        outlineItem = Item("목차(_O)", "Ctrl+Shift+O", () => Run("toggleOutline"));
-        sourceItem = Item("원본 보기(_S)", "Ctrl+E", () => Run("toggleSource"));
-        followItem = Item("따라 보기(_L)", "Ctrl+Alt+L", () => Run("toggleFollow"));
-        viewMenu.Items.Add(outlineItem);
-        viewMenu.Items.Add(sourceItem);
-        viewMenu.Items.Add(followItem);
-        viewMenu.Items.Add(Item("문서 정보(_I)", "", () => Run("docInfo")));
-        viewMenu.Items.Add(new Separator());
-        viewMenu.Items.Add(ThemeMenu());
-        var appearanceMenu = Heading("모양(_M)");
-        appearanceMenu.Items.Add(Choice("시스템 따라(_S)", "setAppearance", "appearance", "system", "system"));
-        appearanceMenu.Items.Add(Choice("밝게(_L)", "setAppearance", "appearance", "light", "system"));
-        appearanceMenu.Items.Add(Choice("어둡게(_D)", "setAppearance", "appearance", "dark", "system"));
-        viewMenu.Items.Add(appearanceMenu);
-        var fontMenu = Heading("글꼴(_F)");
-        fontMenu.Items.Add(Item("본문 글꼴(_B)…", "", () => Run("pickBodyFont")));
-        fontMenu.Items.Add(Item("코드 글꼴(_C)…", "", () => Run("pickCodeFont")));
-        viewMenu.Items.Add(fontMenu);
-        viewMenu.Items.Add(Item("글자 크게(_I)", "Ctrl+=", () => Run("textBigger")));
-        viewMenu.Items.Add(Item("글자 작게(_D)", "Ctrl+-", () => Run("textSmaller")));
-        viewMenu.Items.Add(Item("글자 기본 크기(_Z)", "Ctrl+0", () => Run("textStandard")));
-        var spacingMenu = Heading("줄 사이(_G)");
-        spacingMenu.Items.Add(Choice("좁게", "setLineSpacing", "lineSpacing", "tight", "normal"));
-        spacingMenu.Items.Add(Choice("보통", "setLineSpacing", "lineSpacing", "normal", "normal"));
-        spacingMenu.Items.Add(Choice("넓게", "setLineSpacing", "lineSpacing", "loose", "normal"));
-        viewMenu.Items.Add(spacingMenu);
-        var widthMenu = Heading("글 폭(_W)");
-        widthMenu.Items.Add(Choice("좁게", "setDocumentWidth", "documentWidth", "narrow", "normal"));
-        widthMenu.Items.Add(Choice("보통", "setDocumentWidth", "documentWidth", "normal", "normal"));
-        widthMenu.Items.Add(Choice("넓게", "setDocumentWidth", "documentWidth", "wide", "normal"));
-        widthMenu.Items.Add(Choice("창 폭 전체", "setDocumentWidth", "documentWidth", "full", "normal"));
-        viewMenu.Items.Add(widthMenu);
-        viewMenu.Items.Add(new Separator());
-        viewMenu.Items.Add(Flag("원격 그림 받기(_R)", "toggleRemoteImages", "loadsRemoteImages"));
-        viewMenu.Items.Add(Flag("문서 메타데이터 접어 두기(_H)", "toggleFrontMatter", "collapsesFrontMatter"));
-        var tools = Heading("도구(_T)");
-        tools.Items.Add(Item("LLM 키(_K)…", "", () => new LlmKeysWindow(this).ShowDialog()));
-        tools.Items.Add(Item("기본 앱 설정 열기(_D)…", "", OpenDefaultAppsSettings));
-        var help = Heading("도움말(_H)");
-        // Store판(MSIX)은 Store가 업데이트한다 — GitHub에 묻는 확인은 설치 파일판만.
-        if (!PackageIdentity.IsPackaged)
-        {
-            help.Items.Add(Item("업데이트 확인(_U)…", "", () => _ = Updates.CheckAsync(this, interactive: true)));
-            help.Items.Add(Flag("하루 한 번 새 판 확인(_D)", "toggleUpdateChecks", "checksForUpdates", fallback: true));
-            help.Items.Add(new Separator());
-        }
-        help.Items.Add(Item("마디 정보(_A)", "", ShowAbout));
-        UpdateSettingsMenu();
         menu.Items.Add(new Separator());
-        menu.Items.Add(file);
-        menu.Items.Add(edit);
-        menu.Items.Add(format);
-        menu.Items.Add(viewMenu);
-        menu.Items.Add(tools);
-        menu.Items.Add(help);
+        foreach (var group in MenuGroups(bar: false)) menu.Items.Add(group);
+        menuBar = new MenuBar(MenuGroups(bar: true), command => Press(() => Run(command)));
+        menuBar.MenusClosed += (_, _) => webView.Focus();
+        UpdateSettingsMenu();
 
         // 제목 막대의 단추.
         titleBar.Outline.Click += (_, _) => Press(() => Run("toggleOutline"));
@@ -247,12 +138,21 @@ public sealed partial class MainWindow : Window
 
         var grid = new Grid();
         grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(TitleBar.BarHeight) });
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         grid.RowDefinitions.Add(new RowDefinition());
-        Grid.SetRow(webView, 1);
+        Grid.SetRow(menuBar, 1);
+        Grid.SetRow(webView, 2);
         grid.Children.Add(titleBar);
+        grid.Children.Add(menuBar);
         grid.Children.Add(webView);
+        var edge = chrome.ResizeBorderThickness;
+        resizeEdges.Children.Add(new Border { Background = Brushes.Transparent, Height = edge.Top, VerticalAlignment = VerticalAlignment.Top });
+        resizeEdges.Children.Add(new Border { Background = Brushes.Transparent, Width = edge.Left, HorizontalAlignment = HorizontalAlignment.Left });
+        resizeEdges.Children.Add(new Border { Background = Brushes.Transparent, Width = edge.Right, HorizontalAlignment = HorizontalAlignment.Right });
+        grid.Children.Add(resizeEdges);
         frame.Child = grid;
         Content = frame;
+        FitFrame();
         ApplyChrome(ChromeColors.Load(Store.HostText("chrome")));
         StateChanged += (_, _) => FitFrame();
         SourceInitialized += (_, _) => WindowFrame.Apply(this, titleBar.Colors);
@@ -269,6 +169,130 @@ public sealed partial class MainWindow : Window
             Windows.Remove(this);
         };
 
+        // 여섯 메뉴 — … 메뉴의 하위 메뉴와 메뉴 막대가 같은 항목을 따로 갖는다(WPF의 항목은 한 곳에만 놓인다). 메뉴 막대의 이름에는
+        // 밑줄 글자를 달지 않는다(메모장처럼 "파일 편집 보기") — Alt+F 같은 키는 편집기가 받아 껍데기에 알린다.
+        List<MenuItem> MenuGroups(bool bar)
+        {
+            var file = Heading(bar ? "파일" : "파일(_F)");
+            file.Items.Add(Item("새로 만들기(_N)", "Ctrl+N", () => OpenWindow(null)));
+            file.Items.Add(Item("열기(_O)…", "Ctrl+O", ShowOpenDialog));
+            file.Items.Add(Item("빠른 열기(_Q)…", "Ctrl+Alt+O", () => Run("quickOpen")));
+            var recentMenu = Heading("최근 문서(_R)");
+            recentMenu.Items.Add(new MenuItem { Header = "(없음)", IsEnabled = false });
+            recentMenu.SubmenuOpened += (_, _) => FillRecentMenu(recentMenu);
+            file.Items.Add(recentMenu);
+            file.Items.Add(new Separator());
+            file.Items.Add(Item("저장(_S)", "Ctrl+S", () => Run("save")));
+            file.Items.Add(Item("다른 이름으로 저장(_A)…", "Ctrl+Shift+S", () => Run("saveAs")));
+            file.Items.Add(new Separator());
+            file.Items.Add(Item("PDF 내보내기(_E)…", "", () => _ = ExportPdfAsync()));
+            file.Items.Add(Item("프린트하기(_P)…", "Ctrl+P", () => Run("print")));
+            var printMenu = Heading("프린트 설정(_T)");
+            var marginMenu = Heading("여백(_M)");
+            marginMenu.Items.Add(Choice("좁게", "setPrintMargin", "printMargin", "narrow", "normal"));
+            marginMenu.Items.Add(Choice("보통", "setPrintMargin", "printMargin", "normal", "normal"));
+            marginMenu.Items.Add(Choice("넓게", "setPrintMargin", "printMargin", "wide", "normal"));
+            var orientationMenu = Heading("방향(_O)");
+            orientationMenu.Items.Add(Choice("세로", "setPrintOrientation", "printOrientation", "portrait", "portrait"));
+            orientationMenu.Items.Add(Choice("가로", "setPrintOrientation", "printOrientation", "landscape", "portrait"));
+            var paperMenu = Heading("용지(_P)");
+            paperMenu.Items.Add(Choice("시스템 기본", "setPrintPaper", "printPaper", "system", "system"));
+            paperMenu.Items.Add(Choice("A4", "setPrintPaper", "printPaper", "a4", "system"));
+            paperMenu.Items.Add(Choice("Letter", "setPrintPaper", "printPaper", "letter", "system"));
+            printMenu.Items.Add(marginMenu);
+            printMenu.Items.Add(orientationMenu);
+            printMenu.Items.Add(paperMenu);
+            file.Items.Add(printMenu);
+            file.Items.Add(new Separator());
+            file.Items.Add(Item("닫기(_C)", "Ctrl+W", Close));
+            var edit = Heading(bar ? "편집" : "편집(_E)");
+            edit.Items.Add(Item("실행 취소(_U)", "Ctrl+Z", () => Run("undo")));
+            edit.Items.Add(Item("다시 실행(_R)", "Ctrl+Y", () => Run("redo")));
+            edit.Items.Add(new Separator());
+            edit.Items.Add(Item("모두 선택(_A)", "Ctrl+A", () => Run("selectAll")));
+            edit.Items.Add(Item("찾기(_F)…", "Ctrl+F", () => Run("find")));
+            // 서식 — macOS판의 서식 메뉴와 같은 차례 · 같은 단축키(⌘ → Ctrl). 글을 고르면 위에 뜨는 서식 막대(편집기)도 같은 명령이다.
+            var format = Heading(bar ? "서식" : "서식(_O)");
+            var headings = Heading("제목(_H)");
+            headings.Items.Add(Item("본문(_0)", "Ctrl+Alt+0", () => Run("heading0")));
+            for (var level = 1; level <= 6; level++)
+            {
+                var command = $"heading{level}";
+                headings.Items.Add(Item($"제목 {level}(_{level})", $"Ctrl+{level}", () => Run(command)));
+            }
+            format.Items.Add(headings);
+            format.Items.Add(new Separator());
+            format.Items.Add(Item("굵게(_B)", "Ctrl+B", () => Run("bold")));
+            format.Items.Add(Item("기울임(_I)", "Ctrl+I", () => Run("italic")));
+            format.Items.Add(Item("취소선(_S)", "Ctrl+Shift+X", () => Run("strikethrough")));
+            format.Items.Add(Item("인라인 코드(_C)", "Ctrl+Shift+C", () => Run("code")));
+            format.Items.Add(Item("링크(_K)", "Ctrl+K", () => Run("link")));
+            format.Items.Add(new Separator());
+            format.Items.Add(Item("글머리 목록(_U)", "Ctrl+Shift+8", () => Run("bullet")));
+            format.Items.Add(Item("번호 목록(_N)", "Ctrl+Shift+7", () => Run("numbered")));
+            format.Items.Add(Item("할 일 목록(_T)", "Ctrl+Shift+9", () => Run("task")));
+            format.Items.Add(Item("인용(_Q)", "Ctrl+Alt+Q", () => Run("quote")));
+            format.Items.Add(new Separator());
+            format.Items.Add(Item("코드 블록(_D)", "Ctrl+Alt+C", () => Run("codeBlock")));
+            format.Items.Add(Item("표(_A)", "", () => Run("table")));
+            format.Items.Add(Item("구분선(_R)", "", () => Run("rule")));
+            var viewMenu = Heading(bar ? "보기" : "보기(_V)");
+            viewMenu.Items.Add(Item("명령 팔레트(_P)…", "Ctrl+Shift+P", () => Run("commandPalette")));
+            viewMenu.Items.Add(new Separator());
+            var outlineItem = Item("목차(_O)", "Ctrl+Shift+O", () => Run("toggleOutline"));
+            var sourceItem = Item("원본 보기(_S)", "Ctrl+E", () => Run("toggleSource"));
+            var followItem = Item("따라 보기(_L)", "Ctrl+Alt+L", () => Run("toggleFollow"));
+            outlineItems.Add(outlineItem);
+            sourceItems.Add(sourceItem);
+            followItems.Add(followItem);
+            viewMenu.Items.Add(outlineItem);
+            viewMenu.Items.Add(sourceItem);
+            viewMenu.Items.Add(followItem);
+            viewMenu.Items.Add(Item("문서 정보(_I)", "", () => Run("docInfo")));
+            viewMenu.Items.Add(new Separator());
+            viewMenu.Items.Add(ThemeMenu());
+            var appearanceMenu = Heading("모양(_M)");
+            appearanceMenu.Items.Add(Choice("시스템 따라(_S)", "setAppearance", "appearance", "system", "system"));
+            appearanceMenu.Items.Add(Choice("밝게(_L)", "setAppearance", "appearance", "light", "system"));
+            appearanceMenu.Items.Add(Choice("어둡게(_D)", "setAppearance", "appearance", "dark", "system"));
+            viewMenu.Items.Add(appearanceMenu);
+            var fontMenu = Heading("글꼴(_F)");
+            fontMenu.Items.Add(Item("본문 글꼴(_B)…", "", () => Run("pickBodyFont")));
+            fontMenu.Items.Add(Item("코드 글꼴(_C)…", "", () => Run("pickCodeFont")));
+            viewMenu.Items.Add(fontMenu);
+            viewMenu.Items.Add(Item("글자 크게(_I)", "Ctrl+=", () => Run("textBigger")));
+            viewMenu.Items.Add(Item("글자 작게(_D)", "Ctrl+-", () => Run("textSmaller")));
+            viewMenu.Items.Add(Item("글자 기본 크기(_Z)", "Ctrl+0", () => Run("textStandard")));
+            var spacingMenu = Heading("줄 사이(_G)");
+            spacingMenu.Items.Add(Choice("좁게", "setLineSpacing", "lineSpacing", "tight", "normal"));
+            spacingMenu.Items.Add(Choice("보통", "setLineSpacing", "lineSpacing", "normal", "normal"));
+            spacingMenu.Items.Add(Choice("넓게", "setLineSpacing", "lineSpacing", "loose", "normal"));
+            viewMenu.Items.Add(spacingMenu);
+            var widthMenu = Heading("글 폭(_W)");
+            widthMenu.Items.Add(Choice("좁게", "setDocumentWidth", "documentWidth", "narrow", "normal"));
+            widthMenu.Items.Add(Choice("보통", "setDocumentWidth", "documentWidth", "normal", "normal"));
+            widthMenu.Items.Add(Choice("넓게", "setDocumentWidth", "documentWidth", "wide", "normal"));
+            widthMenu.Items.Add(Choice("창 폭 전체", "setDocumentWidth", "documentWidth", "full", "normal"));
+            viewMenu.Items.Add(widthMenu);
+            viewMenu.Items.Add(new Separator());
+            viewMenu.Items.Add(Flag("원격 그림 받기(_R)", "toggleRemoteImages", "loadsRemoteImages"));
+            viewMenu.Items.Add(Flag("문서 메타데이터 접어 두기(_H)", "toggleFrontMatter", "collapsesFrontMatter"));
+            viewMenu.Items.Add(new Separator());
+            viewMenu.Items.Add(Flag("메뉴 막대 보이기(_B)", "toggleMenuBar", "showsMenuBar"));
+            var tools = Heading(bar ? "도구" : "도구(_T)");
+            tools.Items.Add(Item("LLM 키(_K)…", "", () => new LlmKeysWindow(this).ShowDialog()));
+            tools.Items.Add(Item("기본 앱 설정 열기(_D)…", "", OpenDefaultAppsSettings));
+            var help = Heading(bar ? "도움말" : "도움말(_H)");
+            // Store판(MSIX)은 Store가 업데이트한다 — GitHub에 묻는 확인은 설치 파일판만.
+            if (!PackageIdentity.IsPackaged)
+            {
+                help.Items.Add(Item("업데이트 확인(_U)…", "", () => _ = Updates.CheckAsync(this, interactive: true)));
+                help.Items.Add(Flag("하루 한 번 새 판 확인(_D)", "toggleUpdateChecks", "checksForUpdates", fallback: true));
+                help.Items.Add(new Separator());
+            }
+            help.Items.Add(Item("마디 정보(_A)", "", ShowAbout));
+            return [file, edit, format, viewMenu, tools, help];
+        }
         MenuItem Heading(string header) => new() { Header = header };
         // 맨 위의 자주 쓰는 것 — macOS판 버거 메뉴(`AppMenu.burgerPicks`)와 같은 차례. 아래에 메뉴 막대 전체가 하위 메뉴로 온다.
         void AddBurgerPicks()
@@ -329,9 +353,20 @@ public sealed partial class MainWindow : Window
         webView.Focus();
     }
 
-    /// <summary>메뉴(…) — 단추로, 또는 F10(편집기가 알린다). 키보드로 열었으면 첫 항목에 초점을 둬 화살표로 고른다.</summary>
-    internal void OpenMenu(bool byKeyboard)
+    /// <summary>메뉴 막대의 메뉴 — 편집기가 Alt+글자로 알리는 이름(<c>editor/src/main.ts</c>의 <c>menuKeys</c>)과 같은 차례.</summary>
+    private static readonly string[] MenuNames = ["file", "edit", "format", "view", "tools", "help"];
+
+    /// <summary>
+    /// 메뉴(…) — 단추로, 또는 F10(편집기가 알린다). 키보드로 열었으면 첫 항목에 초점을 둬 화살표로 고른다. 메뉴 막대가 보이면 키보드
+    /// (F10 · 왼쪽 Alt · Alt+F 같은 글자 — <paramref name="which"/>)는 메뉴 막대의 그 메뉴를 연다(Windows의 약속).
+    /// </summary>
+    internal void OpenMenu(bool byKeyboard, string? which = null)
     {
+        if (byKeyboard && menuBar.IsShown)
+        {
+            menuBar.Open(Math.Max(0, Array.IndexOf(MenuNames, which ?? "file")));
+            return;
+        }
         burger.IsOpen = true;
         if (byKeyboard)
         {
@@ -342,12 +377,16 @@ public sealed partial class MainWindow : Window
 
     internal bool MenuIsOpen => burger.IsOpen;
 
+    /// <summary>확인 실행이 본다 · 누른다.</summary>
+    internal MenuBar Bar => menuBar;
+
     internal void CloseMenu() => burger.IsOpen = false;
 
     /// <summary>편집기의 테마 색으로 — 제목 막대, 창 바탕(크기를 바꾸는 동안 보인다), 창 테두리, 메뉴의 밝기.</summary>
     private void ApplyChrome(ChromeColors colors)
     {
         titleBar.Apply(colors);
+        menuBar.Apply(colors);
         Background = new SolidColorBrush(colors.Background);
         WindowFrame.Apply(this, colors);
         // 편집기가 그리기 전의 바탕 — 어두운 테마에서 흰 화면이 번쩍이지 않게.
@@ -355,12 +394,19 @@ public sealed partial class MainWindow : Window
         Program.UseDarkMenus(colors.Dark);
     }
 
-    /// <summary>최대화하면 화면 밖으로 나간 테두리만큼 안으로 — 제목 막대의 단추가 잘리지 않게.</summary>
+    /// <summary>
+    /// 최대화하면 화면 밖으로 나간 테두리만큼 안으로 — 제목 막대의 단추가 잘리지 않게. 최대화하지 않았으면 편집기를 왼쪽 · 오른쪽 · 아래 테두리
+    /// 폭만큼 안으로 — 편집기(WebView2)는 따로 된 창이라 그 위에서는 Windows가 편집기 창에 물어 WindowChrome이 테두리로 답하지 못한다(위 끝만
+    /// 크기가 바뀌었다 — 사용자, "가로세로 늘리는게 안된다"). 그 띠에는 창 바탕(편집기와 같은 색)이 보인다.
+    /// </summary>
     private void FitFrame()
     {
         var maximized = WindowState == WindowState.Maximized;
         var inset = maximized ? WindowFrame.MaximizedInset(this) : new Thickness(0);
         frame.Margin = inset;
+        var edge = chrome.ResizeBorderThickness;
+        webView.Margin = maximized ? new Thickness(0) : new Thickness(edge.Left, 0, edge.Right, edge.Bottom);
+        resizeEdges.Visibility = maximized ? Visibility.Collapsed : Visibility.Visible;
         // 제목 영역은 창의 위 끝(최대화하면 화면 밖)에서 잰다 — 밀려 내려간 만큼 늘린다.
         chrome.CaptionHeight = TitleBar.BarHeight - chrome.ResizeBorderThickness.Top + inset.Top;
         titleBar.SetMaximized(maximized);
@@ -497,7 +543,7 @@ public sealed partial class MainWindow : Window
                         case "exportPdf": _ = ExportPdfAsync(); break;
                         case "llmKeys": new LlmKeysWindow(this).ShowDialog(); break;
                         case "checkForUpdates": _ = Updates.CheckAsync(this, interactive: true); break;
-                        case "menu": OpenMenu(byKeyboard: true); break;
+                        case "menu": OpenMenu(byKeyboard: true, Field(message, "menu")); break;
                     }
                     break;
                 case "outputReady":
@@ -555,9 +601,9 @@ public sealed partial class MainWindow : Window
         State = new DocumentState(Field(message, "name") ?? "제목 없음", Field(message, "path"),
             Flag("dirty"), Flag("conflict"), Flag("source"), Flag("follow"), Flag("outline"));
         Title = $"{(State.Dirty ? "*" : "")}{State.Name} - 마디";
-        sourceItem.IsChecked = State.Source;
-        followItem.IsChecked = State.Follow;
-        outlineItem.IsChecked = State.Outline;
+        foreach (var item in sourceItems) item.IsChecked = State.Source;
+        foreach (var item in followItems) item.IsChecked = State.Follow;
+        foreach (var item in outlineItems) item.IsChecked = State.Outline;
         var notes = message.TryGetProperty("notes", out var list) && list.ValueKind == JsonValueKind.Array
             ? list.EnumerateArray().Select(item => item.GetString()).OfType<string>().ToList()
             : [];
@@ -590,9 +636,12 @@ public sealed partial class MainWindow : Window
     {
         foreach (var (item, field, value, fallback) in choiceItems) item.IsChecked = (Store.Text(field) ?? fallback) == value;
         foreach (var (item, field, fallback) in flagItems) item.IsChecked = Store.FlagOr(field, fallback);
+        var shows = Store.FlagOr("showsMenuBar", false);
+        if (!shows) menuBar.CloseMenus();
+        menuBar.Visibility = shows ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    private void FillRecentMenu()
+    private void FillRecentMenu(MenuItem recentMenu)
     {
         recentMenu.Items.Clear();
         foreach (var file in Store.Recent)

@@ -83,19 +83,31 @@ public sealed class ChromeButton : Button
     private static readonly ControlTemplate Square = MakeTemplate(0);
 
     private readonly Kinds kind;
-    private readonly TextBlock glyph;
+    private readonly TextBlock? glyph;
     private ChromeColors colors = ChromeColors.Light;
     private bool on;
 
-    public ChromeButton(string icon, string tip, Kinds kind = Kinds.Tool)
+    public ChromeButton(string icon, string tip, Kinds kind = Kinds.Tool) : this(kind, tip)
     {
-        this.kind = kind;
         glyph = new TextBlock
         {
             Text = icon, FontFamily = Icons, FontSize = kind == Kinds.Tool ? 15 : 10,
             HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
         };
         Content = glyph;
+        Refresh();
+    }
+
+    /// <summary>그린 아이콘(<see cref="LineIcons"/>)의 단추 — 메뉴 막대의 서식 단추. 아이콘의 선 색이 글자색을 따른다.</summary>
+    public ChromeButton(UIElement icon, string tip) : this(Kinds.Tool, tip)
+    {
+        Content = icon;
+        Refresh();
+    }
+
+    private ChromeButton(Kinds kind, string tip)
+    {
+        this.kind = kind;
         Template = kind == Kinds.Tool ? Rounded : Square;
         Width = kind == Kinds.Tool ? 34 : 46;
         Height = kind == Kinds.Tool ? 30 : TitleBar.BarHeight;
@@ -108,13 +120,15 @@ public sealed class ChromeButton : Button
         ToolTipService.SetInitialShowDelay(this, 500);
         AutomationProperties.SetName(this, tip);
         WindowChrome.SetIsHitTestVisibleInChrome(this, true);
-        Refresh();
     }
 
     public string Icon
     {
-        get => glyph.Text;
-        set => glyph.Text = value;
+        get => glyph?.Text ?? "";
+        set
+        {
+            if (glyph is not null) glyph.Text = value;
+        }
     }
 
     /// <summary>켜진 단추(목차 · 원본 보기) — 옅게 칠해 둔다.</summary>
@@ -165,6 +179,7 @@ public sealed class ChromeButton : Button
         var amount = IsPressed ? 0.14 : hover ? 0.08 : on ? 0.09 : 0;
         Background = amount == 0 ? Brushes.Transparent : new SolidColorBrush(colors.Tint(amount));
         Foreground = new SolidColorBrush(on ? colors.Text : ChromeColors.Blend(colors.Text, colors.Background, 0.82));
+        IconView.PaintAll(Content, Foreground);
     }
 
     private static ControlTemplate MakeTemplate(double radius)

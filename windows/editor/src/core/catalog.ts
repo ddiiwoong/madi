@@ -92,6 +92,7 @@ export function catalog(context: CatalogContext): CatalogEntry[] {
     { id: "pickCodeFont", title: "코드 글꼴…", menu: "보기 ▸ 글꼴" },
     { id: "toggleRemoteImages", title: "원격 그림 받기", menu: "보기", checked: settings.loadsRemoteImages },
     { id: "toggleFrontMatter", title: "문서 메타데이터 접어 두기", menu: "보기", checked: settings.collapsesFrontMatter },
+    { id: "toggleMenuBar", title: "메뉴 막대 보이기", menu: "보기", checked: settings.showsMenuBar },
     { id: "llmKeys", title: "LLM 키…", menu: "도구" },
     ...(context.packaged ? [] : [
       { id: "checkForUpdates", title: "업데이트 확인…", menu: "도움말" },
@@ -133,6 +134,8 @@ export function settingsChange(settings: Settings, id: string, arg?: string): Se
       return papers.some(([value]) => value === arg) ? { ...settings, printPaper: arg as PrintPaper } : settings;
     case "toggleUpdateChecks":
       return { ...settings, checksForUpdates: !settings.checksForUpdates };
+    case "toggleMenuBar":
+      return { ...settings, showsMenuBar: !settings.showsMenuBar };
     default:
       return null;
   }

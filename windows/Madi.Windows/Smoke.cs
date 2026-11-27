@@ -38,6 +38,22 @@ internal sealed class SmokeRun(MainWindow window, string directory)
     private sealed record Case(string Name, byte[] Bytes, string Encoding, bool Bom, string LineSeparator, string RoundTrip);
 
     private static byte[] Utf8(string text) => new UTF8Encoding(false).GetBytes(text);
+
+    /// <summary>
+    /// Windows 클립보드의 "HTML Format"(CF_HTML) — 머리의 네 숫자는 UTF-8 바이트 자리다. Word · 브라우저가 두는 꼴과 같이 문서로 감싸고
+    /// 조각을 <c>StartFragment</c> · <c>EndFragment</c> 주석으로 표시한다. WPF는 이 형식의 글을 UTF-8로 넣는다.
+    /// </summary>
+    private static string ClipboardHtml(string fragment)
+    {
+        const string header = "Version:0.9\r\nStartHTML:{0:D10}\r\nEndHTML:{1:D10}\r\nStartFragment:{2:D10}\r\nEndFragment:{3:D10}\r\n";
+        const string before = "<html><body>\r\n<!--StartFragment-->";
+        const string after = "<!--EndFragment-->\r\n</body>\r\n</html>";
+        var startHtml = Encoding.UTF8.GetByteCount(string.Format(header, 0, 0, 0, 0));
+        var startFragment = startHtml + Encoding.UTF8.GetByteCount(before);
+        var endFragment = startFragment + Encoding.UTF8.GetByteCount(fragment);
+        var endHtml = endFragment + Encoding.UTF8.GetByteCount(after);
+        return string.Format(header, startHtml, endHtml, startFragment, endFragment) + before + fragment + after;
+    }
     private static byte[] Join(params byte[][] parts) => parts.SelectMany(part => part).ToArray();
 
     private static readonly byte[] CrlfBom = Join([0xef, 0xbb, 0xbf], Utf8("# 메모장에서 저장한 글\r\n\r\n- 줄 끝은 CRLF\r\n- 맨 앞에 BOM\r\n"));
@@ -355,6 +371,75 @@ internal sealed class SmokeRun(MainWindow window, string directory)
             Check("저장 — 내가 쓴 것을 바깥 변경으로 읽지 않는다", echoed.Count == 0, echoed);
         });
 
+        // 2½. 서식 붙여넣기 — 다른 앱에서 복사한 서식 있는 글(HTML)은 마크다운으로(`core/richpaste.ts`). Ctrl+Shift+V · 코드 블록 안은 글만.
+        //     끝으로 진짜 클립보드 — Word처럼 "HTML Format"을 Windows 클립보드에 두고 Ctrl+V(개발자 도구 프로토콜의 키와 Paste 명령)를
+        //     보내 Chromium이 클립보드의 HTML을 붙여넣기 이벤트에 실어 주는지까지 본다.
+        await Scenario("서식 붙여넣기", async () =>
+        {
+            var path = Path.Combine(directory, "paste.md");
+            await File.WriteAllBytesAsync(path, Utf8("앞 글\n\n```\n코드\n```\n"));
+            await window.LoadFileAsync(path);
+            async Task<string> Text()
+            {
+                Drain();
+                window.Post(new { type = "smoke", action = "digest" });
+                return Field(await WaitFor("digest"), "text") ?? "";
+            }
+            async Task<string> TextAfterChange(string before)
+            {
+                var text = before;
+                for (var tries = 0; tries < 30 && text == before; tries++)
+                {
+                    await Task.Delay(100);
+                    text = await Text();
+                }
+                return text;
+            }
+
+            const string web = "<meta charset=\"utf-8\"><h2>제목</h2><p><b>굵게</b>와 <a href=\"https://example.com/\">링크</a></p>"
+                + "<ul><li>하나</li><li>둘</li></ul>";
+            var start = await Text();
+            window.Post(new { type = "smoke", action = "caret", at = 3 });
+            window.Post(new { type = "smoke", action = "pasteHtml", html = web, text = "제목\r\n굵게와 링크\r\n하나\r\n둘" });
+            var converted = await TextAfterChange(start);
+            Check("서식 붙여넣기 — HTML은 마크다운으로(제목 · 굵게 · 링크 · 목록), 글 줄 뒤면 빈 줄 하나 두고",
+                converted == "앞 글\n\n## 제목\n\n**굵게**와 [링크](https://example.com/)\n\n- 하나\n- 둘\n\n```\n코드\n```\n", converted);
+
+            window.Post(new { type = "smoke", action = "caret", at = 1_000_000 });
+            window.Post(new { type = "smoke", action = "pasteHtml", html = "<b>굵게만</b>", text = "굵게만", plain = true });
+            var plain = await TextAfterChange(converted);
+            Check("서식 붙여넣기 — Ctrl+Shift+V는 글만", plain == converted + "굵게만", plain);
+
+            var code = plain.IndexOf("코드\n", StringComparison.Ordinal) + "코드".Length;
+            window.Post(new { type = "smoke", action = "caret", at = code });
+            window.Post(new { type = "smoke", action = "pasteHtml", html = "<b>x</b>", text = "x" });
+            var inCode = await TextAfterChange(plain);
+            Check("서식 붙여넣기 — 코드 블록 안은 글만", inCode == plain.Insert(code, "x"), inCode);
+
+            // 진짜 클립보드 — Word가 두는 것과 같은 꼴(HTML Format의 머리 · 앞뒤를 감싼 문서 · 조각 표시)과 글.
+            var fragment = "<p class=MsoNormal><b>워드</b>에서 <i>복사</i><o:p></o:p></p>";
+            var data = new DataObject();
+            data.SetData(DataFormats.Html, ClipboardHtml(fragment));
+            data.SetData(DataFormats.UnicodeText, "워드에서 복사");
+            Clipboard.SetDataObject(data, true);
+            window.Post(new { type = "smoke", action = "type", at = inCode.Length, text = "\n" });
+            var typed = await TextAfterChange(inCode);
+            window.Post(new { type = "smoke", action = "caret", at = 1_000_000 });
+            window.Activate();
+            // 창이 앞에 오지 못해도(CI) 페이지는 초점이 있다고 여기게 — 편집 명령(Paste)은 초점 있는 편집 칸에만 간다.
+            await window.Core.CallDevToolsProtocolMethodAsync("Emulation.setFocusEmulationEnabled", "{\"enabled\":true}");
+            window.Post(new { type = "smoke", action = "focus" });
+            await Task.Delay(300);
+            string Key(string kind) => JsonSerializer.Serialize(kind == "keyDown"
+                ? new { type = kind, modifiers = 2, key = "v", code = "KeyV", windowsVirtualKeyCode = 86, commands = new[] { "Paste" } }
+                : (object)new { type = kind, modifiers = 2, key = "v", code = "KeyV", windowsVirtualKeyCode = 86 });
+            await window.Core.CallDevToolsProtocolMethodAsync("Input.dispatchKeyEvent", Key("keyDown"));
+            await window.Core.CallDevToolsProtocolMethodAsync("Input.dispatchKeyEvent", Key("keyUp"));
+            var fromClipboard = await TextAfterChange(typed);
+            Check("서식 붙여넣기 — 진짜 클립보드(Word의 HTML Format)에서 Ctrl+V도 마크다운으로",
+                fromClipboard == typed + "**워드**에서 *복사*", new { fromClipboard, typed = typed.Length });
+        });
+
         // 3. 로그 — 따라 보기, 끝에 붙는 줄, 둘로 나눠 쓴 한 글자
         await Scenario("로그", async () =>
         {
@@ -578,6 +663,71 @@ internal sealed class SmokeRun(MainWindow window, string directory)
             window.Post(new { type = "smoke", action = "caret", at = 1_000_000 });
         });
 
+        // 6¾. 메뉴 막대 — 기본은 숨김. 켜면 제목 막대 아래에 메뉴 여섯과 서식 단추, 단추는 편집기의 서식 명령, 왼쪽 Alt는 첫 메뉴. 끄면 숨는다.
+        await Scenario("메뉴 막대", async () =>
+        {
+            var path = Path.Combine(directory, "blocks", "blocks.md");
+            var bar = window.Bar;
+            Check("메뉴 막대 — 기본은 숨김(지금처럼 제목 막대의 …만)", !bar.IsShown && !MainWindow.Store.FlagOr("showsMenuBar", false),
+                new { shown = bar.IsShown });
+
+            Drain();
+            window.Run("toggleMenuBar");
+            await WaitFor("settings", message => Flag(Child(message, "settings"), "showsMenuBar"));
+            await Task.Delay(400);
+            var names = bar.MenuNames;
+            var tools = bar.ToolCommands;
+            Point Screen(FrameworkElement element, double x, double y) => element.PointToScreen(new Point(x, y));
+            var menuHit = WindowFrame.HitTest(window, Screen(bar, 30, MenuBar.BarHeight / 2));
+            var titleStill = WindowFrame.HitTest(window, Screen(window.Chrome, window.Chrome.ActualWidth * 0.55, 20));
+            // 메뉴 이름이 다 보이는가 — 메뉴 항목 · 글자 칸이 바라는 높이만큼 자리를 받았고 막대 안에 든다. 처음엔 47px 메뉴를 38px 막대에
+            // 넣어 글자의 위가 잘렸다(그림으로 봄 — 그때의 확인은 이것을 보지 않아 통과했다).
+            var clipped = bar.ClippedMenuNames();
+            Check("메뉴 막대 — 켜면 제목 막대 아래에 메뉴 여섯 · 서식 단추(이름이 잘리지 않게), 막대는 누르는 자리(창을 끌지 않는다)",
+                bar.IsShown && names.SequenceEqual(["파일", "편집", "서식", "보기", "도구", "도움말"]) && clipped.Count == 0
+                && tools.Contains("bold") && tools.Contains("heading") && tools.Contains("table") && menuHit == 1 && titleStill == 2,
+                new { names, clipped, tools, menuHit, titleStill });
+
+            // 서식 단추 — 고른 글을 굵게(편집기의 서식 명령), 자동 저장.
+            var text = Encoding.UTF8.GetString(await File.ReadAllBytesAsync(path));
+            var word = text.IndexOf("끝낸 일", StringComparison.Ordinal);
+            window.Post(new { type = "smoke", action = "select", from = word, to = word + "끝낸 일".Length });
+            await Task.Delay(300);
+            Drain();
+            bar.Press("bold");
+            await WaitFor("state", message => Flag(message, "dirty"));
+            await WaitFor("state", message => !Flag(message, "dirty"), seconds: 10);
+            var bolded = Encoding.UTF8.GetString(await File.ReadAllBytesAsync(path));
+            Check("메뉴 막대 — 굵게 단추가 고른 글만 **로 감싼다",
+                bolded == text.Replace("끝낸 일", "**끝낸 일**", StringComparison.Ordinal), bolded.Length);
+
+            // 키보드 — 왼쪽 Alt를 혼자 눌렀다 떼면 첫 메뉴(파일), Alt+V는 보기. 편집기가 받아 껍데기에 알린다.
+            window.Activate();
+            window.Post(new { type = "smoke", action = "altKey" });
+            for (var tries = 0; tries < 20 && bar.OpenMenuName is null; tries++) await Task.Delay(100);
+            var byAlt = bar.OpenMenuName;
+            await Task.Delay(300);
+            WindowFrame.Capture(window, Path.Combine(directory, "menubar.png"));
+            bar.CloseMenus();
+            await Task.Delay(300);
+            window.Post(new { type = "smoke", action = "altKey", code = "KeyV" });
+            for (var tries = 0; tries < 20 && bar.OpenMenuName is null; tries++) await Task.Delay(100);
+            var byAltV = bar.OpenMenuName;
+            bar.CloseMenus();
+            Check("메뉴 막대 — 왼쪽 Alt는 파일, Alt+V는 보기를 연다", byAlt == "파일" && byAltV == "보기", new { byAlt, byAltV });
+
+            Drain();
+            window.Run("toggleMenuBar");
+            await WaitFor("settings", message => !Flag(Child(message, "settings"), "showsMenuBar"));
+            await Task.Delay(300);
+            var saved = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(MainWindow.Store.Folder, "settings.json"))).RootElement;
+            Check("메뉴 막대 — 끄면 숨고, settings.json에 꺼짐으로 남는다",
+                !bar.IsShown && saved.TryGetProperty("showsMenuBar", out var value) && value.ValueKind == JsonValueKind.False,
+                saved.GetRawText());
+            // 다음 시나리오가 블록 문서를 본다 — 캐럿은 끝(블록 밖).
+            window.Post(new { type = "smoke", action = "caret", at = 1_000_000 });
+        });
+
         // 7. 명령 팔레트 · 빠른 열기
         await Scenario("고르기", async () =>
         {
@@ -684,6 +834,85 @@ internal sealed class SmokeRun(MainWindow window, string directory)
                 MainWindow.ConfirmAppendOverride = null;
                 foreach (var extra in MainWindow.OpenWindows.Where(other => other != window).ToList()) extra.Close();
             }
+        });
+
+        // 8½. 창 크기 — 가장자리 여덟 곳(위 · 아래 · 왼쪽 · 오른쪽 · 네 모서리)에서 크기를 바꾼다. 편집기(WebView2)는 따로 된 창이라 그 위의
+        //     점은 Windows가 껍데기가 아니라 편집기 창에 묻는다 — 껍데기 창에 바로 묻던 제목 막대 확인은 그것을 보지 못해, 위 끝만 되고 왼쪽 ·
+        //     오른쪽 · 아래 · 모서리는 안 되는 것을 놓쳤다(사용자 — "위아래 늘리고 줄이고 되는데 가로세로 늘리는게 안된다"). 그래서 Windows처럼
+        //     묻고(그 점의 맨 위 창에 WM_NCHITTEST), 진짜 마우스로 오른쪽 아래 모서리를 끌어 본다.
+        await Scenario("창 크기", async () =>
+        {
+            window.WindowState = WindowState.Normal;
+            window.Activate();
+            await Task.Delay(500);
+            var scale = System.Windows.Media.VisualTreeHelper.GetDpi(window).DpiScaleX;
+            var bounds = WindowFrame.Bounds(window);
+            const double inside = 2;
+            var left = bounds.Left + inside;
+            var right = bounds.Right - 1 - inside;
+            var top = bounds.Top + inside;
+            var bottom = bounds.Bottom - 1 - inside;
+            var middleX = Math.Round(bounds.Left + bounds.Width / 2);
+            var middleY = Math.Round(bounds.Top + bounds.Height / 2);
+            var close = window.Chrome.CloseButton;
+            var closeCenter = close.PointToScreen(new Point(close.ActualWidth / 2, close.ActualHeight / 2));
+            // HTLEFT 10 · HTRIGHT 11 · HTTOP 12 · HTTOPLEFT 13 · HTTOPRIGHT 14 · HTBOTTOM 15 · HTBOTTOMLEFT 16 · HTBOTTOMRIGHT 17, 글 영역 1
+            var spots = new (string Name, Point At, int Expected)[]
+            {
+                ("왼쪽", new Point(left, middleY), 10),
+                ("오른쪽", new Point(right, middleY), 11),
+                ("아래", new Point(middleX, bottom), 15),
+                ("위 — 닫기 단추 위", new Point(closeCenter.X, top), 12),
+                ("왼쪽 위", new Point(left, top), 13),
+                ("오른쪽 위 — 닫기 단추 모서리", new Point(right, top), 14),
+                ("왼쪽 아래", new Point(left, bottom), 16),
+                ("오른쪽 아래", new Point(right, bottom), 17),
+                ("오른쪽 — 제목 막대 높이(닫기 단추 옆)", new Point(right, closeCenter.Y), 11),
+                ("편집기 — 왼쪽 끝에서 조금 안", new Point(bounds.Left + Math.Ceiling(14 * scale), middleY), 1),
+                ("닫기 단추 가운데", closeCenter, 1),
+            };
+            var answers = spots.Select(spot =>
+            {
+                var (code, shell, owner) = WindowFrame.SystemHitTest(window, spot.At);
+                return new { spot.Name, at = $"{spot.At.X},{spot.At.Y}", code, spot.Expected, shell, owner };
+            }).ToList();
+            // 조금 안쪽은 편집기 창이 받는다(껍데기의 빈 띠가 아니라 — 띠가 너무 넓으면 편집기 끝을 누를 수 없다).
+            Check("창 크기 — 가장자리 여덟 곳은 크기 바꾸기(편집기 위도), 조금 안쪽은 편집기, 닫기 단추는 누르기",
+                answers.All(answer => answer.code == answer.Expected) && answers.Single(answer => answer.Name.StartsWith("편집기")).shell == false,
+                answers);
+
+            // 진짜 마우스 — 오른쪽 아래 모서리를 왼쪽 위로 끈다. 가로 · 세로가 함께 줄고 창의 왼쪽 위는 그대로.
+            var (width, height) = (window.ActualWidth, window.ActualHeight);
+            var from = new Point(right, bottom);
+            await Task.Run(() => WindowFrame.Drag(from, new Point(from.X - 80, from.Y - 60)));
+            await Task.Delay(500);
+            var dragged = WindowFrame.Bounds(window);
+            string Box(System.Windows.Rect rect) => $"{rect.Left},{rect.Top} {rect.Width}x{rect.Height}";
+            Check("창 크기 — 진짜 마우스로 오른쪽 아래 모서리를 끌면 가로 · 세로가 함께 바뀐다",
+                Math.Abs(bounds.Width - dragged.Width - 80) <= 3 && Math.Abs(bounds.Height - dragged.Height - 60) <= 3
+                && dragged.Left == bounds.Left && dragged.Top == bounds.Top,
+                new { before = Box(bounds), after = Box(dragged) });
+            window.Width = width;
+            window.Height = height;
+            await Task.Delay(300);
+
+            // 최대화 — 띠를 거두고 편집기는 화면 끝까지. 화면 맨 위 줄의 닫기 단추는 누르기(띠가 남으면 창 끌기다).
+            window.WindowState = WindowState.Maximized;
+            await Task.Delay(800);
+            var area = WindowFrame.WorkArea(window);
+            var closeX = close.PointToScreen(new Point(close.ActualWidth / 2, 0)).X;
+            var closeAtTop = WindowFrame.SystemHitTest(window, new Point(closeX, area.Top));
+            var editorAtEdge = WindowFrame.SystemHitTest(window, new Point(area.Left, Math.Round(area.Top + area.Height / 2)));
+            window.WindowState = WindowState.Normal;
+            await Task.Delay(500);
+            Check("창 크기 — 최대화하면 띠가 없다: 화면 맨 위 줄의 닫기 단추는 누르기, 편집기는 화면 왼쪽 끝까지",
+                closeAtTop.Code == 1 && editorAtEdge.Code == 1 && !editorAtEdge.Shell,
+                // 튜플은 JSON에 이름이 남지 않는다 — 풀어서 적는다.
+                new
+                {
+                    closeAtTop = new { closeAtTop.Code, closeAtTop.Shell, closeAtTop.Class },
+                    editorAtEdge = new { editorAtEdge.Code, editorAtEdge.Shell, editorAtEdge.Class },
+                });
         });
 
         // 9. 설정 — 테마 · 다크 · 글자 크기. 편집기가 정한 값을 껍데기가 저장한다. 마지막 화면(CI가 창째 한 장 더 찍는다).

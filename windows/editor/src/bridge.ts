@@ -41,7 +41,13 @@ export type HostMessage =
   /** 첫(`last`면 마지막) 코드 블록을 보이게 굴리고 그 둘째 줄에 마우스를 올린 것처럼(mousemove). */
   | { type: "smoke"; action: "hoverCode"; last?: boolean }
   /** 코드 복사 단추를 사람이 누른 것처럼(mousedown). */
-  | { type: "smoke"; action: "codeCopyPress" };
+  | { type: "smoke"; action: "codeCopyPress" }
+  /** 키를 사람이 친 것처럼 — 왼쪽 Alt를 혼자(`code` 없이), 또는 Alt+그 글자(`KeyV` 같은 `code`). 메뉴 막대의 키를 본다. */
+  | { type: "smoke"; action: "altKey"; code?: string }
+  /** 클립보드의 HTML · 글을 붙여 넣은 것처럼(`plain`이면 Ctrl+Shift+V). */
+  | { type: "smoke"; action: "pasteHtml"; html: string; text: string; plain?: boolean }
+  /** 편집기에 초점 — 개발자 도구 프로토콜로 보낸 키가 편집기에 가게. */
+  | { type: "smoke"; action: "focus" };
 
 /** 편집기가 물은 것의 답 — `id`로 짝을 짓는다. */
 export type Reply =
@@ -103,7 +109,9 @@ export type EditorMessage =
   | { type: "save"; bytes: string; autosave: boolean }
   /** 저장하지 않은 문서 · 다른 이름으로 — 호스트가 저장 창을 띄운다. */
   | { type: "saveAs"; bytes: string; suggestedName: string }
-  | { type: "command"; name: "new" | "open" | "close" | "exportPdf" | "llmKeys" | "checkForUpdates" | "menu" }
+  | { type: "command"; name: "new" | "open" | "close" | "exportPdf" | "llmKeys" | "checkForUpdates" }
+  /** 메뉴를 연다 — F10(`menu` 없음), 메뉴 막대가 보일 때 왼쪽 Alt(`file`) · Alt+글자(`core/menukeys.ts`). */
+  | { type: "command"; name: "menu"; menu?: string }
   /** 제목 막대(껍데기)의 색 — 편집기와 한 판이게. 모두 `#RRGGBB`. */
   | { type: "chrome"; dark: boolean; background: string; text: string; dim: string; rule: string; accent: string }
   | { type: "outputReady"; id: number; lines: number }

@@ -27,6 +27,8 @@ import { Picker, type PickItem } from "./editor/picker.ts";
 import { ConflictBand, NewLinesPill, OutlinePanel, Toast } from "./editor/ui.ts";
 import { FormatBar } from "./editor/formatbar.ts";
 import { CodeCopyButton } from "./editor/codecopy.ts";
+import { AltTap, menuForAltKey } from "./core/menukeys.ts";
+import { richPaste } from "./editor/paste.ts";
 import { cssVariables } from "./core/settings.ts";
 
 declare global {
@@ -157,7 +159,7 @@ for (const id of [
 for (const id of [
   "setTheme", "setAppearance", "setLineSpacing", "setDocumentWidth", "textBigger", "textSmaller", "textStandard",
   "setBodyFont", "setCodeFont", "toggleRemoteImages", "toggleFrontMatter",
-  "setPrintMargin", "setPrintOrientation", "setPrintPaper", "toggleUpdateChecks",
+  "setPrintMargin", "setPrintOrientation", "setPrintPaper", "toggleUpdateChecks", "toggleMenuBar",
 ]) {
   commands[id] = (arg) => {
     const next = settingsChange(settings, id, arg);
@@ -195,7 +197,7 @@ const shortcuts = Prec.highest(keymap.of([
   { key: "Mod-Alt-c", run: () => (commands.codeBlock!(), true) },
   { key: "Mod-Alt-0", run: () => (commands.heading0!(), true) },
   ...[1, 2, 3, 4, 5, 6].map((level) => ({ key: `Mod-${level}`, run: () => (commands[`heading${level}`]!(), true) })),
-  // 메뉴 막대가 없다 — F10은 Windows의 약속대로 메뉴(제목 막대의 …)를 연다.
+  // F10은 Windows의 약속대로 메뉴 — 메뉴 막대가 보이면 그 첫 메뉴(파일), 아니면 제목 막대의 …(껍데기가 고른다).
   { key: "F10", run: () => (commands.menu!(), true) },
 ]));
 
@@ -215,6 +217,8 @@ function baseExtensions() {
     EditorView.contentAttributes.of({ lang: "ko", spellcheck: "false" }),
     // 붙여 넣기 · 끌어다 놓기의 줄 끝을 문서의 줄 끝으로 — Windows의 클립보드는 CRLF라 LF 문서에 \r이 섞였다.
     EditorView.clipboardInputFilter.of((text, state) => normalizeLineBreaks(text, state.lineBreak)),
+    // 서식 있는 글(Word · 웹 페이지 …)은 마크다운으로 — 마크다운 문서에서만.
+    richPaste(() => mode.kind === "markdown"),
     EditorView.updateListener.of((update) => {
       if (update.docChanged) {
         const byUser = update.transactions.some((tr) => tr.docChanged && !tr.annotation(fromDisk));
@@ -271,6 +275,29 @@ view.scrollDOM.addEventListener("scroll", () => {
 new ResizeObserver(() => {
   if (mode.follow && lastAtEnd) scrollToEnd();
 }).observe(view.scrollDOM);
+
+// 메뉴 막대의 키 — 막대가 보일 때만(`core/menukeys.ts`). 편집기보다 먼저 받는다(CodeMirror의 키맵이 Alt 조합을 먹지 않게).
+const altTap = new AltTap();
+window.addEventListener("keydown", (event) => {
+  if (!settings.showsMenuBar) return;
+  if (event.key === "Alt") {
+    altTap.down(event);
+    return;
+  }
+  altTap.cancel();
+  const menu = menuForAltKey(event);
+  if (!menu) return;
+  event.preventDefault();
+  event.stopPropagation();
+  post({ type: "command", name: "menu", menu });
+}, true);
+window.addEventListener("keyup", (event) => {
+  if (!settings.showsMenuBar || event.key !== "Alt" || !altTap.up(event)) return;
+  event.preventDefault();
+  post({ type: "command", name: "menu", menu: "file" });
+}, true);
+window.addEventListener("pointerdown", () => altTap.cancel(), true);
+window.addEventListener("blur", () => altTap.cancel());
 
 // 끌어다 놓은 파일은 연다 — CodeMirror가 글로 넣지 않게 먼저 받는다.
 window.addEventListener("dragover", (event) => {
@@ -413,8 +440,14 @@ function applySettings(next: Settings): void {
 }
 
 function changeSettings(next: Settings): void {
+  const before = settings;
   applySettings(normalizeSettings(next));
   post({ type: "settings", settings });
+  // 메뉴 막대는 보이는 것 자체가 알림이다 — 테마 · 글자 크기를 알리지 않는다.
+  if (before.showsMenuBar !== settings.showsMenuBar) {
+    status.say(settings.showsMenuBar ? "메뉴 막대를 보입니다 — Alt · F10으로 엽니다" : "메뉴 막대를 숨겼습니다 — 메뉴는 제목 막대의 …에");
+    return;
+  }
   status.say(`설정: ${describeSettings()}`);
 }
 
@@ -891,6 +924,33 @@ async function runSmoke(message: Extract<HostMessage, { type: "smoke" }>): Promi
       }));
       break;
     }
+    case "altKey": {
+      const target = view.contentDOM;
+      if (message.code) {
+        target.dispatchEvent(new KeyboardEvent("keydown", {
+          bubbles: true, cancelable: true, key: message.code.replace(/^Key/, "").toLowerCase(), code: message.code, altKey: true,
+        }));
+      } else {
+        target.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Alt", code: "AltLeft", altKey: true }));
+        target.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, cancelable: true, key: "Alt", code: "AltLeft" }));
+      }
+      break;
+    }
+    case "pasteHtml": {
+      // 사람이 붙여 넣은 것처럼 — 클립보드의 HTML · 글을 실은 붙여넣기 이벤트. `plain`이면 앞서 Ctrl+Shift+V를 누른 것.
+      view.focus();
+      if (message.plain) {
+        view.contentDOM.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ctrlKey: true, shiftKey: true, key: "V", code: "KeyV" }));
+      }
+      const data = new DataTransfer();
+      data.setData("text/html", message.html);
+      data.setData("text/plain", message.text);
+      view.contentDOM.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: data }));
+      break;
+    }
+    case "focus":
+      view.focus();
+      break;
     case "codeCopyPress":
       document.querySelector<HTMLElement>("#codecopy:not([hidden])")
         ?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));

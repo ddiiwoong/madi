@@ -1,14 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EditorState } from "@codemirror/state";
-import { ensureSyntaxTree } from "@codemirror/language";
+import { fullyParsed } from "./parsed.ts";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { codeBlockAt, codeText } from "../src/core/codecopy.ts";
 
 function stateOf(doc: string): EditorState {
   const state = EditorState.create({ doc, extensions: markdown({ base: markdownLanguage }) });
-  ensureSyntaxTree(state, doc.length, 5000);
-  return state;
+  return fullyParsed(state);
 }
 
 /** `line`번 줄에서 찾은 블록과 그 블록이 베끼는 글. */
