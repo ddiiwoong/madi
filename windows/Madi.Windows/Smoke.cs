@@ -723,11 +723,13 @@ internal sealed class SmokeRun(MainWindow window, string directory)
             };
             var answers = spots.Select(spot =>
             {
-                var (code, owner) = WindowFrame.SystemHitTest(spot.At);
-                return new { spot.Name, at = $"{spot.At.X},{spot.At.Y}", code, spot.Expected, owner };
+                var (code, shell, owner) = WindowFrame.SystemHitTest(window, spot.At);
+                return new { spot.Name, at = $"{spot.At.X},{spot.At.Y}", code, spot.Expected, shell, owner };
             }).ToList();
+            // 조금 안쪽은 편집기 창이 받는다(껍데기의 빈 띠가 아니라 — 띠가 너무 넓으면 편집기 끝을 누를 수 없다).
             Check("창 크기 — 가장자리 여덟 곳은 크기 바꾸기(편집기 위도), 조금 안쪽은 편집기, 닫기 단추는 누르기",
-                answers.All(answer => answer.code == answer.Expected), answers);
+                answers.All(answer => answer.code == answer.Expected) && answers.Single(answer => answer.Name.StartsWith("편집기")).shell == false,
+                answers);
 
             // 진짜 마우스 — 오른쪽 아래 모서리를 왼쪽 위로 끈다. 가로 · 세로가 함께 줄고 창의 왼쪽 위는 그대로.
             var (width, height) = (window.ActualWidth, window.ActualHeight);
@@ -743,6 +745,24 @@ internal sealed class SmokeRun(MainWindow window, string directory)
             window.Width = width;
             window.Height = height;
             await Task.Delay(300);
+
+            // 최대화 — 띠를 거두고 편집기는 화면 끝까지. 화면 맨 위 줄의 닫기 단추는 누르기(띠가 남으면 창 끌기다).
+            window.WindowState = WindowState.Maximized;
+            await Task.Delay(800);
+            var area = WindowFrame.WorkArea(window);
+            var closeX = close.PointToScreen(new Point(close.ActualWidth / 2, 0)).X;
+            var closeAtTop = WindowFrame.SystemHitTest(window, new Point(closeX, area.Top));
+            var editorAtEdge = WindowFrame.SystemHitTest(window, new Point(area.Left, Math.Round(area.Top + area.Height / 2)));
+            window.WindowState = WindowState.Normal;
+            await Task.Delay(500);
+            Check("창 크기 — 최대화하면 띠가 없다: 화면 맨 위 줄의 닫기 단추는 누르기, 편집기는 화면 왼쪽 끝까지",
+                closeAtTop.Code == 1 && editorAtEdge.Code == 1 && !editorAtEdge.Shell,
+                // 튜플은 JSON에 이름이 남지 않는다 — 풀어서 적는다.
+                new
+                {
+                    closeAtTop = new { closeAtTop.Code, closeAtTop.Shell, closeAtTop.Class },
+                    editorAtEdge = new { editorAtEdge.Code, editorAtEdge.Shell, editorAtEdge.Class },
+                });
         });
 
         // 9. 설정 — 테마 · 다크 · 글자 크기. 편집기가 정한 값을 껍데기가 저장한다. 마지막 화면(CI가 창째 한 장 더 찍는다).

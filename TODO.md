@@ -24,6 +24,11 @@
 
 ## 끝난 것
 
+- **Windows판 창 가장자리 크기 바꾸기**(2026-11-27, 사용자 — "위아래 늘리고 줄이고 되는데 가로세로 늘리는게 안된다"). 가지
+  `windows/resize-edges`. 편집기(WebView2)가 창 끝까지 덮어, 그 위의 점은 Windows가 편집기 창에 물었다 — WindowChrome의 테두리 판정까지
+  가지 않아 위 끝(제목 막대 — WPF)만 크기가 바뀌었다(모양 다시부터). 창 단추 위의 테두리는 단추가 누르기로 답했다. 편집기를 테두리 폭만큼
+  안으로 들이고 창 단추 위에 투명한 띠를 얹었다(`MainWindow.FitFrame`). 확인 실행의 제목 막대 확인은 껍데기 창에 바로 물어(`HitTest`) 이것을
+  놓쳤다 — 이제 Windows처럼 묻고(`SystemHitTest`) 진짜 마우스로 모서리를 끈다. 확인만 넣고 고치지 않은 커밋(`08432aa`)도 CI에 돌려 견준다.
 - **Windows판 모양 다시**(2026-11-25, 사용자 — "윈도우 버전 디자인이 별로인데... https://loomm.ai/mark 이거 느낌"). 가지
   `windows/design`(MSIX 위), 자세한 것은 `windows/README.md`. Mark의 로고 · 그림은 쓰지 않았다 — 느낌(조용한 창, 문서 같은 글)만.
   - 창: 메뉴 막대 · 아래 상태 줄을 걷고 제목 막대 하나(`TitleBar.cs` · `WindowFrame.cs` — WindowChrome, Windows 11 둥근 모서리, 테마 색,

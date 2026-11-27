@@ -149,14 +149,16 @@ internal static class WindowFrame
     }
 
     /// <summary>
-    /// Windows가 묻는 대로 — 그 점의 맨 위 창(<c>WindowFromPoint</c>, 편집기의 창일 수도 있다)에 <c>WM_NCHITTEST</c>. 답과 그 창의 클래스 이름.
+    /// Windows가 묻는 대로 — 그 점의 맨 위 창(<c>WindowFromPoint</c>, 편집기의 창일 수도 있다)에 <c>WM_NCHITTEST</c>. 답, 그 창이 껍데기 창인가,
+    /// 그 창의 클래스 이름(살펴보기용).
     /// </summary>
-    public static (int Code, string Window) SystemHitTest(Point screen)
+    public static (int Code, bool Shell, string Class) SystemHitTest(Window window, Point screen)
     {
         var hwnd = WindowFromPoint(new NativePoint { X = (int)screen.X, Y = (int)screen.Y });
         var name = new System.Text.StringBuilder(256);
         GetClassName(hwnd, name, name.Capacity);
-        return ((int)SendMessage(hwnd, WmNcHitTest, IntPtr.Zero, PointParam(screen)).ToInt64(), name.ToString());
+        var code = (int)SendMessage(hwnd, WmNcHitTest, IntPtr.Zero, PointParam(screen)).ToInt64();
+        return (code, hwnd == new WindowInteropHelper(window).Handle, name.ToString());
     }
 
     private static IntPtr PointParam(Point screen) => new(((int)screen.Y << 16) | ((int)screen.X & 0xFFFF));
