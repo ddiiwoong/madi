@@ -35,6 +35,8 @@ jobs:
       - name: 편집기 — 시험 · 형 검사 · 묶기
         working-directory: windows/editor
         run: |
+          # pwsh 단계는 마지막 명령의 끝 코드만 본다 — 이것이 없으면 `npm test` · `npm run check`가 실패해도 단계가 초록이었다(묶기만 봤다).
+          $PSNativeCommandUseErrorActionPreference = $true
           npm ci --no-audit --no-fund
           npm test
           npm run check
@@ -49,6 +51,7 @@ jobs:
 
       - name: 껍데기 빌드(x64, .NET 포함)
         run: |
+          $PSNativeCommandUseErrorActionPreference = $true
           dotnet publish windows/Madi.Windows/Madi.Windows.csproj -c Release -r win-x64 --self-contained true -o out/Madi
           Get-ChildItem out/Madi/editor | Select-Object Name, Length | Format-Table -AutoSize
 

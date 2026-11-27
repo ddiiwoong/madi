@@ -136,6 +136,15 @@ test("그림으로 바꿀 블록 — 앞머리 · 표 · 다이어그램 · 수�
   assert.deepEqual(kinds("---\ntitle: 글\n\n$$ x $$\n\n---\n본문"), ["frontmatter"]);
 });
 
+test("시험의 상태는 문서 끝까지 읽힌 나무를 쓴다 — 처음 읽기(3000자 · 20ms)가 못 닿은 뒤쪽 블록도", () => {
+  // CodeMirror는 상태를 만들 때 앞 3000자만, 그것도 20ms 안에 읽는다. `ensureSyntaxTree`는 나머지를 읽지만 이미 만든 상태의
+  // `syntaxTree(state)`는 처음 나무 그대로다 — 바쁜 CI에서 위 시험의 다이어그램 · 수식 · 그림이 빠졌다(20ms 안에 표까지만 읽었다).
+  // 3000자를 넘기면 바쁘지 않아도 같은 일이 난다.
+  const long = `${"긴 문단 글자 ".repeat(400)}\n\n\`\`\`mermaid\ngraph TD; A-->B\n\`\`\`\n`;
+  assert.ok(long.indexOf("```mermaid") > 3000);
+  assert.deepEqual(renderedBlocks(stateOf(long)).map((block) => block.kind), ["mermaid"]);
+});
+
 test("할 일 상자 · 알림 제목", () => {
   assert.deepEqual(taskToggle("[ ]", 10), { from: 11, to: 12, insert: "x" });
   assert.deepEqual(taskToggle("[X]", 10), { from: 11, to: 12, insert: " " });
