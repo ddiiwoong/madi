@@ -989,6 +989,18 @@ internal sealed class SmokeRun(MainWindow window, string directory)
             await DigestUntil(message => Counts(Child(Child(message, "blocks"), "states")).GetValueOrDefault("pending") == 0, seconds: 20);
         });
 
+        // 11. Store 스크린샷 — 창을 1366×768로(Store가 받는 가장 작은 크기) 밝게 · 어둡게 · 서식 막대를 찍는다. 확인이 아니라 찍기만 한다 —
+        // 실패해도 ok를 바꾸지 않고 notes에 적는다. 러너의 화면이 창보다 작으면 창이 줄어 크기가 모자란다(워크플로가 화면을 키운다).
+        // 맨 끝이라 앞의 확인에 닿지 않는다.
+        try
+        {
+            await StoreShotsAsync();
+        }
+        catch (Exception error)
+        {
+            Note($"Store 화면을 찍지 못했다: {error.Message}");
+        }
+
         var fonts = ready.TryGetProperty("fonts", out var fontsValue) ? fontsValue : default;
         var fontsLoaded = fonts.ValueKind == JsonValueKind.Object && Flag(fonts, "pretendard") && Flag(fonts, "plexMono");
         // 실렸어도 다른 규칙에 밀리면 쓰이지 않는다 — 0단계의 처음 빌드가 그랬다(고정폭 기본 글꼴, 여백 없음).
@@ -1013,6 +1025,156 @@ internal sealed class SmokeRun(MainWindow window, string directory)
             smokeNotes = MainWindow.SmokeNotes,
         });
         window.Finish(ok ? 0 : 1, TimeSpan.FromSeconds(5));
+    }
+
+    /// <summary>Store 목록에 올릴 화면 — `store-1-light.png`(목차 · 메타데이터 카드) · `store-2-dark.png`(표 · 다이어그램 · 수식, GitHub
+    /// 다크) · `store-3-format.png`(서식 막대, Notion). 모두 창째(제목 막대까지) 1366×768.</summary>
+    private async Task StoreShotsAsync()
+    {
+        var path = Path.Combine(directory, "store", "주간 회의.md");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        await File.WriteAllBytesAsync(path, Utf8(StoreDocument));
+        window.WindowState = WindowState.Normal;
+        window.Left = 0;
+        window.Top = 0;
+        window.Width = StoreWidth;
+        window.Height = StoreHeight;
+        window.Topmost = true;
+        window.Activate();
+        await window.LoadFileAsync(path);
+        window.Post(new { type = "smoke", action = "caret", at = 1_000_000 });
+
+        async Task Settle(Func<JsonElement, bool> done, double seconds)
+        {
+            try
+            {
+                await DigestUntil(done, seconds);
+            }
+            catch (TimeoutException)
+            {
+                // 찍기만 한다 — 덜 그려졌으면 그림에서 보인다.
+            }
+        }
+
+        async Task Look(string theme, string appearance)
+        {
+            window.Run("setTheme", theme);
+            window.Run("setAppearance", appearance);
+            window.Run("textStandard");
+            await Task.Delay(600);
+            await Settle(message => Counts(Child(Child(message, "blocks"), "states")).GetValueOrDefault("ready") >= 4
+                && Counts(Child(Child(message, "blocks"), "states")).GetValueOrDefault("pending") == 0, 20);
+        }
+
+        async Task Scroll(int line)
+        {
+            window.Post(new { type = "smoke", action = "scrollTo", line });
+            await Task.Delay(700);
+        }
+
+        async Task Shot(string name)
+        {
+            // 테마를 바꾸면 아래에 알림('설정: Notion · 15px')이 2.6초 뜬다 — 사라진 뒤에 찍는다.
+            await Settle(message => !Flag(Child(message, "toast"), "shown"), 6);
+            var file = Path.Combine(directory, name);
+            WindowFrame.Capture(window, file);
+            // 보이는 테두리(DWM)가 창 크기와 조금 다를 수 있다 — 한 번 맞춘다.
+            var (width, height) = PngSize(file);
+            if (width != StoreWidth || height != StoreHeight)
+            {
+                window.Width += StoreWidth - width;
+                window.Height += StoreHeight - height;
+                await Task.Delay(800);
+                WindowFrame.Capture(window, file);
+                (width, height) = PngSize(file);
+            }
+            Note($"{name}: {width}×{height}");
+        }
+
+        await Look("standard", "light");
+        Drain();
+        window.Run("toggleOutline");
+        await WaitFor("state", message => Flag(message, "outline"));
+        await Scroll(1);
+        await Shot("store-1-light.png");
+        window.Run("toggleOutline");
+        await WaitFor("state", message => !Flag(message, "outline"));
+
+        await Look("github", "dark");
+        await Scroll(StoreLine("## 일정"));
+        await Shot("store-2-dark.png");
+
+        await Look("notion", "light");
+        await Scroll(StoreLine("## 할 일"));
+        var word = StoreDocument.IndexOf("바로 씁니다", StringComparison.Ordinal);
+        window.Post(new { type = "smoke", action = "select", from = word, to = word + "바로 씁니다".Length });
+        await Settle(message => Flag(Child(message, "formatBar"), "shown"), 10);
+        await Task.Delay(300);
+        await Shot("store-3-format.png");
+        window.Topmost = false;
+    }
+
+    private const int StoreWidth = 1366;
+    private const int StoreHeight = 768;
+
+    /// <summary>Store 화면에 쓰는 문서 — 마디가 그리는 것을 한 화면씩 보이게.</summary>
+    private static readonly string StoreDocument = string.Join("\n",
+        "---",
+        "title: 주간 회의",
+        "date: 2026-11-26",
+        "tags: [회의, 마크다운, 마디]",
+        "---",
+        "",
+        "# 주간 회의",
+        "",
+        "> [!NOTE]",
+        "> 마디는 쓰는 그대로 보이는 마크다운 편집기입니다. 캐럿이 있는 줄만 원문으로 보입니다.",
+        "",
+        "## 할 일",
+        "",
+        "- [x] Windows판 미리 보기 내기",
+        "- [ ] Microsoft Store에 올리기",
+        "- [ ] 사용 설명서 다듬기",
+        "",
+        "회의는 **매주 화요일** 오전 10시에 합니다. 회의록은 이 문서에 바로 씁니다.",
+        "",
+        "## 일정",
+        "",
+        "| 단계 | 내용 | 상태 |",
+        "|:--|:--|:-:|",
+        "| 1 | 편집기 · 라이브 프리뷰 | 완료 |",
+        "| 2 | 표 · 다이어그램 · 수식 | 완료 |",
+        "| 3 | PDF · 링크 · 설치 파일 | 완료 |",
+        "",
+        "```mermaid",
+        "graph LR",
+        "  A[쓰기] --> B[자동 저장] --> C[PDF로 내보내기]",
+        "```",
+        "",
+        "$$",
+        "\\int_0^1 x^2\\,dx = \\frac{1}{3}",
+        "$$",
+        "",
+        "## 코드",
+        "",
+        "```python",
+        "def 인사(이름):",
+        "    return f\"안녕하세요, {이름}님\"",
+        "```",
+        "");
+
+    /// <summary>Store 문서에서 그 글이 있는 줄(1부터).</summary>
+    private static int StoreLine(string text) =>
+        StoreDocument[..StoreDocument.IndexOf(text, StringComparison.Ordinal)].Count(character => character == '\n') + 1;
+
+    /// <summary>PNG의 가로 · 세로(IHDR).</summary>
+    private static (int Width, int Height) PngSize(string path)
+    {
+        Span<byte> header = stackalloc byte[24];
+        using var stream = File.OpenRead(path);
+        stream.ReadExactly(header);
+        return (System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(header[16..]),
+            System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(header[20..]));
     }
 
     public void WriteFailure(string message)

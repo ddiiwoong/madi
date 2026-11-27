@@ -958,6 +958,11 @@ async function runSmoke(message: Extract<HostMessage, { type: "smoke" }>): Promi
     case "scrollEnd":
       scrollToEnd();
       break;
+    case "scrollTo": {
+      const line = view.state.doc.line(Math.min(Math.max(1, message.line), view.state.doc.lines));
+      view.dispatch({ effects: EditorView.scrollIntoView(line.from, { y: "start", yMargin: 12 }) });
+      break;
+    }
     case "digest": {
       const back = documentBytes(view.state.sliceDoc(), info.stream);
       const plugin = view.plugin(livePreview);

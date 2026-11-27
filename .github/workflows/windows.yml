@@ -55,6 +55,43 @@ jobs:
           dotnet publish windows/Madi.Windows/Madi.Windows.csproj -c Release -r win-x64 --self-contained true -o out/Madi
           Get-ChildItem out/Madi/editor | Select-Object Name, Length | Format-Table -AutoSize
 
+      # 러너의 화면은 1024×768 — Store 스크린샷(1366×768 이상)을 찍을 창이 들어가지 않는다. 1920×1080으로 키운다(Win32
+      # ChangeDisplaySettings). 못 키우면 경고만 — 확인 실행은 화면 크기에 기대지 않는다.
+      - name: 화면 키우기(Store 스크린샷)
+        continue-on-error: true
+        run: |
+          Add-Type -TypeDefinition @'
+          using System;
+          using System.Runtime.InteropServices;
+          public static class Display {
+            [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+            public struct DEVMODE {
+              [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string dmDeviceName;
+              public short dmSpecVersion, dmDriverVersion, dmSize, dmDriverExtra;
+              public int dmFields, dmPositionX, dmPositionY, dmDisplayOrientation, dmDisplayFixedOutput;
+              public short dmColor, dmDuplex, dmYResolution, dmTTOption, dmCollate;
+              [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string dmFormName;
+              public short dmLogPixels;
+              public int dmBitsPerPel, dmPelsWidth, dmPelsHeight, dmDisplayFlags, dmDisplayFrequency;
+              public int dmICMMethod, dmICMIntent, dmMediaType, dmDitherType, dmReserved1, dmReserved2, dmPanningWidth, dmPanningHeight;
+            }
+            [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern bool EnumDisplaySettings(string device, int mode, ref DEVMODE devmode);
+            [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int ChangeDisplaySettings(ref DEVMODE devmode, int flags);
+            public static int Set(int width, int height) {
+              var mode = new DEVMODE();
+              mode.dmSize = (short)Marshal.SizeOf(typeof(DEVMODE));
+              if (!EnumDisplaySettings(null, -1, ref mode)) return -100;
+              mode.dmPelsWidth = width;
+              mode.dmPelsHeight = height;
+              mode.dmFields = 0x80000 | 0x100000; // DM_PELSWIDTH | DM_PELSHEIGHT
+              return ChangeDisplaySettings(ref mode, 0);
+            }
+          }
+          '@
+          $result = [Display]::Set(1920, 1080)
+          Add-Type -AssemblyName System.Windows.Forms
+          Write-Host "ChangeDisplaySettings: $result, 화면: $([System.Windows.Forms.Screen]::PrimaryScreen.Bounds)"
+
       - name: 띄워서 확인
         run: |
           $out = Join-Path $env:RUNNER_TEMP "smoke"
@@ -236,6 +273,14 @@ jobs:
             ${{ runner.temp }}/smoke-msix/result.json
             ${{ runner.temp }}/smoke-msix/wack.xml
             ${{ runner.temp }}/smoke-msix/*.png
+          if-no-files-found: warn
+
+      # Store 목록에 올릴 화면(1366×768, 창째) — 일반 빌드의 확인 실행이 찍은 것.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: store-screenshots
+          path: ${{ runner.temp }}/smoke/store-*.png
           if-no-files-found: warn
 
       - uses: actions/upload-artifact@v4
