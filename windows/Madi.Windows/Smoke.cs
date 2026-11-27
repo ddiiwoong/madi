@@ -578,6 +578,71 @@ internal sealed class SmokeRun(MainWindow window, string directory)
             window.Post(new { type = "smoke", action = "caret", at = 1_000_000 });
         });
 
+        // 6¾. 메뉴 막대 — 기본은 숨김. 켜면 제목 막대 아래에 메뉴 여섯과 서식 단추, 단추는 편집기의 서식 명령, 왼쪽 Alt는 첫 메뉴. 끄면 숨는다.
+        await Scenario("메뉴 막대", async () =>
+        {
+            var path = Path.Combine(directory, "blocks", "blocks.md");
+            var bar = window.Bar;
+            Check("메뉴 막대 — 기본은 숨김(지금처럼 제목 막대의 …만)", !bar.IsShown && !MainWindow.Store.FlagOr("showsMenuBar", false),
+                new { shown = bar.IsShown });
+
+            Drain();
+            window.Run("toggleMenuBar");
+            await WaitFor("settings", message => Flag(Child(message, "settings"), "showsMenuBar"));
+            await Task.Delay(400);
+            var names = bar.MenuNames;
+            var tools = bar.ToolCommands;
+            Point Screen(FrameworkElement element, double x, double y) => element.PointToScreen(new Point(x, y));
+            var menuHit = WindowFrame.HitTest(window, Screen(bar, 30, MenuBar.BarHeight / 2));
+            var titleStill = WindowFrame.HitTest(window, Screen(window.Chrome, window.Chrome.ActualWidth * 0.55, 20));
+            // 메뉴 이름이 다 보이는가 — 메뉴 항목 · 글자 칸이 바라는 높이만큼 자리를 받았고 막대 안에 든다. 처음엔 47px 메뉴를 38px 막대에
+            // 넣어 글자의 위가 잘렸다(그림으로 봄 — 그때의 확인은 이것을 보지 않아 통과했다).
+            var clipped = bar.ClippedMenuNames();
+            Check("메뉴 막대 — 켜면 제목 막대 아래에 메뉴 여섯 · 서식 단추(이름이 잘리지 않게), 막대는 누르는 자리(창을 끌지 않는다)",
+                bar.IsShown && names.SequenceEqual(["파일", "편집", "서식", "보기", "도구", "도움말"]) && clipped.Count == 0
+                && tools.Contains("bold") && tools.Contains("heading") && tools.Contains("table") && menuHit == 1 && titleStill == 2,
+                new { names, clipped, tools, menuHit, titleStill });
+
+            // 서식 단추 — 고른 글을 굵게(편집기의 서식 명령), 자동 저장.
+            var text = Encoding.UTF8.GetString(await File.ReadAllBytesAsync(path));
+            var word = text.IndexOf("끝낸 일", StringComparison.Ordinal);
+            window.Post(new { type = "smoke", action = "select", from = word, to = word + "끝낸 일".Length });
+            await Task.Delay(300);
+            Drain();
+            bar.Press("bold");
+            await WaitFor("state", message => Flag(message, "dirty"));
+            await WaitFor("state", message => !Flag(message, "dirty"), seconds: 10);
+            var bolded = Encoding.UTF8.GetString(await File.ReadAllBytesAsync(path));
+            Check("메뉴 막대 — 굵게 단추가 고른 글만 **로 감싼다",
+                bolded == text.Replace("끝낸 일", "**끝낸 일**", StringComparison.Ordinal), bolded.Length);
+
+            // 키보드 — 왼쪽 Alt를 혼자 눌렀다 떼면 첫 메뉴(파일), Alt+V는 보기. 편집기가 받아 껍데기에 알린다.
+            window.Activate();
+            window.Post(new { type = "smoke", action = "altKey" });
+            for (var tries = 0; tries < 20 && bar.OpenMenuName is null; tries++) await Task.Delay(100);
+            var byAlt = bar.OpenMenuName;
+            await Task.Delay(300);
+            WindowFrame.Capture(window, Path.Combine(directory, "menubar.png"));
+            bar.CloseMenus();
+            await Task.Delay(300);
+            window.Post(new { type = "smoke", action = "altKey", code = "KeyV" });
+            for (var tries = 0; tries < 20 && bar.OpenMenuName is null; tries++) await Task.Delay(100);
+            var byAltV = bar.OpenMenuName;
+            bar.CloseMenus();
+            Check("메뉴 막대 — 왼쪽 Alt는 파일, Alt+V는 보기를 연다", byAlt == "파일" && byAltV == "보기", new { byAlt, byAltV });
+
+            Drain();
+            window.Run("toggleMenuBar");
+            await WaitFor("settings", message => !Flag(Child(message, "settings"), "showsMenuBar"));
+            await Task.Delay(300);
+            var saved = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(MainWindow.Store.Folder, "settings.json"))).RootElement;
+            Check("메뉴 막대 — 끄면 숨고, settings.json에 꺼짐으로 남는다",
+                !bar.IsShown && saved.TryGetProperty("showsMenuBar", out var value) && value.ValueKind == JsonValueKind.False,
+                saved.GetRawText());
+            // 다음 시나리오가 블록 문서를 본다 — 캐럿은 끝(블록 밖).
+            window.Post(new { type = "smoke", action = "caret", at = 1_000_000 });
+        });
+
         // 7. 명령 팔레트 · 빠른 열기
         await Scenario("고르기", async () =>
         {
