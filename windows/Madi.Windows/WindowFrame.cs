@@ -21,12 +21,36 @@ internal static class WindowFrame
     private const int SmCxSizeFrame = 32;
     private const int SmCxPaddedBorder = 92;
     private const int WmNcHitTest = 0x0084;
+    private const int SmCxScreen = 0;
+    private const int SmCyScreen = 1;
+    private const uint MouseMove = 0x0001;
+    private const uint MouseLeftDown = 0x0002;
+    private const uint MouseLeftUp = 0x0004;
+    private const uint MouseAbsolute = 0x8000;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct Rect
     {
         public int Left, Top, Right, Bottom;
     }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativePoint
+    {
+        public int X, Y;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr WindowFromPoint(NativePoint point);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetClassName(IntPtr hwnd, System.Text.StringBuilder name, int capacity);
+
+    [DllImport("user32.dll")]
+    private static extern int GetSystemMetrics(int index);
+
+    [DllImport("user32.dll")]
+    private static extern void mouse_event(uint flags, int dx, int dy, uint data, UIntPtr extra);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct MonitorInfo
@@ -114,12 +138,59 @@ internal static class WindowFrame
         }
     }
 
-    /// <summary>화면의 한 점(물리 화소)에서 창이 무엇이라고 답하는가 — <c>WM_NCHITTEST</c>(1 글 영역, 2 제목, 12 위 테두리 …).</summary>
+    /// <summary>
+    /// 화면의 한 점(물리 화소)에서 껍데기 창이 무엇이라고 답하는가 — <c>WM_NCHITTEST</c>(1 글 영역, 2 제목, 12 위 테두리 …). 껍데기 창에 바로
+    /// 묻는다 — 그 점이 편집기(WebView2, 따로 된 창) 위라면 Windows는 껍데기가 아니라 편집기 창에 묻는다. 그것까지 보려면 <see cref="SystemHitTest"/>.
+    /// </summary>
     public static int HitTest(Window window, Point screen)
     {
         var hwnd = new WindowInteropHelper(window).Handle;
-        var lParam = ((int)screen.Y << 16) | ((int)screen.X & 0xFFFF);
-        return (int)SendMessage(hwnd, WmNcHitTest, IntPtr.Zero, new IntPtr(lParam)).ToInt64();
+        return (int)SendMessage(hwnd, WmNcHitTest, IntPtr.Zero, PointParam(screen)).ToInt64();
+    }
+
+    /// <summary>
+    /// Windows가 묻는 대로 — 그 점의 맨 위 창(<c>WindowFromPoint</c>, 편집기의 창일 수도 있다)에 <c>WM_NCHITTEST</c>. 답과 그 창의 클래스 이름.
+    /// </summary>
+    public static (int Code, string Window) SystemHitTest(Point screen)
+    {
+        var hwnd = WindowFromPoint(new NativePoint { X = (int)screen.X, Y = (int)screen.Y });
+        var name = new System.Text.StringBuilder(256);
+        GetClassName(hwnd, name, name.Capacity);
+        return ((int)SendMessage(hwnd, WmNcHitTest, IntPtr.Zero, PointParam(screen)).ToInt64(), name.ToString());
+    }
+
+    private static IntPtr PointParam(Point screen) => new(((int)screen.Y << 16) | ((int)screen.X & 0xFFFF));
+
+    /// <summary>창의 자리(물리 화소) — 마디의 창은 Windows의 테두리가 없어 보이는 테두리와 같다.</summary>
+    public static System.Windows.Rect Bounds(Window window)
+    {
+        GetWindowRect(new WindowInteropHelper(window).Handle, out var rect);
+        return new System.Windows.Rect(rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top);
+    }
+
+    /// <summary>
+    /// 진짜 마우스로 끈다(확인 실행) — 누르고, 몇 번에 나눠 옮기고, 뗀다. UI 스레드 밖에서 부른다: 테두리를 누르면 Windows가 UI 스레드에서
+    /// 크기 바꾸기 고리를 돌며 뗄 때까지 돌아오지 않는다.
+    /// </summary>
+    public static void Drag(Point from, Point to)
+    {
+        var width = GetSystemMetrics(SmCxScreen);
+        var height = GetSystemMetrics(SmCyScreen);
+        void Move(double x, double y) =>
+            mouse_event(MouseMove | MouseAbsolute, (int)Math.Round(x * 65535 / (width - 1)), (int)Math.Round(y * 65535 / (height - 1)), 0, UIntPtr.Zero);
+        Move(from.X, from.Y);
+        Thread.Sleep(200);
+        mouse_event(MouseLeftDown, 0, 0, 0, UIntPtr.Zero);
+        Thread.Sleep(200);
+        const int steps = 12;
+        for (var step = 1; step <= steps; step++)
+        {
+            Move(from.X + (to.X - from.X) * step / steps, from.Y + (to.Y - from.Y) * step / steps);
+            Thread.Sleep(25);
+        }
+        Thread.Sleep(200);
+        mouse_event(MouseLeftUp, 0, 0, 0, UIntPtr.Zero);
+        Thread.Sleep(200);
     }
 
     /// <summary>창이 있는 모니터의 작업 영역(작업 표시줄을 뺀 곳, 물리 화소).</summary>
