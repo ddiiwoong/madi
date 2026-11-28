@@ -133,9 +133,8 @@ const commands: Record<string, (arg?: string) => void> = {
   commandPalette: () => commandPalette(),
   pickBodyFont: () => pickFont("body"),
   pickCodeFont: () => pickFont("code"),
-  // 껍데기가 하는 것 — 저장 창 · PDF 쓰기 · LLM 키 창 · 새 판 확인.
+  // 껍데기가 하는 것 — 저장 창 · PDF 쓰기 · 새 판 확인.
   exportPdf: () => post({ type: "command", name: "exportPdf" }),
-  llmKeys: () => post({ type: "command", name: "llmKeys" }),
   checkForUpdates: () => post({ type: "command", name: "checkForUpdates" }),
   print: () => void printDocument(),
   docInfo: () => status.say(documentInfo()),

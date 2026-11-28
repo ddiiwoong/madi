@@ -130,8 +130,10 @@ final class SettingsPanel: NSWindowController {
          openURL: @escaping (URL) -> Void = { NSWorkspace.shared.open($0) },
          fontFamilies: @escaping (Bool) -> [String] = { SettingsPanel.installedFamilies(fixedPitchOnly: $0) },
          isFontUsable: @escaping (String, RecommendedFont.Use) -> Bool = { SettingsPanel.isUsable($0, for: $1) },
-         associations: FileAssociating = SystemFileAssociations()) {
+         associations: FileAssociating = SystemFileAssociations(),
+         showsAITab: Bool = SettingsPanel.showsAITab) {
         self.store = store
+        self.showsAITab = showsAITab
         self.associations = associations
         self.openURL = openURL
         self.fontFamilies = fontFamilies
@@ -179,12 +181,20 @@ final class SettingsPanel: NSWindowController {
         load()
     }
 
-    /// 탭을 고른다 — 보기 ▸ 글꼴…이 '글꼴' 탭을 연다.
+    /// 탭을 고른다 — 보기 ▸ 글꼴…이 '글꼴' 탭을 연다. 없는 탭(숨긴 `ai`)이면 그대로 둔다 — `NSTabView`는 없는 이름을
+    /// 고르면 ObjC 예외를 던지고, Swift는 그것을 잡지 못한다.
     func selectTab(_ identifier: String) {
-        tabs?.selectTabViewItem(withIdentifier: identifier)
+        guard let tabs, tabs.indexOfTabViewItem(withIdentifier: identifier) != NSNotFound else { return }
+        tabs.selectTabViewItem(withIdentifier: identifier)
     }
 
     static let fontTab = "font"
+
+    /// `AI 교정` 탭을 보이는가 — **숨긴다**(2026-11-28, 사용자 — "두 판 모두에서 숨겨줘"). 이 탭은 키를 두고 확인하는 데까지만
+    /// 하고 교정 자체는 없어(문서를 바깥으로 보낼지 정하지 않았다 — TODO '결정이 필요한 것') 쓸 데가 없었다. 탭의 코드와 시험은
+    /// 남긴다 — 교정을 넣을 때 이것을 켠다. 이미 키체인에 둔 키는 그대로 남는다(지우려면 키체인 접근에서).
+    static let showsAITab = false
+    private let showsAITab: Bool
     var selectedTab: String? { tabs?.selectedTabViewItem?.identifier as? String }
 
     @objc private func preferencesChangedElsewhere(_ note: Notification) {
@@ -210,7 +220,7 @@ final class SettingsPanel: NSWindowController {
         tabs.addTabViewItem(tab("view", String(localized: "보기"), view: makeViewTab()))
         tabs.addTabViewItem(tab("general", String(localized: "일반"), view: makeGeneralTab()))
         tabs.addTabViewItem(tab("print", String(localized: "PDF·프린트"), view: makePrintTab()))
-        tabs.addTabViewItem(tab("ai", String(localized: "AI 교정"), view: makeAITab()))
+        if showsAITab { tabs.addTabViewItem(tab("ai", String(localized: "AI 교정"), view: makeAITab())) }
         tabs.addTabViewItem(tab("about", String(localized: "정보"), view: makeAboutTab()))
         self.tabs = tabs
 

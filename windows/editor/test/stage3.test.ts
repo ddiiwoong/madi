@@ -58,4 +58,6 @@ test("설정 — 프린트 설정 · 새 판 확인(기본 켜짐, 꺼짐만 받
   const packaged = catalog({ settings: defaultSettings, source: false, follow: false, outline: false, packaged: true });
   assert.deepEqual(packaged.filter((entry) => /Update/.test(entry.id)).map((entry) => entry.id), []);
   assert.equal(packaged.length, entries.length - 2);
+  // LLM 키는 숨겼다 — 교정이 없어 키를 둘 곳만 있었다(2026-11-28, 사용자). 명령 팔레트에도 없다.
+  assert.deepEqual(entries.filter((entry) => /llm|LLM/.test(`${entry.id} ${entry.title}`)).map((entry) => entry.id), []);
 });

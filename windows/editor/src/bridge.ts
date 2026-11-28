@@ -109,7 +109,7 @@ export type EditorMessage =
   | { type: "save"; bytes: string; autosave: boolean }
   /** 저장하지 않은 문서 · 다른 이름으로 — 호스트가 저장 창을 띄운다. */
   | { type: "saveAs"; bytes: string; suggestedName: string }
-  | { type: "command"; name: "new" | "open" | "close" | "exportPdf" | "llmKeys" | "checkForUpdates" }
+  | { type: "command"; name: "new" | "open" | "close" | "exportPdf" | "checkForUpdates" }
   /** 메뉴를 연다 — F10(`menu` 없음), 메뉴 막대가 보일 때 왼쪽 Alt(`file`) · Alt+글자(`core/menukeys.ts`). */
   | { type: "command"; name: "menu"; menu?: string }
   /** 제목 막대(껍데기)의 색 — 편집기와 한 판이게. 모두 `#RRGGBB`. */
