@@ -93,7 +93,6 @@ export function catalog(context: CatalogContext): CatalogEntry[] {
     { id: "toggleRemoteImages", title: "원격 그림 받기", menu: "보기", checked: settings.loadsRemoteImages },
     { id: "toggleFrontMatter", title: "문서 메타데이터 접어 두기", menu: "보기", checked: settings.collapsesFrontMatter },
     { id: "toggleMenuBar", title: "메뉴 막대 보이기", menu: "보기", checked: settings.showsMenuBar },
-    { id: "llmKeys", title: "LLM 키…", menu: "도구" },
     ...(context.packaged ? [] : [
       { id: "checkForUpdates", title: "업데이트 확인…", menu: "도움말" },
       { id: "toggleUpdateChecks", title: "하루 한 번 새 판 확인", menu: "도움말", checked: settings.checksForUpdates },

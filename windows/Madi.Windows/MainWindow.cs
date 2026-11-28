@@ -280,7 +280,8 @@ public sealed partial class MainWindow : Window
             viewMenu.Items.Add(new Separator());
             viewMenu.Items.Add(Flag("메뉴 막대 보이기(_B)", "toggleMenuBar", "showsMenuBar"));
             var tools = Heading(bar ? "도구" : "도구(_T)");
-            tools.Items.Add(Item("LLM 키(_K)…", "", () => new LlmKeysWindow(this).ShowDialog()));
+            // LLM 키는 숨긴다(2026-11-28, 사용자 — "두 판 모두에서 숨겨줘"). 교정 자체가 없어 키를 둘 곳만 있었다. 창(`LlmKeysWindow`)과
+            // 저장소(`CredentialStore`)는 남긴다 — 교정을 넣을 때 여기와 명령 목록(`core/catalog.ts`)에 다시 단다.
             tools.Items.Add(Item("기본 앱 설정 열기(_D)…", "", OpenDefaultAppsSettings));
             var help = Heading(bar ? "도움말" : "도움말(_H)");
             // Store판(MSIX)은 Store가 업데이트한다 — GitHub에 묻는 확인은 설치 파일판만.
@@ -541,7 +542,6 @@ public sealed partial class MainWindow : Window
                         case "open": ShowOpenDialog(); break;
                         case "close": Close(); break;
                         case "exportPdf": _ = ExportPdfAsync(); break;
-                        case "llmKeys": new LlmKeysWindow(this).ShowDialog(); break;
                         case "checkForUpdates": _ = Updates.CheckAsync(this, interactive: true); break;
                         case "menu": OpenMenu(byKeyboard: true, Field(message, "menu")); break;
                     }

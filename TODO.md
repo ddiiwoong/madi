@@ -1236,6 +1236,12 @@ Sogon의 구조를 가져왔다(`~/sogon/Sogon/Services/Translation/AppleTransla
       **실제 키로는 재 보지 못했다** — 사용자의 키를 꺼내 쓰지 않았다. 특히 Bedrock은 API 키로
       제어 평면의 `ListFoundationModels`를 부를 수 있는지 문서에서 확인하지 못했다(실행 평면에는
       목록이 없다). 거절되면 그 문장이 화면에 그대로 나온다.
+- [x] **키 화면을 숨기기** (2026-11-28, 사용자 — Windows판에서 "llm 도구는 왜 있는거야? 기능도 없는데", 고른 것: "두 판 모두에서
+      숨겨줘"). 교정이 없어 키를 둘 곳만 있었다. macOS판은 설정의 `AI 교정` 탭(`SettingsPanel.showsAITab = false`, 숨긴 탭을
+      `selectTab`해도 멈추지 않게 — `NSTabView`는 없는 이름에 `NSInternalInconsistencyException`), Windows판은 `도구 ▸ LLM 키…`와 명령
+      팔레트의 `LLM 키…`. 코드와 시험은 남겼다 — 교정을 넣을 때 다시 켠다(macOS판 배선 시험은 `useAITab()`으로 켠 창을 본다). 이미 둔
+      키는 키체인 · 자격 증명 관리자에 남는다(README · `windows/PRIVACY.md`에 지우는 법). 시험: macOS 둘 더(기본은 숨김 · 켤 수 있음 —
+      기본값을 켜기 · `selectTab`의 확인 빼기 · 플래그 무시를 되살리면 셋 다 빨강), Windows 편집기 명령 목록에 LLM이 없는지.
 - [ ] **문서를 보낼지 정하기** — 보류(사용자). 정해지면 아래 항목이 교정의 본체다.
 
 Sogon에 있는 교정을 Md에도 넣는다. Sogon 쪽 구성은 이렇다:

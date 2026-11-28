@@ -76,17 +76,28 @@ final class SettingsPanelWiringTests: XCTestCase {
         }
     }
 
+    /// `AI 교정` 탭을 켠 창으로 짓는가 — 앱에서는 숨긴다(`SettingsPanel.showsAITab`). 탭의 배선 시험만 켠다(`useAITab()`).
+    private var showsAITab = false
+
     private func makePanel() -> SettingsPanel {
         guard let fonts = fakeFonts else {
             return SettingsPanel(store: store, languageDefaults: languageDefaults, languageDomain: languageSuite,
                                  secrets: secrets, keyChecker: checker, llmDefaults: languageDefaults,
-                                 openURL: { [unowned self] in opened.append($0) }, associations: associations)
+                                 openURL: { [unowned self] in opened.append($0) }, associations: associations,
+                                 showsAITab: showsAITab)
         }
         return SettingsPanel(store: store, languageDefaults: languageDefaults, languageDomain: languageSuite,
                              secrets: secrets, keyChecker: checker, llmDefaults: languageDefaults,
                              openURL: { [unowned self] in opened.append($0) },
                              fontFamilies: { fonts.families(fixedPitchOnly: $0) },
-                             isFontUsable: { fonts.isUsable($0, $1) }, associations: associations)
+                             isFontUsable: { fonts.isUsable($0, $1) }, associations: associations,
+                             showsAITab: showsAITab)
+    }
+
+    /// 숨긴 `AI 교정` 탭을 켜고 창을 다시 짓는다 — 탭의 코드는 교정을 넣을 때 다시 켜려고 남겼다.
+    private func useAITab() {
+        showsAITab = true
+        panel = makePanel()
     }
 
     override func tearDown() {
@@ -156,8 +167,31 @@ final class SettingsPanelWiringTests: XCTestCase {
     func testTabsExistWithFontsFirst() {
         guard let tabs = tabView else { return XCTFail("NSTabView가 없다") }
         XCTAssertEqual(tabs.tabViewItems.map(\.label),
-                       ["글꼴", "보기", "일반", "PDF·프린트", "AI 교정", "정보"])
+                       ["글꼴", "보기", "일반", "PDF·프린트", "정보"])
         XCTAssertEqual(panel.selectedTab, SettingsPanel.fontTab)
+    }
+
+    /// `AI 교정`은 숨긴다 — 교정 자체가 없어 키를 둘 곳만 있었다(2026-11-28, 사용자). 앱이 짓는 기본 창에 탭도, 키를 묻는 칸도
+    /// 없고, 숨긴 탭을 고르라고 해도 멈추지 않는다(`NSTabView`는 없는 이름에 ObjC 예외를 던진다).
+    func testAITabIsHiddenByDefault() {
+        XCTAssertFalse(SettingsPanel.showsAITab)
+        let built = SettingsPanel(store: store, languageDefaults: languageDefaults, languageDomain: languageSuite,
+                                  secrets: secrets, keyChecker: checker, llmDefaults: languageDefaults,
+                                  openURL: { _ in }, associations: associations)
+        panel = built
+        XCTAssertFalse(tabView?.tabViewItems.contains { ($0.identifier as? String) == "ai" } ?? true)
+        XCTAssertNil(servicePicker)
+        XCTAssertNil(keyField)
+        built.selectTab("ai")
+        XCTAssertEqual(built.selectedTab, SettingsPanel.fontTab)
+        XCTAssertEqual(secrets.reads, 0)
+    }
+
+    func testAITabCanStillBeTurnedOn() {
+        useAITab()
+        XCTAssertEqual(tabView?.tabViewItems.map(\.label), ["글꼴", "보기", "일반", "PDF·프린트", "AI 교정", "정보"])
+        panel.selectTab("ai")
+        XCTAssertEqual(panel.selectedTab, "ai")
     }
 
     func testSelectTabSwitchesTabs() {
@@ -680,11 +714,13 @@ final class SettingsPanelWiringTests: XCTestCase {
 
     /// 다섯 서비스를 고를 수 있다 — 소곤이 부르는 바깥 서비스와 같다.
     func testServicesAreListed() {
+        useAITab()
         XCTAssertEqual(servicePicker?.itemArray.map(\.title),
                        ["Anthropic Claude", "OpenAI", "Google Gemini", "Groq", "Amazon Bedrock"])
     }
 
     func testSavingAKeyStoresItTrimmedAndClearsTheField() {
+        useAITab()
         choose(.gemini)
         guard let field = keyField, let save = button("키체인에 저장") else { return XCTFail("키 칸·저장 단추가 없다") }
         XCTAssertNotNil(label(containing: "저장된 키가 없습니다"))
@@ -699,6 +735,7 @@ final class SettingsPanelWiringTests: XCTestCase {
 
     /// 기록 창에 키가 남지 않는다 — 기록은 복사해 붙여 넣는 곳이다.
     func testKeyIsNeverLogged() async {
+        useAITab()
         choose(.openai)
         keyField?.stringValue = "sk-never-logged"
         if let save = button("키체인에 저장") { fire(save) }
@@ -709,6 +746,7 @@ final class SettingsPanelWiringTests: XCTestCase {
     }
 
     func testRemovingAKeyDeletesIt() {
+        useAITab()
         try? secrets.setSecret("k", for: "groq", label: "")
         choose(.groq)
         guard let remove = button("지우기"), remove.isEnabled else { return XCTFail("지우기가 꺼져 있다") }
@@ -720,6 +758,7 @@ final class SettingsPanelWiringTests: XCTestCase {
     /// 화면을 그리면서 **값을 꺼내지 않는다** — ad-hoc 서명 빌드에서는 값을 꺼낼 때마다 키체인 창이
     /// 뜰 수 있다. 있는지만 묻고, 값은 키 확인을 누를 때만 꺼낸다.
     func testShowingTheTabDoesNotReadSecrets() {
+        useAITab()
         try? secrets.setSecret("k", for: "anthropic", label: "")
         panel = makePanel()
         for service in LLMService.allCases { choose(service) }
@@ -727,6 +766,7 @@ final class SettingsPanelWiringTests: XCTestCase {
     }
 
     func testCheckUsesTheStoredKeyAndShowsTheResult() async {
+        useAITab()
         try? secrets.setSecret("sk-ant-x", for: "anthropic", label: "")
         panel = makePanel()
         choose(.anthropic)
@@ -742,12 +782,14 @@ final class SettingsPanelWiringTests: XCTestCase {
     }
 
     func testCheckIsOffWithoutAKey() {
+        useAITab()
         choose(.openai)
         XCTAssertEqual(button("키 확인")?.isEnabled, false)
     }
 
     /// 리전은 Bedrock에만 보이고, 비밀이 아니므로 설정에 둔다. 확인이 그 리전으로 묻는다.
     func testBedrockRegionIsShownStoredAndUsed() async {
+        useAITab()
         try? secrets.setSecret("bedrock-key", for: "bedrock", label: "")
         panel = makePanel()
         let regionField = allViews.compactMap { $0 as? NSTextField }

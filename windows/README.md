@@ -136,8 +136,11 @@ macOS판과 같은 기능을 Windows에서 내는 두 번째 앱입니다(사용
 - **새 판 확인**(도움말 ▸ 업데이트 확인… · 하루 한 번 새 판 확인, 기본 켜짐 — macOS판과 같다): 켤 때와 켜 둔 동안 하루 한 번 GitHub에
   판을 묻는다(GET 하나). 그 판에 Windows판 설치 파일(`Madi-<판>-windows-x64-setup.exe`)이 있고 판이 높을 때만 알린다. **저절로 바꿔
   넣지는 않는다** — 서명하지 않은 판이라 받은 파일이 진짜인지 가릴 길이 없다(macOS판도 서명하지 않은 빌드는 받는 페이지만 연다).
-- **LLM 키**(도구 ▸ LLM 키…): macOS판과 같은 다섯 서비스(Anthropic · OpenAI · Gemini · Groq · Bedrock)의 키를 Windows 자격 증명 관리자에
-  두고, 그 서비스에 모델 목록을 물어 확인한다. **문서는 보내지 않는다** — macOS판에도 교정 자체는 아직 없다(보낼지는 결정이 필요한 일).
+- **LLM 키 — 숨겼다**(2026-11-28, 사용자 — "두 판 모두에서 숨겨줘"). 0.1.4-windows.3까지는 `도구 ▸ LLM 키…`가 macOS판과 같은 다섯
+  서비스(Anthropic · OpenAI · Gemini · Groq · Bedrock)의 키를 Windows 자격 증명 관리자에 두고 모델 목록을 물어 확인했다. 교정 자체가 없어(문서를
+  보낼지는 결정이 필요한 일) 쓸 데가 없었다 — 메뉴와 명령 팔레트에서 뺐다. 창(`LlmKeysWindow.cs`) · 서비스(`LlmService.cs`) · 저장소
+  (`CredentialStore.cs`)와 그 시험은 남겼다 — 교정을 넣을 때 `MainWindow`의 도구 메뉴와 `src/core/catalog.ts`에 다시 단다. macOS판도 설정의
+  `AI 교정` 탭을 숨겼다.
 - **빠른 열기**: 지금 문서의 폴더는 숨은 것 · `node_modules` · `DerivedData` · `Pods` · `vendor` · `*.assets`를 건너뛰고 파일 2000개 ·
   항목 20,000개에서 멈춘다(macOS판과 같다). 이름에 맞는 것이 위치에만 맞는 것보다 앞이다. 최근 문서는 `파일 ▸ 최근 문서`에도(스무 개).
 
